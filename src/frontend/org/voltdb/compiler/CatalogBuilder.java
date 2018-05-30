@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -26,14 +26,10 @@ import java.net.URL;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 
-import org.voltdb.ProcInfoData;
-import org.voltdb.compiler.VoltCompiler.VoltCompilerException;
 import org.voltdb.utils.MiscUtils;
 import org.voltdb.utils.NotImplementedException;
 
@@ -46,7 +42,7 @@ import org.voltdb.utils.NotImplementedException;
  */
 public class CatalogBuilder {
 
-    final LinkedHashSet<String> m_schemas = new LinkedHashSet<String>();
+    final LinkedHashSet<String> m_schemas = new LinkedHashSet<>();
     private StringBuffer transformer = new StringBuffer();
 
     public static final class ProcedureInfo {
@@ -111,12 +107,11 @@ public class CatalogBuilder {
         }
     }
 
-    final LinkedHashSet<Class<?>> m_supplementals = new LinkedHashSet<Class<?>>();
+    final LinkedHashSet<Class<?>> m_supplementals = new LinkedHashSet<>();
 
     List<String> m_elAuthGroups;      // authorized groups
 
     PrintStream m_compilerDebugPrintStream = null;
-    final Map<String, ProcInfoData> m_procInfoOverrides = new HashMap<String, ProcInfoData>();
 
     private List<String> m_diagnostics;
 
@@ -196,7 +191,7 @@ public class CatalogBuilder {
     }
 
     public void addProcedures(final Class<?>... procedures) {
-        final ArrayList<ProcedureInfo> procArray = new ArrayList<ProcedureInfo>();
+        final ArrayList<ProcedureInfo> procArray = new ArrayList<>();
         for (final Class<?> procedure : procedures)
             procArray.add(new ProcedureInfo(new String[0], procedure));
         addProcedures(procArray);
@@ -206,7 +201,7 @@ public class CatalogBuilder {
      * List of roles permitted to invoke the procedure
      */
     public void addProcedures(final ProcedureInfo... procedures) {
-        final ArrayList<ProcedureInfo> procArray = new ArrayList<ProcedureInfo>();
+        final ArrayList<ProcedureInfo> procArray = new ArrayList<>();
         for (final ProcedureInfo procedure : procedures)
             procArray.add(procedure);
         addProcedures(procArray);
@@ -214,7 +209,7 @@ public class CatalogBuilder {
 
     public void addProcedures(final Iterable<ProcedureInfo> procedures) {
         // check for duplicates and existings
-        final HashSet<ProcedureInfo> newProcs = new HashSet<ProcedureInfo>();
+        final HashSet<ProcedureInfo> newProcs = new HashSet<>();
         for (final ProcedureInfo procedure : procedures) {
             assert(newProcs.contains(procedure) == false);
             newProcs.add(procedure);
@@ -254,7 +249,7 @@ public class CatalogBuilder {
     }
 
     public void addSupplementalClasses(final Class<?>... supplementals) {
-        final ArrayList<Class<?>> suppArray = new ArrayList<Class<?>>();
+        final ArrayList<Class<?>> suppArray = new ArrayList<>();
         for (final Class<?> supplemental : supplementals)
             suppArray.add(supplemental);
         addSupplementalClasses(suppArray);
@@ -262,7 +257,7 @@ public class CatalogBuilder {
 
     public void addSupplementalClasses(final Iterable<Class<?>> supplementals) {
         // check for duplicates and existings
-        final HashSet<Class<?>> newSupps = new HashSet<Class<?>>();
+        final HashSet<Class<?>> newSupps = new HashSet<>();
         for (final Class<?> supplemental : supplementals) {
             assert(newSupps.contains(supplemental) == false);
             assert(m_supplementals.contains(supplemental) == false);
@@ -278,11 +273,6 @@ public class CatalogBuilder {
         transformer.append("PARTITION TABLE " + tableName + " ON COLUMN " + partitionColumnName + ";");
     }
 
-    public void setTableAsExportOnly(String name) {
-        assert(name != null);
-        transformer.append("Export TABLE " + name + ";");
-    }
-
     public void addExport(List<String> groups) {
         m_elAuthGroups = groups;
     }
@@ -291,24 +281,11 @@ public class CatalogBuilder {
         m_compilerDebugPrintStream = out;
     }
 
-    /**
-     * Override the procedure annotation with the specified values for a
-     * specified procedure.
-     *
-     * @param procName The name of the procedure to override the annotation.
-     * @param info The values to use instead of the annotation.
-     */
-    public void overrideProcInfoForProcedure(final String procName, final ProcInfoData info) {
-        assert(procName != null);
-        assert(info != null);
-        m_procInfoOverrides.put(procName, info);
-    }
-
     public byte[] compileToBytes() {
         try {
             File jarFile = File.createTempFile("catalogasbytes", ".jar");
 
-            if (!compile(new VoltCompiler(), jarFile.getAbsolutePath())) {
+            if (!compile(new VoltCompiler(false), jarFile.getAbsolutePath())) {
                 return null;
             }
             return MiscUtils.fileToBytes(jarFile);
@@ -319,7 +296,7 @@ public class CatalogBuilder {
     }
 
     public boolean compile(final String jarPath) {
-        return compile(new VoltCompiler(), jarPath);
+        return compile(new VoltCompiler(false), jarPath);
     }
 
     public boolean compile(final VoltCompiler compiler,
@@ -338,18 +315,11 @@ public class CatalogBuilder {
 
         String[] schemaPath = m_schemas.toArray(new String[0]);
 
-        compiler.setProcInfoOverrides(m_procInfoOverrides);
         if (m_diagnostics != null) {
             compiler.enableDetailedCapture();
         }
 
-        boolean success = false;
-        try {
-            success = compiler.compileFromDDL(jarPath, schemaPath);
-        } catch (VoltCompilerException e1) {
-            e1.printStackTrace();
-            return false;
-        }
+        boolean success = compiler.compileFromDDL(jarPath, schemaPath);
 
         m_diagnostics = compiler.harvestCapturedDetail();
         if (m_compilerDebugPrintStream != null) {
@@ -393,7 +363,7 @@ public class CatalogBuilder {
     public void enableDiagnostics() {
         // This empty dummy value enables the feature and provides a default fallback return value,
         // but gets replaced in the normal code path.
-        m_diagnostics = new ArrayList<String>();
+        m_diagnostics = new ArrayList<>();
     }
 
     /** Access the VoltCompiler's recent plan output, for diagnostic purposes */

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,45 +20,81 @@ package org.voltdb;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ExecutionException;
 
-import org.cliffc_voltpatches.high_scale_lib.NonBlockingHashMap;
-import org.voltcore.logging.VoltLogger;
 import org.voltcore.utils.DBBPool;
 import org.voltcore.utils.DBBPool.BBContainer;
-import org.voltdb.licensetool.LicenseApi;
+import org.voltdb.iv2.SpScheduler.DurableUniqueIdListener;
+import org.voltdb.jni.ExecutionEngine.EventType;
 
-import com.google_voltpatches.common.base.Charsets;
 import com.google_voltpatches.common.collect.ImmutableMap;
+import org.voltdb.utils.MiscUtils;
 
 /**
- * Stub class that provides a gateway to the InvocationBufferServer when
+ * Stub class that provides a gateway to the DRProducer when
  * DR is enabled. If no DR, then it acts as a noop stub.
  *
  */
-public class PartitionDRGateway {
-    private static final VoltLogger log = new VoltLogger("DR");
+public class PartitionDRGateway implements DurableUniqueIdListener {
 
     public enum DRRecordType {
-        INSERT, DELETE, UPDATE, BEGIN_TXN, END_TXN, TRUNCATE_TABLE, DELETE_BY_INDEX;
+        INSERT, DELETE, UPDATE, BEGIN_TXN, END_TXN, TRUNCATE_TABLE, DELETE_BY_INDEX, UPDATE_BY_INDEX, HASH_DELIMITER;
+    }
 
-        public static final ImmutableMap<Integer, DRRecordType> conversion;
-        static {
-            ImmutableMap.Builder<Integer, DRRecordType> b = ImmutableMap.builder();
-            for (DRRecordType t : DRRecordType.values()) {
-                b.put(t.ordinal(), t);
-            }
-            conversion = b.build();
-        }
+    // Keep sync with EE DRTxnPartitionHashFlag at types.h
+    public enum DRTxnPartitionHashFlag {
+        PLACEHOLDER,
+        REPLICATED,
+        SINGLE,
+        MULTI,
+        SPECIAL
+    }
 
-        public static DRRecordType valueOf(int ordinal) {
-            return conversion.get(ordinal);
+    // Keep sync with EE REPLICATED_TABLE_MASK at types.h
+    // This mask uses -128 which corresponds to 0x80
+    // The first bit is set with this mask to indicate that subsequent records are for replicated tables
+    public static final byte REPLICATED_TABLE_MASK = Byte.MIN_VALUE;
+
+    public static enum DRRowType {
+        EXISTING_ROW,
+        EXPECTED_ROW,
+        NEW_ROW
+    }
+
+    public static enum DRConflictResolutionFlag {
+        ACCEPT_CHANGE,
+        CONVERGENT
+    }
+
+    // Keep sync with EE DRConflictType at types.h
+    public static enum DRConflictType {
+        NO_CONFLICT,
+        CONSTRAINT_VIOLATION,
+        EXPECTED_ROW_MISSING,
+        EXPECTED_ROW_TIMESTAMP_MISMATCH
+    }
+
+    // Warning: This flag is for debug only and is not cleared anywhere after it is set.
+    protected boolean m_debugDetectedPoisonPill = false;
+    public static ImmutableMap<Integer, PartitionDRGateway> m_partitionDRGateways = ImmutableMap.of();
+    public static final DRConflictManager m_conflictManager;
+    static {
+        if (MiscUtils.isPro()) {
+            DRConflictManager tmpObj = null;
+            try {
+                Class<?> klass = Class.forName("org.voltdb.dr2.DRConflictManagerImpl");
+                Constructor<?> constructor = klass.getConstructor();
+                tmpObj = (DRConflictManager) constructor.newInstance();
+            } catch (Exception e) {}
+            m_conflictManager = tmpObj;
+        } else {
+            m_conflictManager = null;
         }
     }
 
-    public static final Map<Integer, PartitionDRGateway> m_partitionDRGateways = new NonBlockingHashMap<>();
+    public boolean debugDetectedPoisonPill() {
+        return m_debugDetectedPoisonPill;
+    }
 
     /**
      * Load the full subclass if it should, otherwise load the
@@ -71,14 +107,10 @@ public class PartitionDRGateway {
                                                  ProducerDRGateway producerGateway,
                                                  StartAction startAction)
     {
-        final VoltDBInterface vdb = VoltDB.instance();
-        LicenseApi api = vdb.getLicenseApi();
-        final boolean licensedToDR = api.isDrReplicationAllowed();
-
         // if this is a primary cluster in a DR-enabled scenario
         // try to load the real version of this class
         PartitionDRGateway pdrg = null;
-        if (licensedToDR && producerGateway != null) {
+        if (producerGateway != null) {
             pdrg = tryToLoadProVersion();
         }
         if (pdrg == null) {
@@ -88,10 +120,17 @@ public class PartitionDRGateway {
         // init the instance and return
         try {
             pdrg.init(partitionId, producerGateway, startAction);
-        } catch (IOException e) {
+        } catch (Exception e) {
             VoltDB.crashLocalVoltDB(e.getMessage(), false, e);
         }
-        m_partitionDRGateways.put(partitionId,  pdrg);
+
+        // Regarding apparent lack of thread safety: this is called serially
+        // while looping over the SPIs during database initialization
+        assert !m_partitionDRGateways.containsKey(partitionId);
+        ImmutableMap.Builder<Integer, PartitionDRGateway> builder = ImmutableMap.builder();
+        builder.putAll(m_partitionDRGateways);
+        builder.put(partitionId, pdrg);
+        m_partitionDRGateways = builder.build();
 
         return pdrg;
     }
@@ -112,128 +151,70 @@ public class PartitionDRGateway {
     // empty methods for community edition
     protected void init(int partitionId,
                         ProducerDRGateway producerGateway,
-                        StartAction startAction) throws IOException {}
-    public void onSuccessfulProcedureCall(long txnId, long uniqueId, int hash,
-                                          StoredProcedureInvocation spi,
-                                          ClientResponseImpl response) {}
-    public void onSuccessfulMPCall(long spHandle, long txnId, long uniqueId, int hash,
-                                   StoredProcedureInvocation spi,
-                                   ClientResponseImpl response) {}
-    public void onBinaryDR(int partitionId, long startSequenceNumber, long lastSequenceNumber, long lastUniqueId, ByteBuffer buf) {
+                        StartAction startAction) throws IOException, ExecutionException, InterruptedException
+    {}
+    public void onSuccessfulProcedureCall(StoredProcedureInvocation spi) {}
+    public void onSuccessfulMPCall(StoredProcedureInvocation spi) {}
+    public long onBinaryDR(int partitionId, long startSequenceNumber, long lastSequenceNumber,
+            long lastSpUniqueId, long lastMpUniqueId, EventType eventType, ByteBuffer buf) {
         final BBContainer cont = DBBPool.wrapBB(buf);
+        DBBPool.registerUnsafeMemory(cont.address());
+        cont.discard();
+        return -1;
+    }
+
+    public void onPoisonPill(int partitionId, String reason, ByteBuffer failedBuf) {
+        m_debugDetectedPoisonPill = true;
+        final BBContainer cont = DBBPool.wrapBB(failedBuf);
         DBBPool.registerUnsafeMemory(cont.address());
         cont.discard();
     }
 
-    private static final ThreadLocal<AtomicLong> haveOpenTransactionLocal = new ThreadLocal<AtomicLong>() {
-        @Override
-        protected AtomicLong initialValue() {
-            return new AtomicLong(-1);
-        }
-    };
+    @Override
+    public void lastUniqueIdsMadeDurable(long spUniqueId, long mpUniqueId) {}
 
-    private static final ThreadLocal<AtomicLong> lastCommittedSpHandleTL = new ThreadLocal<AtomicLong>() {
-        @Override
-        protected AtomicLong initialValue() {
-            return new AtomicLong(0);
-        }
-    };
-
-    public static synchronized void pushDRBuffer(
+    public static long pushDRBuffer(
             int partitionId,
             long startSequenceNumber,
             long lastSequenceNumber,
-            long lastUniqueId,
+            long lastSpUniqueId,
+            long lastMpUniqueId,
+            int eventType,
             ByteBuffer buf) {
-        if (log.isTraceEnabled()) {
-            log.trace("Received DR buffer size " + buf.remaining());
-            AtomicLong haveOpenTransaction = haveOpenTransactionLocal.get();
-            buf.order(ByteOrder.LITTLE_ENDIAN);
-            //Magic header space for Java for implementing zero copy stuff
-            buf.position(8 /* stream block header */ + 69 /* txn metadata padding */);
-            while (buf.hasRemaining()) {
-                int startPosition = buf.position();
-                byte version = buf.get();
-                int type = buf.get();
-
-                int checksum = 0;
-                if (version != 0) log.trace("Remaining is " + buf.remaining());
-
-                DRRecordType recordType = DRRecordType.valueOf(type);
-                switch (recordType) {
-                case INSERT:
-                case DELETE:
-                case DELETE_BY_INDEX: {
-                    //Insert
-                    if (haveOpenTransaction.get() == -1) {
-                        log.error("Have insert/delete but no open transaction");
-                        break;
-                    }
-                    final long tableHandle = buf.getLong();
-                    final int lengthPrefix = buf.getInt();
-                    final int indexCrc;
-                    if (recordType == DRRecordType.DELETE_BY_INDEX) {
-                        indexCrc = buf.getInt();
-                    } else {
-                        indexCrc = 0;
-                    }
-                    buf.position(buf.position() + lengthPrefix);
-                    checksum = buf.getInt();
-                    log.trace("Version " + version + " type " + recordType + " table handle " + tableHandle + " length " + lengthPrefix + " checksum " + checksum +
-                              (recordType == DRRecordType.DELETE_BY_INDEX ? (" index checksum " + indexCrc) : ""));
-                    break;
-                }
-                case BEGIN_TXN: {
-                    //Begin txn
-                    final long txnId = buf.getLong();
-                    final long spHandle = buf.getLong();
-                    if (haveOpenTransaction.get() != -1) {
-                        log.error("Have open transaction txnid " + txnId + " spHandle " + spHandle + " but already open transaction");
-                        break;
-                    }
-                    haveOpenTransaction.set(spHandle);
-                    checksum = buf.getInt();
-                    log.trace("Version " + version + " type BEGIN_TXN " + " txnid " + txnId + " spHandle " + spHandle + " checksum " + checksum);
-                    break;
-                }
-                case END_TXN: {
-                    //End txn
-                    final long spHandle = buf.getLong();
-                    if (haveOpenTransaction.get() == -1 ) {
-                        log.error("Have end transaction spHandle " + spHandle + " but no open transaction and its less then last committed " + lastCommittedSpHandleTL.get().get());
-                        break;
-                    }
-                    haveOpenTransaction.set(-1);
-                    lastCommittedSpHandleTL.get().set(spHandle);
-                    checksum = buf.getInt();
-                    log.trace("Version " + version + " type END_TXN " + " spHandle " + spHandle + " checksum " + checksum);
-                    break;
-                }
-                case TRUNCATE_TABLE: {
-                    final long tableHandle = buf.getLong();
-                    final byte tableNameBytes[] = new byte[buf.getInt()];
-                    buf.get(tableNameBytes);
-                    final String tableName = new String(tableNameBytes, Charsets.UTF_8);
-                    checksum = buf.getInt();
-                    log.trace("Version " + version + " type TRUNCATE_TABLE table handle " + tableHandle + " table name " + tableName);
-                    break;
-                }
-                }
-                int calculatedChecksum = DBBPool.getBufferCRC32C(buf, startPosition, buf.position() - startPosition - 4);
-                if (calculatedChecksum != checksum) {
-                    log.error("Checksum " + calculatedChecksum + " didn't match " + checksum);
-                    break;
-                }
-
-            }
-        }
-
         final PartitionDRGateway pdrg = m_partitionDRGateways.get(partitionId);
         if (pdrg == null) {
-            VoltDB.crashLocalVoltDB("No PRDG when there should be", true, null);
+            return -1;
         }
-        pdrg.onBinaryDR(partitionId, startSequenceNumber, lastSequenceNumber, lastUniqueId, buf);
+        return pdrg.onBinaryDR(partitionId, startSequenceNumber, lastSequenceNumber,
+                lastSpUniqueId, lastMpUniqueId, EventType.values()[eventType], buf);
+    }
+
+    public static void pushPoisonPill(int partitionId, String reason, ByteBuffer failedBuf) {
+        final PartitionDRGateway pdrg = m_partitionDRGateways.get(partitionId);
+        if (pdrg == null) {
+            return;
+        }
+        pdrg.onPoisonPill(partitionId, reason, failedBuf);
     }
 
     public void forceAllDRNodeBuffersToDisk(final boolean nofsync) {}
+
+    public static int reportDRConflict(int partitionId, int remoteClusterId, long remoteTimestamp, String tableName, int action,
+                                       int deleteConflict, ByteBuffer existingMetaTableForDelete, ByteBuffer existingTupleTableForDelete,
+                                       ByteBuffer expectedMetaTableForDelete, ByteBuffer expectedTupleTableForDelete,
+                                       int insertConflict, ByteBuffer existingMetaTableForInsert, ByteBuffer existingTupleTableForInsert,
+                                       ByteBuffer newMetaTableForInsert, ByteBuffer newTupleTableForInsert) {
+        assert m_conflictManager != null : "Community edition should not have any conflicts";
+        return m_conflictManager.resolveConflict(partitionId,
+                                                 remoteClusterId,
+                                                 remoteTimestamp,
+                                                 tableName,
+                                                 DRRecordType.values()[action],
+                                                 DRConflictType.values()[deleteConflict],
+                                                 existingMetaTableForDelete, existingTupleTableForDelete,
+                                                 expectedMetaTableForDelete, expectedTupleTableForDelete,
+                                                 DRConflictType.values()[insertConflict],
+                                                 existingMetaTableForInsert, existingTupleTableForInsert,
+                                                 newMetaTableForInsert, newTupleTableForInsert);
+    }
 }

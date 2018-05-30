@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,24 +23,69 @@
 
 package txnIdSelfCheck;
 
-import java.io.IOException;
-
 import org.voltcore.logging.VoltLogger;
 import org.voltdb.client.Client;
 import org.voltdb.client.ClientResponse;
 import org.voltdb.client.NoConnectionsException;
 import org.voltdb.client.ProcCallException;
+import java.security.SecureRandom;
+
+import java.io.IOException;
 
 public enum TxnId2Utils {;
 
     static VoltLogger log = new VoltLogger("TxnId2Utils");
 
-    static ClientResponse doAdHoc(Client client, String query) throws NoConnectionsException, IOException, ProcCallException {
+    static ClientResponse doAdHoc(Client client, String query) throws ProcCallException {
+        return doProcCall(client, "@AdHoc", query);
+    }
+
+    static boolean isConnectionTransactionOrCatalogIssue(String statusString) {
+        return statusString.matches("(?s).*AdHoc transaction -?[0-9]+ wasn.t planned against the current catalog version.*") ||
+                statusString.matches(".*Connection to database host \\(.*\\) was lost before a response was received.*") ||
+                statusString.matches(".*Transaction dropped due to change in mastership. It is possible the transaction was committed.*") ||
+                statusString.matches("(?s).*Transaction being restarted due to fault recovery or shutdown.*") ||
+                statusString.matches("(?s).*Invalid catalog update.  Catalog or deployment change was planned against one version of the cluster configuration but that version was no longer live.*") ||
+                statusString.matches("(?s).*Ad Hoc Planner task queue is full.*") ||
+                statusString.matches("(?s).*Transaction Interrupted.*");
+    }
+
+    static boolean isServerUnavailableIssue(String statusString) {
+        return statusString.matches("(?s).*No response received in the allotted time.*") ||
+                statusString.matches(".*Server is currently unavailable; try again later.*") ||
+                statusString.matches(".*Server is paused.*") ||
+                statusString.matches("(?s).*Server is shutting down.*") ||
+                statusString.matches("(?s).*VoltDB failed to create the transaction internally.*it should be safe to resend the work, as the work was never started.*"); /*-5 SERVER_UNAVAILABLE*/
+    }
+
+    static boolean isConnectionTransactionCatalogOrServerUnavailableIssue(String statusString) {
+        return isConnectionTransactionOrCatalogIssue(statusString) ||
+                isServerUnavailableIssue(statusString);
+    }
+
+    static boolean isTransactionStateIndeterminate(ClientResponse cr) {
+        String statusString = cr.getStatusString();
+        return (statusString.matches("(?s).*No response received in the allotted time.*") ||
+                statusString.matches(".*Connection to database host \\(.*\\) was lost before a response was received.*"));
+    }
+
+
+    static ClientResponse doProcCall(Client client, String proc, Object... parms) throws ProcCallException {
+        return doProcCall(client, proc, false, parms);
+    }
+    static ClientResponse doProcCallOneShot(Client client, String proc, Object... parms) throws ProcCallException {
+        return doProcCall(client, proc, true, parms);
+    }
+    static ClientResponse doProcCall(Client client, String proc, boolean oneshot, Object... parms) throws ProcCallException {
         Boolean sleep = false;
         Boolean noConnections = false;
+        ClientResponse cr = null;
         while (true) {
             try {
-                ClientResponse cr = client.callProcedure("@AdHoc", query);
+                if (proc == "@AdHoc")
+                    cr = client.callProcedure("@AdHoc", (String) parms[0]);
+                else
+                    cr = client.callProcedure(proc, parms);
                 if (cr.getStatus() == ClientResponse.SUCCESS) {
                     Benchmark.txnCount.incrementAndGet();
                     return cr;
@@ -53,25 +98,20 @@ public enum TxnId2Utils {;
             } catch (IOException e) {
                 Benchmark.hardStop(e);
             } catch (ProcCallException e) {
-                ClientResponse cr = e.getClientResponse();
+                cr = e.getClientResponse();
                 String ss = cr.getStatusString();
                 log.debug(ss);
-                if (/*cr.getStatus() == ClientResponse.USER_ABORT &&*/
-                    (ss.matches("(?s).*AdHoc transaction [0-9]+ wasn.t planned against the current catalog version.*") ||
-                     ss.matches(".*Connection to database host \\(.*\\) was lost before a response was received.*") ||
-                     ss.matches(".*Transaction dropped due to change in mastership. It is possible the transaction was committed.*") ||
-                     ss.matches("(?s).*Transaction being restarted due to fault recovery or shutdown.*") ||
-                     ss.matches("(?s).*Invalid catalog update.  Catalog or deployment change was planned against one version of the cluster configuration but that version was no longer live.*")
-                    )) {
-                    }
-                else if (ss.matches(".*Server is currently unavailable; try again later.*") ||
-                         ss.matches(".*Server is paused and is currently unavailable.*")) {
+                if (isConnectionTransactionOrCatalogIssue(ss)
+                    ) { /* continue */ }
+                else if (isServerUnavailableIssue(ss)) {
                     sleep = true;
                 }
                 else {
                     throw e;
                 }
             }
+            if (oneshot)
+                return cr;
             if (sleep | noConnections) {
                 try { Thread.sleep(3000); } catch (Exception f) { }
                 sleep = false;
@@ -85,5 +125,15 @@ public enum TxnId2Utils {;
     static long getRowCount(Client client, String tableName) throws NoConnectionsException, IOException, ProcCallException {
         ClientResponse cr = doAdHoc(client, "select count(*) from " + tableName + ";");
         return cr.getResults()[0].asScalarLong();
+    }
+
+    static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    static SecureRandom rnd = new SecureRandom();
+
+    static String randomString( int len ){
+        StringBuilder sb = new StringBuilder( len );
+        for( int i = 0; i < len; i++ )
+            sb.append( AB.charAt( rnd.nextInt(AB.length()) ) );
+        return sb.toString();
     }
 }

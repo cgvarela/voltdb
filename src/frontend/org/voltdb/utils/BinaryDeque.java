@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 
 import org.voltcore.utils.DBBPool.BBContainer;
 import org.voltcore.utils.DeferredSerialization;
+import org.voltcore.utils.Pair;
 
 /**
  * Specialized deque interface for storing binary objects. Objects can be provided as a buffer chain
@@ -70,18 +71,28 @@ public interface BinaryDeque {
     public void push(BBContainer objects[]) throws IOException;
 
     /**
-     * Remove and return the object at the head of the queue
-     * @param ocf
-     * @return
-     * @throws IOException
+     * Start a BinaryDequeReader for reading, positioned at the start of the deque.
+     * @param cursorId a String identifying the cursor. If a cursor is already open for this id,
+     * the existing cursor will be returned.
+     * @return a BinaryDequeReader for this cursorId
+     * @throws IOException on any errors trying to read the PBD files
      */
-    public BBContainer poll(OutputContainerFactory ocf) throws IOException;
+    public BinaryDequeReader openForRead(String cursorId) throws IOException;
+
+    /**
+     * Close a BinaryDequeReader for reader, also close the SegmentReader for the segment if it is reading one
+     * @param cursorId a String identifying the cursor.
+     * @throws IOException on any errors trying to close the SegmentReader if it is the last one for the segment
+     */
+    public void closeCursor(String cursorId);
 
     /**
      * Persist all objects in the queue to the backing store
      * @throws IOException
      */
     public void sync() throws IOException;
+
+    public void parseAndTruncate(BinaryDequeTruncator truncator) throws IOException;
 
     /**
      * Release all resources (open files) held by the back store of the queue. Continuing to use the deque
@@ -90,14 +101,47 @@ public interface BinaryDeque {
      */
     public void close() throws IOException;
 
-    public boolean isEmpty() throws IOException;
-
     public boolean initializedFromExistingFiles();
 
-    public long sizeInBytes() throws IOException;
-    public int getNumObjects();
+    public Pair<Integer, Long> getBufferCountAndSize() throws IOException;
 
     public void closeAndDelete() throws IOException;
+
+    /**
+     * Reader class used to read entries from the deque. Multiple readers may be active at the same time,
+     * each of them maintaining their own read location within the deque.
+     */
+    public interface BinaryDequeReader {
+        /**
+         * Read and return the object at the current read position of this reader.
+         * The entry will be removed once all active readers have read the entry.
+         * @param ocf
+         * @return BBContainer with the bytes read. Null if there is nothing left to read.
+         * @throws IOException
+         */
+        public BBContainer poll(OutputContainerFactory ocf) throws IOException;
+
+        /**
+         * Number of bytes left to read for this reader.
+         * @return number of bytes left to read for this reader.
+         * @throws IOException
+         */
+        public long sizeInBytes() throws IOException;
+
+        /**
+         *  Number of objects left to read for this reader.
+         * @return number of objects left to read for this reader
+         * @throws IOException
+         */
+        public int getNumObjects() throws IOException;
+
+        /**
+         * Returns true if this reader still has entries to read. False otherwise
+         * @return true if this reader still has entries to read. False otherwise
+         * @throws IOException
+         */
+        public boolean isEmpty() throws IOException;
+    }
 
     public static class TruncatorResponse {
         public enum Status {
@@ -108,6 +152,11 @@ public interface BinaryDeque {
         public TruncatorResponse(Status status) {
             this.status = status;
         }
+
+        public int getTruncatedBuffSize() throws IOException {
+            throw new UnsupportedOperationException("Must implement this for partial object truncation");
+        }
+
         public int writeTruncatedObject(ByteBuffer output) throws IOException {
             throw new UnsupportedOperationException("Must implement this for partial object truncation");
         }
@@ -129,6 +178,4 @@ public interface BinaryDeque {
          */
         public TruncatorResponse parse(BBContainer bb);
     }
-
-    public void parseAndTruncate(BinaryDequeTruncator truncator) throws IOException;
 }

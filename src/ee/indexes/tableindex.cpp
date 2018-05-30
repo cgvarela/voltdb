@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -45,14 +45,13 @@
 
 #include <iostream>
 #include "indexes/tableindex.h"
-#include "expressions/abstractexpression.h"
 #include "expressions/expressionutil.h"
 #include "storage/TableCatalogDelegate.hpp"
 
 using namespace voltdb;
 
 TableIndexScheme::TableIndexScheme(
-    std::string a_name,
+    const std::string &a_name,
     TableIndexType a_type,
     const std::vector<int32_t>& a_columnIndices,
     const std::vector<AbstractExpression*>& a_indexedExpressions,
@@ -164,13 +163,13 @@ bool TableIndex::equals(const TableIndex *other) const
     return true;
 }
 
-bool TableIndex::addEntry(const TableTuple *tuple)
+void TableIndex::addEntry(const TableTuple *tuple, TableTuple *conflictTuple)
 {
     if (isPartialIndex() && !getPredicate()->eval(tuple, NULL).isTrue()) {
         // Tuple fails the predicate. Do not add it.
-        return true;
+        return;
     }
-    return addEntryDo(tuple);
+    addEntryDo(tuple, conflictTuple);
 }
 
 bool TableIndex::deleteEntry(const TableTuple *tuple)
@@ -194,7 +193,9 @@ bool TableIndex::replaceEntryNoKeyChange(const TableTuple &destinationTuple, con
         } else if (predicate->eval(&destinationTuple, NULL).isTrue() && !predicate->eval(&originalTuple, NULL).isTrue()) {
             // The original tuple fails the predicate meaning the tuple is not indexed.
             // Simply add the new tuple
-            return addEntryDo(&destinationTuple);
+            TableTuple conflict(destinationTuple.getSchema());
+            addEntryDo(&destinationTuple, &conflict);
+            return conflict.isNullTuple();
         } else if (!predicate->eval(&destinationTuple, NULL).isTrue() && predicate->eval(&originalTuple, NULL).isTrue()) {
             // The destination tuple fails the predicate. Simply delete the original tuple
             return deleteEntryDo(&originalTuple);

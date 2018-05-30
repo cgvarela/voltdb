@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -24,11 +24,11 @@
 package org.voltdb;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyBoolean;
 import static org.mockito.Matchers.anyInt;
 import static org.mockito.Matchers.anyLong;
 import static org.mockito.Matchers.anyObject;
@@ -54,6 +54,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.zookeeper_voltpatches.CreateMode;
@@ -67,10 +68,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 import org.voltcore.messaging.HostMessenger;
-import org.voltcore.messaging.LocalObjectMessage;
 import org.voltcore.messaging.VoltMessage;
 import org.voltcore.network.Connection;
 import org.voltcore.network.VoltNetworkPool;
+import org.voltcore.utils.CoreUtils;
 import org.voltcore.utils.DeferredSerialization;
 import org.voltcore.utils.Pair;
 import org.voltdb.ClientInterface.ClientInputHandler;
@@ -78,25 +79,18 @@ import org.voltdb.VoltDB.Configuration;
 import org.voltdb.VoltTable.ColumnInfo;
 import org.voltdb.catalog.Catalog;
 import org.voltdb.client.ClientResponse;
-import org.voltdb.client.ProcedureInvocationType;
-import org.voltdb.common.Constants;
-import org.voltdb.compiler.AdHocPlannedStatement;
-import org.voltdb.compiler.AdHocPlannedStmtBatch;
-import org.voltdb.compiler.AdHocPlannerWork;
-import org.voltdb.compiler.CatalogChangeResult;
-import org.voltdb.compiler.CatalogChangeWork;
 import org.voltdb.compiler.VoltProjectBuilder;
 import org.voltdb.iv2.Cartographer;
 import org.voltdb.messaging.InitiateResponseMessage;
 import org.voltdb.messaging.Iv2InitiateTaskMessage;
+import org.voltdb.settings.DbSettings;
 import org.voltdb.utils.CatalogUtil;
-import org.voltdb.utils.Encoder;
 import org.voltdb.utils.MiscUtils;
 
 public class TestClientInterface {
     // mocked objects that CI requires
     private VoltDBInterface m_volt;
-    private Queue<DeferredSerialization> statsAnswers = new ArrayDeque<DeferredSerialization>();
+    private Queue<DeferredSerialization> statsAnswers = new ArrayDeque<>();
     private int drStatsInvoked = 0;
     private StatsAgent m_statsAgent = new StatsAgent() {
         @Override
@@ -116,6 +110,8 @@ public class TestClientInterface {
     private Cartographer m_cartographer;
     private SimpleClientResponseAdapter m_cxn;
     private ZooKeeper m_zk;
+    private ScheduledThreadPoolExecutor m_periodicWorkThread;
+
 
     // real context
     private static CatalogContext m_context = null;
@@ -125,29 +121,28 @@ public class TestClientInterface {
     // the mailbox in CI
     //private static Mailbox m_mb = null;
 
-    private static int[] m_allPartitions = new int[] {0, 1, 2};
-
     @BeforeClass
     public static void setUpOnce() throws Exception {
         buildCatalog();
-
     }
 
-    BlockingQueue<ByteBuffer> responses = new LinkedTransferQueue<ByteBuffer>();
-    BlockingQueue<DeferredSerialization> responsesDS = new LinkedTransferQueue<DeferredSerialization>();
+    BlockingQueue<ByteBuffer> responses = new LinkedTransferQueue<>();
+    BlockingQueue<DeferredSerialization> responsesDS = new LinkedTransferQueue<>();
     private static final ScheduledExecutorService ses = Executors.newScheduledThreadPool(1);
 
     @Before
     public void setUp() throws Exception {
+        m_periodicWorkThread = CoreUtils.getScheduledThreadPoolExecutor("Periodic Work", 1, CoreUtils.SMALL_STACK_SIZE);
         // Set up CI with the mock objects.
         m_volt = mock(VoltDBInterface.class);
         m_sysinfoAgent = mock(SystemInformationAgent.class);
         m_messenger = mock(HostMessenger.class);
         m_handler = mock(ClientInputHandler.class);
         m_cartographer = mock(Cartographer.class);
+
         m_zk = mock(ZooKeeper.class);
-        responses = new LinkedTransferQueue<ByteBuffer>();
-        responsesDS = new LinkedTransferQueue<DeferredSerialization>();
+        responses = new LinkedTransferQueue<>();
+        responsesDS = new LinkedTransferQueue<>();
         //m_cxn = mock(SimpleClientResponseAdapter.class);
         drStatsInvoked = 0;
         m_cxn = new SimpleClientResponseAdapter(0, "foo") {
@@ -167,7 +162,13 @@ public class TestClientInterface {
          * construction
          */
         VoltDB.replaceVoltDBInstanceForTest(m_volt);
-        doReturn(m_cxn.connectionId()).when(m_handler).connectionId();
+
+        when(m_handler.connectionId()).thenReturn(0L);
+        when(m_handler.isAdmin()).thenReturn(false);
+        when(m_volt.getSES(anyBoolean())).thenReturn(m_periodicWorkThread);
+        when(m_volt.getCommandLogSnapshotPath()).thenReturn("/tmp");
+        when(m_volt.getSnapshotPath()).thenReturn("/tmp");
+
         doReturn(m_statsAgent).when(m_volt).getStatsAgent();
         doReturn(m_statsAgent).when(m_volt).getOpsAgent(OpsSelector.STATISTICS);
         doReturn(m_sysinfoAgent).when(m_volt).getOpsAgent(OpsSelector.SYSTEMINFORMATION);
@@ -190,7 +191,7 @@ public class TestClientInterface {
 
         m_ci = spy(new ClientInterface(null, VoltDB.DEFAULT_PORT, null, VoltDB.DEFAULT_ADMIN_PORT,
                 m_context, m_messenger, ReplicationRole.NONE,
-                m_cartographer, m_allPartitions));
+                m_cartographer));
         m_ci.bindAdapter(m_cxn, null);
 
         //m_mb = m_ci.m_mailbox;
@@ -205,8 +206,9 @@ public class TestClientInterface {
         String schema = "create table A (i integer not null, primary key (i));";
         builder.addLiteralSchema(schema);
         builder.addPartitionInfo("A", "i");
-        builder.addStmtProcedure("hello", "select * from A where i = ?", "A.i: 0");
-        builder.addStmtProcedure("hellorw", "delete from A where i = ?", "A.i: 0");
+        ProcedurePartitionData data = new ProcedurePartitionData("A", "i");
+        builder.addStmtProcedure("hello", "select * from A where i = ?", data);
+        builder.addStmtProcedure("hellorw", "delete from A where i = ?", data);
 
         if (!builder.compile(cat.getAbsolutePath())) {
             throw new IOException();
@@ -214,26 +216,25 @@ public class TestClientInterface {
 
         byte[] bytes = MiscUtils.fileToBytes(cat);
         String serializedCat =
-            CatalogUtil.getSerializedCatalogStringFromJar(CatalogUtil.loadAndUpgradeCatalogFromJar(bytes).getFirst());
+            CatalogUtil.getSerializedCatalogStringFromJar(CatalogUtil.loadAndUpgradeCatalogFromJar(bytes, false).getFirst());
         assertNotNull(serializedCat);
         Catalog catalog = new Catalog();
         catalog.execute(serializedCat);
 
         String deploymentPath = builder.getPathToDeployment();
         CatalogUtil.compileDeployment(catalog, deploymentPath, false);
-
-        m_context = new CatalogContext(0, 0, catalog, bytes, new byte[] {}, 0);
+        DbSettings dbSettings = CatalogUtil.asDbSettings(deploymentPath);
+        m_context = new CatalogContext(catalog, dbSettings, 0, 0, bytes, null, new byte[] {}, mock(HostMessenger.class));
         TheHashinator.initialize(TheHashinator.getConfiguredHashinatorClass(), TheHashinator.getConfigureBytes(3));
     }
 
     @After
-    public void tearDown() {
+    public void tearDown() throws Exception {
         reset(m_messenger);
         reset(m_handler);
-    }
+        m_periodicWorkThread.shutdown();
+        m_periodicWorkThread.awaitTermination(356, TimeUnit.DAYS);
 
-    private static ByteBuffer createMsg(String name, final Object...params) throws IOException {
-        return createMsg(null, name, params);
     }
 
     /**
@@ -244,14 +245,10 @@ public class TestClientInterface {
      * @return
      * @throws IOException
      */
-    private static ByteBuffer createMsg(Long origTxnId, String name,
-                                        final Object...params) throws IOException
+    private static ByteBuffer createMsg(String name, final Object...params) throws IOException
     {
         StoredProcedureInvocation proc = new StoredProcedureInvocation();
         proc.setProcName(name);
-        if (origTxnId != null) {
-            proc.setOriginalTxnId(origTxnId);
-        }
         proc.setParams(params);
         ByteBuffer buf = ByteBuffer.allocate(proc.getSerializedSize());
         proc.flattenToBuffer(buf);
@@ -308,189 +305,6 @@ public class TestClientInterface {
     }
 
     @Test
-    public void testExplain() throws IOException {
-        ByteBuffer msg = createMsg("@Explain", "select * from a");
-        ClientResponseImpl resp = m_ci.handleRead(msg, m_handler, m_cxn);
-        assertNull(resp);
-        ArgumentCaptor<LocalObjectMessage> captor = ArgumentCaptor.forClass(LocalObjectMessage.class);
-        verify(m_messenger).send(eq(32L), captor.capture());
-        assertTrue(captor.getValue().payload instanceof AdHocPlannerWork );
-        System.out.println( captor.getValue().payload.toString() );
-        String payloadString = captor.getValue().payload.toString();
-        assertTrue(payloadString.contains("user partitioning: none"));
-    }
-
-    @Test
-    public void testAdHoc() throws IOException {
-        ByteBuffer msg = createMsg("@AdHoc", "select * from a");
-        ClientResponseImpl resp = m_ci.handleRead(msg, m_handler, m_cxn);
-        assertNull(resp);
-        ArgumentCaptor<LocalObjectMessage> captor = ArgumentCaptor.forClass(LocalObjectMessage.class);
-        verify(m_messenger).send(eq(32L), captor.capture());
-        assertTrue(captor.getValue().payload instanceof AdHocPlannerWork);
-        String payloadString = captor.getValue().payload.toString();
-        assertTrue(payloadString.contains("user partitioning: none"));
-
-        // single-part adhoc
-        reset(m_messenger);
-        msg = createMsg("@AdHocSpForTest", "select * from a where i = 3", 3);
-        resp = m_ci.handleRead(msg, m_handler, m_cxn);
-        assertNull(resp);
-        verify(m_messenger).send(eq(32L), captor.capture());
-        assertTrue(captor.getValue().payload instanceof AdHocPlannerWork);
-        payloadString = captor.getValue().payload.toString();
-        assertTrue(payloadString.contains("user params: empty"));
-        assertTrue(payloadString.contains("user partitioning: 3"));
-    }
-
-    @Test
-    public void testFinishedSPAdHocPlanning() throws Exception {
-        // Need a batch and a statement
-        String query = "select * from a where i = ?";
-        int partitionParamIndex = 0;
-        Object[] extractedValues =  new Object[0];
-        VoltType[] paramTypes =  new VoltType[]{VoltType.INTEGER};
-        AdHocPlannedStmtBatch plannedStmtBatch =
-                AdHocPlannedStmtBatch.mockStatementBatch(3, query, extractedValues, paramTypes,
-                                                         new Object[]{3}, partitionParamIndex,
-                                                         m_context.getCatalogHash());
-        m_ci.processFinishedCompilerWork(plannedStmtBatch).run();
-
-        ArgumentCaptor<Long> destinationCaptor =
-                ArgumentCaptor.forClass(Long.class);
-        ArgumentCaptor<Iv2InitiateTaskMessage> messageCaptor =
-                ArgumentCaptor.forClass(Iv2InitiateTaskMessage.class);
-        verify(m_messenger).send(destinationCaptor.capture(), messageCaptor.capture());
-        Iv2InitiateTaskMessage message = messageCaptor.getValue();
-
-        assertTrue(message.isReadOnly());  // readonly
-        assertTrue(message.isSinglePartition()); // single-part
-        assertEquals("@AdHoc_RO_SP", message.getStoredProcedureName());
-
-        // SP AdHoc should have partitioning parameter serialized in the parameter set
-        Object partitionParam = message.getStoredProcedureInvocation().getParameterAtIndex(0);
-        assertTrue(partitionParam instanceof byte[]);
-        VoltType type = VoltType.get((Byte) message.getStoredProcedureInvocation().getParameterAtIndex(1));
-        assertTrue(type.isInteger());
-        byte[] serializedData = (byte[]) message.getStoredProcedureInvocation().getParameterAtIndex(2);
-        ByteBuffer buf = ByteBuffer.wrap(serializedData);
-        Object[] parameters = AdHocPlannedStmtBatch.userParamsFromBuffer(buf);
-        assertEquals(1, parameters.length);
-        assertEquals(3, parameters[0]);
-        AdHocPlannedStatement[] statements = AdHocPlannedStmtBatch.planArrayFromBuffer(buf);
-        assertTrue(Arrays.equals(TheHashinator.valueToBytes(3), (byte[]) partitionParam));
-        assertEquals(1, statements.length);
-        String sql = new String(statements[0].sql, Constants.UTF8ENCODING);
-        assertEquals(query, sql);
-    }
-
-    /**
-     * Fake an adhoc compiler result and return it to the CI, see if CI
-     * initiates the txn.
-     */
-    @Test
-    public void testFinishedMPAdHocPlanning() throws Exception {
-        // Need a batch and a statement
-        String query = "select * from a";
-        Object[] extractedValues =  new Object[0];
-        VoltType[] paramTypes =  new VoltType[0];
-        AdHocPlannedStmtBatch plannedStmtBatch =
-            AdHocPlannedStmtBatch.mockStatementBatch(3, query, extractedValues, paramTypes, null, -1,
-                    m_context.getCatalogHash());
-        m_ci.processFinishedCompilerWork(plannedStmtBatch).run();
-
-        ArgumentCaptor<Long> destinationCaptor =
-                ArgumentCaptor.forClass(Long.class);
-        ArgumentCaptor<Iv2InitiateTaskMessage> messageCaptor =
-                ArgumentCaptor.forClass(Iv2InitiateTaskMessage.class);
-        verify(m_messenger).send(destinationCaptor.capture(), messageCaptor.capture());
-        Iv2InitiateTaskMessage message = messageCaptor.getValue();
-
-        //assertFalse(boolValues.get(0)); // is admin
-        assertTrue(message.isReadOnly());  // readonly
-        assertFalse(message.isSinglePartition()); // single-part
-        //assertFalse(boolValues.get(3)); // every site
-        assertEquals("@AdHoc_RO_MP", message.getStoredProcedureName());
-
-        byte[] serializedData = (byte[]) message.getStoredProcedureInvocation().getParameterAtIndex(0);
-        ByteBuffer buf = ByteBuffer.wrap(serializedData);
-        Object[] parameters = AdHocPlannedStmtBatch.userParamsFromBuffer(buf);
-        assertEquals(0, parameters.length);
-        AdHocPlannedStatement[] statements = AdHocPlannedStmtBatch.planArrayFromBuffer(buf);
-        assertEquals(1, statements.length);
-        String sql = new String(statements[0].sql, Constants.UTF8ENCODING);
-        assertEquals(query, sql);
-    }
-
-    @Test
-    public void testUpdateCatalog() throws IOException {
-        // only makes sense in pro (sysproc suite has a complementary test for community)
-        if (VoltDB.instance().getConfig().m_isEnterprise) {
-            String catalogHex = Encoder.hexEncode("blah");
-            ByteBuffer msg = createMsg("@UpdateApplicationCatalog", catalogHex, "blah");
-            ClientResponseImpl resp = m_ci.handleRead(msg, m_handler, m_cxn);
-            assertNull(resp);
-            ArgumentCaptor<LocalObjectMessage> captor = ArgumentCaptor.forClass(LocalObjectMessage.class);
-            verify(m_messenger).send(eq(32L), // A fixed number set in setUpOnce()
-                                     captor.capture());
-            assertTrue(captor.getValue().payload instanceof CatalogChangeWork);
-        }
-    }
-
-    @Test
-    public void testNegativeUpdateCatalog() throws IOException {
-        ByteBuffer msg = createMsg("@UpdateApplicationCatalog", new Integer(1), new Long(0));
-        ClientResponseImpl resp = m_ci.handleRead(msg, m_handler, m_cxn);
-        // expect an error response from handleRead.
-        assertNotNull(resp);
-        assertTrue(resp.getStatus() != 0);
-    }
-
-
-    /**
-     * Fake a catalog diff compiler result and send it back to the CI, see if CI
-     * initiates a new txn.
-     */
-    @Test
-    public void testFinishedCatalogDiffing() {
-        CatalogChangeResult catalogResult = new CatalogChangeResult();
-        catalogResult.clientData = null;
-        catalogResult.clientHandle = 0;
-        catalogResult.connectionId = 0;
-        catalogResult.adminConnection = false;
-        // catalog change specific boiler plate
-        catalogResult.catalogHash = "blah".getBytes();
-        catalogResult.catalogBytes = "blah".getBytes();
-        catalogResult.deploymentString = "blah";
-        catalogResult.expectedCatalogVersion = 3;
-        catalogResult.encodedDiffCommands = "diff";
-        catalogResult.invocationType = ProcedureInvocationType.REPLICATED;
-        catalogResult.originalTxnId = 12345678l;
-        catalogResult.originalUniqueId = 87654321l;
-        catalogResult.user = new AuthSystem.AuthDisabledUser();
-        m_ci.processFinishedCompilerWork(catalogResult).run();
-
-        ArgumentCaptor<Long> destinationCaptor =
-                ArgumentCaptor.forClass(Long.class);
-        ArgumentCaptor<Iv2InitiateTaskMessage> messageCaptor =
-                ArgumentCaptor.forClass(Iv2InitiateTaskMessage.class);
-        verify(m_messenger).send(destinationCaptor.capture(), messageCaptor.capture());
-        Iv2InitiateTaskMessage message = messageCaptor.getValue();
-        //assertFalse(boolValues.get(0)); // is admin
-        assertFalse(message.isReadOnly()); // readonly
-        assertFalse(message.isSinglePartition()); // single-part
-        //assertFalse(boolValues.get(3)); // every site
-        assertEquals("@UpdateApplicationCatalog", message.getStoredProcedureName());
-        assertEquals("diff", message.getStoredProcedureInvocation().getParameterAtIndex(0));
-        assertTrue(Arrays.equals("blah".getBytes(), (byte[]) message.getStoredProcedureInvocation().getParameterAtIndex(2)));
-        assertEquals(3, message.getStoredProcedureInvocation().getParameterAtIndex(3));
-        assertEquals("blah", message.getStoredProcedureInvocation().getParameterAtIndex(4));
-        assertEquals(ProcedureInvocationType.REPLICATED, message.getStoredProcedureInvocation().getType());
-        assertEquals(12345678l, message.getStoredProcedureInvocation().getOriginalTxnId());
-        assertEquals(87654321l, message.getStoredProcedureInvocation().getOriginalUniqueId());
-    }
-
-    @Test
     public void testUserProc() throws Exception {
         ByteBuffer msg = createMsg("hello", 1);
         StoredProcedureInvocation invocation =
@@ -504,7 +318,10 @@ public class TestClientInterface {
         ClientResponseImpl resp = m_ci.handleRead(msg, m_handler, m_cxn);
         assertNull(resp);
 
-        ByteBuffer b = responses.take();
+        DeferredSerialization ds = responsesDS.take();
+        ByteBuffer b = ByteBuffer.allocate(ds.getSerializedSize());
+        ds.serialize(b);
+
         resp = new ClientResponseImpl();
         b.position(4);
         resp.initFromBuffer(b);
@@ -537,13 +354,27 @@ public class TestClientInterface {
     }
 
     @Test
-    public void testLoadSinglePartTable() throws Exception {
+    public void testLoadSinglePartTableInsert() throws Exception {
         VoltTable table = new VoltTable(new ColumnInfo("i", VoltType.INTEGER));
         table.addRow(1);
 
         byte[] partitionParam = {0, 0, 0, 0, 0, 0, 0, 4};
-        ByteBuffer msg = createMsg("@LoadSinglepartitionTable", partitionParam, "a", table);
-        readAndCheck(msg, "@LoadSinglepartitionTable", partitionParam, false, true);
+        ByteBuffer msg = createMsg("@LoadSinglepartitionTable", partitionParam, "a", (byte) 0, table);
+        StoredProcedureInvocation invocation =
+                readAndCheck(msg, "@LoadSinglepartitionTable", partitionParam, false, true).getStoredProcedureInvocation();
+        assertEquals((byte) 0, invocation.getParameterAtIndex(2));
+    }
+
+    @Test
+    public void testLoadSinglePartTableUpsert() throws Exception {
+        VoltTable table = new VoltTable(new ColumnInfo("i", VoltType.INTEGER));
+        table.addRow(1);
+
+        byte[] partitionParam = {0, 0, 0, 0, 0, 0, 0, 4};
+        ByteBuffer msg = createMsg("@LoadSinglepartitionTable", partitionParam, "a", (byte) 1, table);
+        StoredProcedureInvocation invocation =
+                readAndCheck(msg, "@LoadSinglepartitionTable", partitionParam, false, true).getStoredProcedureInvocation();
+        assertEquals((byte) 1, invocation.getParameterAtIndex(2));
     }
 
     @Test
@@ -582,56 +413,6 @@ public class TestClientInterface {
     }
 
     @Test
-    public void testPausedModeAdHoc() throws IOException {
-        runPausedModeAdHoc(false);
-    }
-
-    @Test
-    public void testPausedModeAdHocAdmin() throws IOException {
-        when(m_handler.isAdmin()).thenReturn(true);
-        runPausedModeAdHoc(true);
-        when(m_handler.isAdmin()).thenReturn(false);
-    }
-
-    private void runPausedModeAdHoc(boolean isAdmin) throws IOException {
-        // pause the node
-        when(m_volt.getMode()).thenReturn(OperationMode.PAUSED);
-
-        responses.clear();
-        String query = "select * from A";
-        ByteBuffer msg = createMsg("@AdHoc", query);
-        ClientResponseImpl resp = m_ci.handleRead(msg, m_handler, m_cxn);
-        assertNull(resp);
-        // fake plan
-        AdHocPlannedStmtBatch plannedStmt =
-                AdHocPlannedStmtBatch.mockStatementBatch(0, query, null, new VoltType[] { }, null, -1, m_context.getCatalogHash());
-        plannedStmt.clientData = m_cxn;
-        m_ci.processFinishedCompilerWork(plannedStmt).run();
-        assertEquals(0, responses.size());
-
-        query = "insert into A values (10)";
-        msg = createMsg("@AdHoc", query);
-        resp = m_ci.handleRead(msg, m_handler, m_cxn);
-        assertNull(resp);
-        plannedStmt =
-                AdHocPlannedStmtBatch.mockStatementBatch(0, query, null, new VoltType[] { }, null, -1, m_context.getCatalogHash(), false, isAdmin);
-        plannedStmt.clientData = m_cxn;
-        m_ci.processFinishedCompilerWork(plannedStmt).run();
-        if (isAdmin) {
-            assertEquals(0, responses.size());
-        } else {
-            assertEquals(1, responses.size());
-            ByteBuffer buf = responses.remove();
-            resp = new ClientResponseImpl();
-            buf.position(4);
-            resp.initFromBuffer(buf);
-            assertEquals(ClientResponse.SERVER_UNAVAILABLE, resp.getStatus());
-        }
-
-        when(m_volt.getMode()).thenReturn(OperationMode.RUNNING);
-    }
-
-    @Test
     public void testInvalidProcedure() throws IOException {
         ByteBuffer msg = createMsg("hellooooo", 1);
         ClientResponseImpl resp = m_ci.handleRead(msg, m_handler, m_cxn);
@@ -648,15 +429,6 @@ public class TestClientInterface {
 
         msg = createMsg("@Resume");
         resp = m_ci.handleRead(msg, m_handler, m_cxn);
-        assertNotNull(resp);
-        assertEquals(ClientResponse.UNEXPECTED_FAILURE, resp.getStatus());
-    }
-
-    @Test
-    public void testRejectDupInvocation() throws IOException {
-        // by default, the mock initiator returns false for createTransaction()
-        ByteBuffer msg = createMsg(12345l, "hello", 1);
-        ClientResponseImpl resp = m_ci.handleRead(msg, m_handler, m_cxn);
         assertNotNull(resp);
         assertEquals(ClientResponse.UNEXPECTED_FAILURE, resp.getStatus());
     }
@@ -796,7 +568,7 @@ public class TestClientInterface {
         assertEquals(3, vt.getRowCount());
         assertEquals(VoltType.INTEGER, vt.getColumnType(1));
 
-        Set<Integer> partitions = new HashSet<Integer>(Arrays.asList( 0, 1, 2));
+        Set<Integer> partitions = new HashSet<>(Arrays.asList( 0, 1, 2));
         while (vt.advanceRow()) {
             int partition = TheHashinator.getPartitionForParameter(VoltType.INTEGER.getValue(), vt.getLong(1));
             assertTrue(partitions.remove(partition));

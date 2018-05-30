@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -35,8 +35,8 @@ import java.util.TreeMap;
 public class VoltXMLElement {
 
     public String name;
-    public final Map<String, String> attributes = new TreeMap<String, String>();
-    public final List<VoltXMLElement> children = new ArrayList<VoltXMLElement>();
+    public final Map<String, String> attributes = new TreeMap<>();
+    public final List<VoltXMLElement> children = new ArrayList<>();
 
     public VoltXMLElement(String  name) {
         this.name = name;
@@ -45,6 +45,13 @@ public class VoltXMLElement {
     public VoltXMLElement withValue(String key, String value) {
         attributes.put(key, value);
         return this;
+    }
+
+    public boolean hasValue(String key, String value) {
+        if (key == null || value == null) {
+            return false;
+        }
+        return value.equals(attributes.get(key));
     }
 
     /**
@@ -74,9 +81,63 @@ public class VoltXMLElement {
 
     @Override
     public String toString() {
+        /*
         StringBuilder sb = new StringBuilder();
         append(sb, 0);
         return sb.toString();
+        */
+        return toXML();
+    }
+
+    /**
+     * Convert VoltXML to more conventional XML.
+     *
+     * @return The XML.
+     */
+    public String toXML() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n");
+        toXML(sb, 0);
+        return sb.toString();
+    }
+
+    private String indentXML(String head, int indent, String tail) {
+        StringBuffer sb = new StringBuffer();
+        sb.append(head);
+        for (int idx = 0; idx < indent; idx += 1) {
+            sb.append(" ");
+        }
+        sb.append(tail);
+        return sb.toString();
+    }
+
+    private void toXML(StringBuilder sb, int indent) {
+        String elemIndent = indentXML("", indent, "");
+        sb.append(elemIndent)
+          .append("<")
+          .append(name);
+        String attrIndent = indentXML("\n", indent+name.length()+2, "");
+        String sep = " ";
+        for (Entry<String, String> e : attributes.entrySet()) {
+            sb.append(sep)
+              .append(e.getKey())
+              .append("=\"")
+              .append(e.getValue())
+              .append("\"");
+            sep = attrIndent;
+        }
+        if ( children.isEmpty() ) {
+            sb.append("/>\n");
+        } else {
+            sb.append(">\n");
+            for (VoltXMLElement e : children) {
+                e.toXML(sb, indent+2);
+            }
+            sb.append(elemIndent)
+              .append("</")
+              .append(name)
+              .append(">\n");
+        }
     }
 
     private String indentStr(int indent) {
@@ -122,7 +183,7 @@ public class VoltXMLElement {
      */
     public List<VoltXMLElement> findChildrenRecursively(String name)
     {
-        List<VoltXMLElement> retval = new ArrayList<VoltXMLElement>();
+        List<VoltXMLElement> retval = new ArrayList<>();
         for (VoltXMLElement vxe : children) {
             if (name.equals(vxe.name)) {
                 retval.add(vxe);
@@ -137,7 +198,7 @@ public class VoltXMLElement {
      */
     public List<VoltXMLElement> findChildren(String name)
     {
-        List<VoltXMLElement> retval = new ArrayList<VoltXMLElement>();
+        List<VoltXMLElement> retval = new ArrayList<>();
         for (VoltXMLElement vxe : children) {
             if (name.equals(vxe.name)) {
                 retval.add(vxe);
@@ -205,15 +266,15 @@ public class VoltXMLElement {
     static public class VoltXMLDiff
     {
         final String m_name;
-        List<VoltXMLElement> m_addedElements = new ArrayList<VoltXMLElement>();
-        List<VoltXMLElement> m_removedElements = new ArrayList<VoltXMLElement>();
-        Map<String, VoltXMLDiff> m_changedElements = new HashMap<String, VoltXMLDiff>();
-        Map<String, String> m_addedAttributes = new HashMap<String, String>();
-        Set<String> m_removedAttributes = new HashSet<String>();
-        Map<String, String> m_changedAttributes = new HashMap<String, String>();
+        List<VoltXMLElement> m_addedElements = new ArrayList<>();
+        List<VoltXMLElement> m_removedElements = new ArrayList<>();
+        Map<String, VoltXMLDiff> m_changedElements = new HashMap<>();
+        Map<String, String> m_addedAttributes = new HashMap<>();
+        Set<String> m_removedAttributes = new HashSet<>();
+        Map<String, String> m_changedAttributes = new HashMap<>();
         // To maintain the final order of elements, brute force it and
         // just write down the order of elements present in the 'after' state
-        SortedMap<String, Integer> m_elementOrder = new TreeMap<String, Integer>();
+        SortedMap<String, Integer> m_elementOrder = new TreeMap<>();
 
         // Takes the VoltXMLElement unique name
         public VoltXMLDiff(String name)
@@ -316,7 +377,7 @@ public class VoltXMLElement {
 
         // first, check the attributes
         Set<String> firstKeys = before.attributes.keySet();
-        Set<String> secondKeys = new HashSet<String>();
+        Set<String> secondKeys = new HashSet<>();
         secondKeys.addAll(after.attributes.keySet());
         // Do removed and changed attributes walking the first element's attributes
         for (String firstKey : firstKeys) {
@@ -339,15 +400,15 @@ public class VoltXMLElement {
         // Probably more efficient ways to do this, but brute force it for now
         // Would be helpful if the underlying children objects were Maps rather than
         // Lists.
-        Set<String> firstChildren = new HashSet<String>();
+        Set<String> firstChildren = new HashSet<>();
         for (VoltXMLElement child : before.children) {
             firstChildren.add(child.getUniqueName());
         }
-        Set<String> secondChildren = new HashSet<String>();
+        Set<String> secondChildren = new HashSet<>();
         for (VoltXMLElement child : after.children) {
             secondChildren.add(child.getUniqueName());
         }
-        Set<String> commonNames = new HashSet<String>();
+        Set<String> commonNames = new HashSet<>();
         for (VoltXMLElement firstChild : before.children) {
             if (!secondChildren.contains(firstChild.getUniqueName())) {
                 // Need to duplicate the
@@ -411,7 +472,7 @@ public class VoltXMLElement {
         // Reorder the children
         // yes, not efficient.  Revisit on performance pass
         assert(children.size() == diff.m_elementOrder.size());
-        List<VoltXMLElement> temp = new ArrayList<VoltXMLElement>();
+        List<VoltXMLElement> temp = new ArrayList<>();
         temp.addAll(children);
         for (VoltXMLElement child : temp) {
             String name = child.getUniqueName();
@@ -425,5 +486,55 @@ public class VoltXMLElement {
         }
 
         return true;
+    }
+
+    /**
+     * Recursively extract sub elements of a given name with matching attribute if it is not null.
+     * @param elementName element name to look for
+     * @param attrName optional attribute name to look for
+     * @param attrValue optional attribute value to look for
+     * @return output collection containing the matching sub elements
+     */
+    public List<VoltXMLElement> extractSubElements(String elementName, String attrName, String attrValue) {
+        assert(elementName != null);
+        assert((elementName != null && attrValue != null) || attrName == null);
+        List<VoltXMLElement> elements = new ArrayList<>();
+        extractSubElements(elementName, attrName, attrValue, elements);
+        return elements;
+    }
+
+    private void extractSubElements(String elementName, String attrName, String attrValue, List<VoltXMLElement> elements) {
+        if (elementName.equalsIgnoreCase(name)) {
+            if (attrName == null || attrValue.equals(attributes.get(attrName))) {
+                elements.add(this);
+            }
+        }
+        for (VoltXMLElement child : children) {
+            child.extractSubElements(elementName, attrName, attrValue, elements);
+        }
+    }
+
+    public String getStringAttribute(String key, String defval) {
+        String val = attributes.get(key);
+        if (val == null) {
+            val = defval;
+        }
+        return val;
+    }
+
+    public Boolean getBoolAttribute(String key, Boolean defval) {
+        String valstr = attributes.get(key);
+        if (valstr == null) {
+            return defval;
+        }
+        return Boolean.parseBoolean(valstr);
+    }
+
+    public Integer getIntAttribute(String key, Integer defval) {
+        String valstr = attributes.get(key);
+        if (valstr == null) {
+            return defval;
+        }
+        return(Integer.parseInt(valstr));
     }
 }

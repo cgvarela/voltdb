@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -37,6 +37,7 @@ import org.voltdb.expressions.SelectSubqueryExpression;
 import org.voltdb.expressions.TupleAddressExpression;
 import org.voltdb.expressions.TupleValueExpression;
 import org.voltdb.expressions.VectorValueExpression;
+import org.voltdb.expressions.WindowFunctionExpression;
 
 /**
  *
@@ -61,58 +62,90 @@ public enum ExpressionType {
         // left % right (both must be integer)
     OPERATOR_CAST                  (OperatorExpression.class,  7, "<cast>"),
         // explicitly cast left as right (right is integer in ValueType enum)
-    OPERATOR_NOT                   (OperatorExpression.class,  8, "NOT"),
+    OPERATOR_NOT                   (OperatorExpression.class,  8, "NOT", true),
         // logical not
-    OPERATOR_IS_NULL               (OperatorExpression.class,  9, "IS NULL"),
+    OPERATOR_IS_NULL               (OperatorExpression.class,  9, "IS NULL", true),
     // unary null evaluation
-    OPERATOR_EXISTS                (OperatorExpression.class, 18, "EXISTS"),
+    OPERATOR_EXISTS                (OperatorExpression.class, 18, "EXISTS", true),
+    // unary exists evaluation
+    // 19 is assigned to COMPARE_NOTDISTINCT, 20, 21 to CONJUNCTION_AND and CONJUNCTION_OR
+    OPERATOR_UNARY_MINUS           (OperatorExpression.class, 22, "UNARY MINUS", true),
     // unary exists evaluation
 
     // ----------------------------
     // Binary Comparison
     // ----------------------------
-    COMPARE_EQUAL                (ComparisonExpression.class, 10, "="),
+    COMPARE_EQUAL                (ComparisonExpression.class, 10, "=", true),
         // equal operator between left and right
-    COMPARE_NOTEQUAL             (ComparisonExpression.class, 11, "<>"),
+    COMPARE_NOTEQUAL             (ComparisonExpression.class, 11, "<>", true),
         // inequal operator between left and right
-    COMPARE_LESSTHAN             (ComparisonExpression.class, 12, "<"),
+    COMPARE_LESSTHAN             (ComparisonExpression.class, 12, "<", true),
         // less than operator between left and right
-    COMPARE_GREATERTHAN          (ComparisonExpression.class, 13, ">"),
+    COMPARE_GREATERTHAN          (ComparisonExpression.class, 13, ">", true),
         // greater than operator between left and right
-    COMPARE_LESSTHANOREQUALTO    (ComparisonExpression.class, 14, "<="),
+    COMPARE_LESSTHANOREQUALTO    (ComparisonExpression.class, 14, "<=", true),
         // less than equal operator between left and right
-    COMPARE_GREATERTHANOREQUALTO (ComparisonExpression.class, 15, ">="),
+    COMPARE_GREATERTHANOREQUALTO (ComparisonExpression.class, 15, ">=", true),
         // greater than equal operator between left and right
-    COMPARE_LIKE                 (ComparisonExpression.class, 16, "LIKE"),
+    COMPARE_LIKE                 (ComparisonExpression.class, 16, "LIKE", true),
         // LIKE operator (left LIKE right). both children must be string.
-    COMPARE_IN                   (InComparisonExpression.class, 17, "IN"),
+    COMPARE_IN                   (InComparisonExpression.class, 17, "IN", true),
         // IN operator. left IN right. right must be VectorValue
+    // value 18 is assigned to OPERATOR_EXISTS
+    COMPARE_NOTDISTINCT          (ComparisonExpression.class, 19, "IS NOT DISTINCT FROM", true),
+        // Not distinct operator between left and right
 
     // ----------------------------
     // Conjunction Operator
     // ----------------------------
-    CONJUNCTION_AND             (ConjunctionExpression.class, 20, "AND"),
-    CONJUNCTION_OR              (ConjunctionExpression.class, 21, "OR"),
+    CONJUNCTION_AND             (ConjunctionExpression.class, 20, "AND", true),
+    CONJUNCTION_OR              (ConjunctionExpression.class, 21, "OR", true),
+    // value 22 is assigned to OPERATOR_UNARY_MINUS
 
     // ----------------------------
     // Values
     // ----------------------------
-    VALUE_CONSTANT            (ConstantValueExpression.class, 30, "<constant>"),
-    VALUE_PARAMETER          (ParameterValueExpression.class, 31, "<parameter>"),
-    VALUE_TUPLE                  (TupleValueExpression.class, 32, "<column>"),
-    VALUE_TUPLE_ADDRESS        (TupleAddressExpression.class, 33, "<address>"),
-    VALUE_VECTOR                (VectorValueExpression.class, 35, "<vector>"),
-    VALUE_SCALAR                (ScalarValueExpression.class, 36, "<scalar>"),
+    VALUE_CONSTANT            (ConstantValueExpression.class, 30, "<constant>", true),
+    VALUE_PARAMETER          (ParameterValueExpression.class, 31, "<parameter>", true),
+    VALUE_TUPLE                  (TupleValueExpression.class, 32, "<column>", true),
+    VALUE_TUPLE_ADDRESS        (TupleAddressExpression.class, 33, "<address>", true),
+    VALUE_VECTOR                (VectorValueExpression.class, 35, "<vector>", true),
+    VALUE_SCALAR                (ScalarValueExpression.class, 36, "<scalar>", true),
 
     // ----------------------------
     // Aggregate
     // ----------------------------
-    AGGREGATE_COUNT               (AggregateExpression.class, 40, "COUNT"),
-    AGGREGATE_COUNT_STAR          (AggregateExpression.class, 41, "COUNT(*)"),
+    AGGREGATE_COUNT               (AggregateExpression.class, 40, "COUNT", true),
+    AGGREGATE_COUNT_STAR          (AggregateExpression.class, 41, "COUNT(*)", true),
     AGGREGATE_SUM                 (AggregateExpression.class, 42, "SUM"),
-    AGGREGATE_MIN                 (AggregateExpression.class, 43, "MIN"),
-    AGGREGATE_MAX                 (AggregateExpression.class, 44, "MAX"),
+    AGGREGATE_MIN                 (AggregateExpression.class, 43, "MIN", true),
+    AGGREGATE_MAX                 (AggregateExpression.class, 44, "MAX", true),
     AGGREGATE_AVG                 (AggregateExpression.class, 45, "AVG"),
+    AGGREGATE_APPROX_COUNT_DISTINCT(AggregateExpression.class, 46, "APPROX_COUNT_DISTINCT", true),
+    AGGREGATE_VALS_TO_HYPERLOGLOG (AggregateExpression.class, 47, "VALS_TO_HYPERLOGLOG"),
+    AGGREGATE_HYPERLOGLOGS_TO_CARD(AggregateExpression.class, 48, "HYPERLOGLOGS_TO_CARD"),
+    // ----------------------------
+    // Windowed Aggregates.  We need to treat these
+    // somewhat differently than the non-windowed
+    // aggregates.  For example, AGGREGATE_MAX is a
+    // different kind of thing from AGGREGATE_WINDOWED_MAX.
+    // For one thing, windowed aggregates have class WindowFunctionExpression.class,
+    // and non-windowed aggregates have class AggregateExpression.class.
+    //
+    // We only support RANK and DENSE_RANK now.  But when we support different
+    // aggregate functions we will want to keep them as
+    // separate ExpressionType enumerals.
+    // ----------------------------
+    AGGREGATE_WINDOWED_RANK       (WindowFunctionExpression.class,  70, "RANK"),
+    AGGREGATE_WINDOWED_DENSE_RANK (WindowFunctionExpression.class,  71, "DENSE_RANK"),
+    AGGREGATE_WINDOWED_COUNT      (WindowFunctionExpression.class,  72, "COUNT"),
+    AGGREGATE_WINDOWED_MAX        (WindowFunctionExpression.class,  73, "MAX"),
+    AGGREGATE_WINDOWED_MIN        (WindowFunctionExpression.class,  74, "MIN"),
+    AGGREGATE_WINDOWED_SUM        (WindowFunctionExpression.class,  75, "SUM"),
+    // No support for PERCENT_RANK yet.
+    // AGGREGATE_WINDOWED_PERCENT_RANK(WindowFunctionExpression.class, 73, "PERCENT_RANK"),
+    // No support for CUME_DIST yet.
+    // AGGREGATE_WINDOWED_CUME_DIST  (WindowFunctionExpression.class,  74, "CUME_DIST"),
 
     // ----------------------------
     // Function
@@ -137,18 +170,26 @@ public enum ExpressionType {
     // Subquery
     // -----------------------------
     ROW_SUBQUERY                 (RowSubqueryExpression.class, 400, "<row subquery>"),
-    SELECT_SUBQUERY              (SelectSubqueryExpression.class, 401, "<select subquery>"),
-;
+    SELECT_SUBQUERY              (SelectSubqueryExpression.class, 401, "<select subquery>")
+    ;
 
     private final int m_value;
     private final String m_symbol;
     private final Class<? extends AbstractExpression> m_expressionClass;
+    // Does this expression type have the risk to fail a DDL.
+    private boolean m_isSafeForDDL;
 
     ExpressionType(Class<? extends AbstractExpression> expressionClass,
                    int val, String symbol) {
+        this(expressionClass, val, symbol, false);
+    }
+
+    ExpressionType(Class<? extends AbstractExpression> expressionClass,
+                   int val, String symbol, boolean isSafeForDDL) {
         m_value = val;
         m_symbol = symbol;
         m_expressionClass = expressionClass;
+        m_isSafeForDDL = isSafeForDDL;
     }
 
     public Class<? extends AbstractExpression> getExpressionClass() {
@@ -156,9 +197,9 @@ public enum ExpressionType {
     }
 
     private static final Map<Integer, ExpressionType> idx_lookup =
-        new HashMap<Integer, ExpressionType>();
+        new HashMap<>();
     private static final Map<String, ExpressionType> name_lookup =
-        new HashMap<String, ExpressionType>();
+        new HashMap<>();
 
     static {
         for (ExpressionType vt : EnumSet.allOf(ExpressionType.class)) {
@@ -178,6 +219,7 @@ public enum ExpressionType {
         ExpressionType.name_lookup.put("add", ExpressionType.OPERATOR_PLUS);
         ExpressionType.name_lookup.put("sub", ExpressionType.OPERATOR_MINUS);
         ExpressionType.name_lookup.put("subtract", ExpressionType.OPERATOR_MINUS);
+        ExpressionType.name_lookup.put("negate", ExpressionType.OPERATOR_UNARY_MINUS);
     }
 
     public int getValue() {
@@ -200,5 +242,49 @@ public enum ExpressionType {
 
     public String symbol() {
         return m_symbol;
+    }
+
+    public boolean isAggregateExpression() {
+        return getExpressionClass() == AggregateExpression.class;
+    }
+
+    /**
+     * Return true iff this expression type is safe for
+     * creating materialized views on non-empty tables.
+     */
+    public boolean isSafeForDDL() {
+        return m_isSafeForDDL;
+    }
+    /**
+     * When generating an output schema for a projection node we need to
+     * know if the preceeding aggregate expression is going to create a
+     * column's value.  This is true when the expression is an aggregate
+     * or a windowed aggregate.  We can't just make the windowed aggregate
+     * operations have class AggregateExpression.class because we will need
+     * the class to create WindowFunctionExpression objects, and these have a
+     * different representation than other aggregate expression objects.
+     * For example, they have a PartitionBy list and an OrderBy list.
+     *
+     * @return true if an expression's value is generated by an early plan node.
+     */
+    public boolean isGeneratedAggregateExpression() {
+        return (getExpressionClass() == AggregateExpression.class)
+                || (getExpressionClass() == WindowFunctionExpression.class);
+    }
+
+    public boolean isNullary() {
+        return this == ExpressionType.AGGREGATE_COUNT_STAR;
+    }
+
+    private static Map<ExpressionType, String> m_windowedAggName;
+
+    static {
+        m_windowedAggName = new HashMap<>();
+        m_windowedAggName.put(ExpressionType.AGGREGATE_WINDOWED_RANK, "RANK");
+        m_windowedAggName.put(ExpressionType.AGGREGATE_WINDOWED_DENSE_RANK, "DENSE_RANK");
+        m_windowedAggName.put(ExpressionType.AGGREGATE_WINDOWED_COUNT, "COUNT");
+        m_windowedAggName.put(ExpressionType.AGGREGATE_MAX, "MAX");
+        m_windowedAggName.put(ExpressionType.AGGREGATE_MIN, "MIN");
+        m_windowedAggName.put(ExpressionType.AGGREGATE_SUM, "SUM");
     }
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -25,6 +25,7 @@ import java.net.UnknownHostException;
 import java.util.List;
 
 import org.voltdb.client.VoltBulkLoader.BulkLoaderFailureCallBack;
+import org.voltdb.client.VoltBulkLoader.BulkLoaderSuccessCallback;
 import org.voltdb.client.VoltBulkLoader.VoltBulkLoader;
 
 /**
@@ -111,6 +112,48 @@ public interface Client {
     throws IOException, NoConnectionsException;
 
     /**
+     * <p>Synchronously invoke a procedure with timeout. Blocks until a result is available. A {@link ProcCallException}
+     * is thrown if the response is anything other then success.</p>
+     *
+     * <p>WARNING: Use of a queryTimeout value that is greater than the global timeout value for your VoltDB configuration
+     * will temporarily override that safeguard. Currently, non-privileged users (requiring only SQLREAD permissions)
+     * can invoke this method, potentially degrading system performance with an uncontrolled long-running procedure.</p>
+     *
+     * @param queryTimeout query batch timeout setting in milliseconds of queries in a batch for read only procedures.
+     * @param procName <code>class</code> name (not qualified by package) of the procedure to execute.
+     * @param parameters vararg list of procedure's parameter values.
+     * @return {@link ClientResponse} instance of procedure call results.
+     * @throws ProcCallException on any VoltDB specific failure.
+     * @throws NoConnectionsException if this {@link Client} instance is not connected to any servers.
+     * @throws IOException if there is a Java network or connection problem.
+     */
+    public ClientResponse callProcedureWithTimeout(int queryTimeout, String procName, Object... parameters)
+    throws IOException, NoConnectionsException, ProcCallException;
+
+    /**
+     * <p>Asynchronously invoke a replicated procedure with timeout, by providing a callback that will be invoked by
+     * the single thread backing the client instance when the procedure invocation receives a response.
+     * See the {@link Client} class documentation for information on the negative performance impact of slow or
+     * blocking callbacks. If there is backpressure
+     * this call will block until the invocation is queued. If configureBlocking(false) is invoked
+     * then it will return immediately. Check the return value to determine if queueing actually took place.</p>
+     *
+     * <p>WARNING: Use of a queryTimeout value that is greater than the global timeout value for your VoltDB configuration
+     * will temporarily override that safeguard. Currently, non-privileged users (requiring only SQLREAD permissions)
+     * can invoke this method, potentially degrading system performance with an uncontrolled long-running procedure.</p>
+     *
+     * @param callback {@link ProcedureCallback} that will be invoked with procedure results.
+     * @param queryTimeout query batch timeout setting in milliseconds of queries in a batch for read only procedures.
+     * @param procName class name (not qualified by package) of the procedure to execute.
+     * @param parameters vararg list of procedure's parameter values.
+     * @return <code>true</code> if the procedure was queued and <code>false</code> otherwise.
+     * @throws NoConnectionsException if this {@link Client} instance is not connected to any servers.
+     * @throws IOException if there is a Java network or connection problem.
+     */
+    public boolean callProcedureWithTimeout(ProcedureCallback callback, int queryTimeout, String procName, Object... parameters)
+    throws IOException, NoConnectionsException;
+
+    /**
      * <p>Asynchronously invoke a replicated procedure. If there is backpressure
      * this call will block until the invocation is queued. If configureBlocking(false) is invoked
      * then it will return immediately. Check the return value to determine if queuing actually took place.</p>
@@ -156,9 +199,13 @@ public interface Client {
      * result is available. A {@link ProcCallException} is thrown if the
      * response is anything other then success.</p>
      *
+     * <p>Deprecated to be removed in 8.0. Note, you can still call the UpdateApplicationCatalog
+     * system procedure directly using the {@link #callProcedure(String, Object...)} family of
+     * methods.</p>
+     *
      * <p>This method is a convenience method that is equivalent to reading the catalog
      * file into a byte array in Java code, then calling {@link #callProcedure(String, Object...)}
-     * with "@UpdateApplicationCatalog" as the procedure name, followed by they bytes of the catalog
+     * with "@UpdateApplicationCatalog" as the procedure name, followed by the bytes of the catalog
      * and the string value of the deployment file.</p>
      *
      * @param catalogPath Path to the catalog jar file.
@@ -168,6 +215,7 @@ public interface Client {
      * @throws NoConnectionsException if this {@link Client} instance is not connected to any servers.
      * @throws ProcCallException on any VoltDB specific failure.
      */
+    @Deprecated
     public ClientResponse updateApplicationCatalog(File catalogPath, File deploymentPath)
     throws IOException, NoConnectionsException, ProcCallException;
 
@@ -178,10 +226,14 @@ public interface Client {
      * not be queued. Check the return value to determine if queuing actually
      * took place.</p>
      *
+     * <p>Deprecated to be removed in 8.0. Note, you can still call the UpdateApplicationCatalog
+     * system procedure directly using the {@link #callProcedure(String, Object...)} family of
+     * methods.</p>
+     *
      * <p>This method is a convenience method that is equivalent to reading the catalog
      * file into a byte array in Java code, then calling
      * {@link #callProcedure(ProcedureCallback, String, Object...)} with
-     * "@UpdateApplicationCatalog" as the procedure name, followed by they bytes of the catalog
+     * "@UpdateApplicationCatalog" as the procedure name, followed by the bytes of the catalog
      * and the string value of the deployment file.</p>
      *
      * @param callback ProcedureCallback that will be invoked with procedure results.
@@ -191,6 +243,7 @@ public interface Client {
      * @throws IOException If the files cannot be serialized or if there is a Java network error.
      * @throws NoConnectionsException if this {@link Client} instance is not connected to any servers.
      */
+    @Deprecated
     public boolean updateApplicationCatalog(ProcedureCallback callback,
                                             File catalogPath,
                                             File deploymentPath)
@@ -341,6 +394,41 @@ public interface Client {
     public List<InetSocketAddress> getConnectedHostList();
 
     /**
+     * <p>Tell whether Client has turned on the auto-reconnect feature. If it is on,
+     * Client would pause instead of stop when all connections to the server are lost,
+     * and would resume after the connection is restored.
+     * @return true if the client wants to use auto-reconnect feature.</p>
+     */
+    public boolean isAutoReconnectEnabled();
+
+    /**
+     * <p>Write a single line of comma separated values to the file specified.
+     * Used mainly for collecting results from benchmarks.</p>
+     *
+     * <p>The format of this output is subject to change between versions</p>
+     *
+     * <p>Format:
+     * <ol>
+     * <li>Timestamp (ms) of creation of the given {@link ClientStats} instance, stats.</li>
+     * <li>Duration from first procedure call within the given {@link ClientStats} instance
+     *    until this call in ms.</li>
+     * <li>1-percentile round trip latency estimate in ms.</li>
+     * <li>Max measure round trip latency in ms.</li>
+     * <li>95-percentile round trip latency estimate in ms.</li>
+     * <li>99-percentile round trip latency estimate in ms.</li>
+     * <li>99.9-percentile round trip latency estimate in ms.</li>
+     * <li>99.99-percentile round trip latency estimate in ms.</li>
+     * <li>99.999-percentile round trip latency estimate in ms.</li>
+     * </ol>
+     *
+     * @param statsRowName give the client stats row an identifiable name.
+     * @param stats {@link ClientStats} instance with relevant stats.
+     * @param path Path to write to, passed to {@link FileWriter#FileWriter(String)}.
+     * @throws IOException on any file write error.
+     */
+    public void writeSummaryCSV(String statsRowName, ClientStats stats, String path) throws IOException;
+
+    /**
      * <p>Write a single line of comma separated values to the file specified.
      * Used mainly for collecting results from benchmarks.</p>
      *
@@ -373,9 +461,126 @@ public interface Client {
      *
      * @param tableName Name of table that bulk inserts are to be applied to.
      * @param maxBatchSize Batch size to collect for the table before pushing a bulk insert.
-     * @param blfcb Callback procedure used for notification of failed inserts.
+     * @param upsert set to true if want upsert instead of insert
+     * @param failureCallback Callback procedure used for notification any failures.
      * @return instance of VoltBulkLoader
      * @throws Exception if tableName can't be found in the catalog.
      */
-    public VoltBulkLoader getNewBulkLoader(String tableName, int maxBatchSize, BulkLoaderFailureCallBack blfcb) throws Exception;
+    public VoltBulkLoader getNewBulkLoader(String tableName, int maxBatchSize, boolean upsert, BulkLoaderFailureCallBack failureCallback) throws Exception;
+    public VoltBulkLoader getNewBulkLoader(String tableName, int maxBatchSize, BulkLoaderFailureCallBack failureCallback) throws Exception;
+
+    /**
+     * <p>Creates a new instance of a VoltBulkLoader that is bound to this Client.
+     * Multiple instances of a VoltBulkLoader created by a single Client will share some
+     * resources, particularly if they are inserting into the same table.</p>
+     *
+     * @param tableName Name of table that bulk inserts are to be applied to.
+     * @param maxBatchSize Batch size to collect for the table before pushing a bulk insert.
+     * @param upsertMode set to true if want upsert instead of insert
+     * @param failureCallback Callback procedure used for notification any failures.
+     * @param successCallback Callback for notifications on successful load operations.
+     * @return instance of VoltBulkLoader
+     * @throws Exception if tableName can't be found in the catalog.
+     */
+    public VoltBulkLoader getNewBulkLoader(String tableName, int maxBatchSize, boolean upsertMode, BulkLoaderFailureCallBack failureCallback, BulkLoaderSuccessCallback successCallback) throws Exception;
+
+    /**
+     * <p>
+     * The method uses system procedure <strong>@GetPartitionKeys</strong> to get a set of partition values and then execute the stored procedure
+     * one partition at a time, and return an aggregated response. Blocks until results are available.
+     * </p><p>
+     * The set of partition values is cached to avoid repeated requests to fetch them. However the database partitions may be changed. The cached set of partition values will
+     * be updated when the client affinity feature {@link ClientConfig#setClientAffinity(boolean)} is enabled and database cluster topology is updated.
+     * If the client affinity is not enabled, the cached set of partition values will be synchronized with the database if the cached set is more than 1 second old. The database partitions are usually pretty static.
+     * But when the cached set of partition values is out sync with the database, a procedure execution may be routed to a partition zero time or multiple times, exactly once per partition will not be guaranteed.
+     * </p><p>There may be undesirable impact on latency and throughput as a result of running a multi-partition procedure. This is particularly true for longer running procedures.
+     * Using multiple, smaller procedures can also help reducing latency and increasing throughput, for queries that modify large volumes of data, such as large deletes. For example, multiple smaller single partition procedures are
+     * particularly useful to age out large stale data where strong global consistency is not required.
+     * </p><p>
+     * When creating a single-partitioned procedure, you can use <strong>PARAMETER</strong> clause to specify the partitioning parameter which is used to determine the target partition.
+     * The <strong>PARAMETER</strong> should not be specified in the stored procedure used in this call since the stored procedure will be executed on every partition. If you only want to
+     * execute the procedure in the partition as designated with <strong>PARAMETER</strong>, use {@link #callProcedure(String, Object...)} instead.
+     *
+     * When creating a class stored procedure, the first argument in the procedure's run method must be the partition key, which matches the partition column type, followed by the
+     * parameters as declared in the procedure. The argument partition key, not part of procedure's parameters,  is assigned during the iteration of the partition set.
+     * </p><p>
+     * Example: A stored procedure with a parameter of long type and partition column of string type
+     *</P><pre>
+     *   CREATE TABLE tableWithStringPartition (id bigint NOT NULL,value_string varchar(50) NOT NULL,
+     *                                          value1 bigint NOT NULL,value2 bigint NOT NULL);
+     *   PARTITION TABLE tableWithStringPartition ON COLUMN value_string;
+     *   CREATE PROCEDURE FROM CLASS example.Everywhere;
+     *   PARTITION PROCEDURE Everywhere ON TABLE tableWithStringPartition COLUMN value_string;
+     * </pre><pre>
+     *    public class Everywhere extends VoltProcedure {
+     *         public final SQLStmt stmt = new SQLStmt("SELECT count(*) FROM tableWithStringPartition where value1 &gt; ?;");
+     *         public VoltTable[] run(String partitionKey, long value1) {
+     *              voltQueueSQL(stmt, value1);
+     *              return voltExecuteSQL(true);
+     *         }
+     *    }
+     * </pre><p>
+     * The execution of the stored procedure may fail on one or more partitions. Thus check the status of the response on every partition.
+     * </p>
+     * @param procedureName <code>class</code> name (not qualified by package) of the partitioned java procedure to execute.
+     * @param params  vararg list of procedure's parameter values.
+     * @return {@link ClientResponseWithPartitionKey} instances of procedure call results.
+     * @throws ProcCallException on any VoltDB specific failure.
+     * @throws NoConnectionsException if this {@link Client} instance is not connected to any servers.
+     * @throws IOException if there is a Java network or connection problem.
+     */
+    public ClientResponseWithPartitionKey[] callAllPartitionProcedure(String procedureName, Object... params)
+            throws IOException, NoConnectionsException, ProcCallException;
+
+    /**
+     * <p>
+     * The method uses system procedure <strong>@GetPartitionKeys</strong> to get a set of partition values which are used to reach every partition, and then asynchronously
+     * executes the stored procedure across partitions. When results return from all partitions, the provided callback will be invoked.
+     * If there is backpressure, a call to a partition will block until the invocation on the partition is queued. If configureBlocking(false) is invoked
+     * then the execution on the partition will return immediately. Check the return values to determine if queueing actually took place on each partition.
+     * </p><p>
+     * The set of partition values is cached to avoid repeated requests to fetch them. However the database partitions may be changed. The cached set of partition values will
+     * be updated when the client affinity feature {@link ClientConfig#setClientAffinity(boolean)} is enabled and database cluster topology is updated.
+     * If the client affinity is not enabled, the cached set of partition values will be synchronized with the database if the cached set is more than 1 second old. The database partitions are usually pretty static.
+     * But when the cached set of partition values is out sync with the database, a procedure execution may be routed to a partition zero time or multiple times, exactly once per partition will not be guaranteed.
+     * </p><p>
+     * There may be undesirable impact on latency and throughput as a result of running a multi-partition procedure. This is particularly true for longer running procedures.
+     * Using multiple, smaller procedures can also help reducing latency and increasing throughput, for queries that modify large volumes of data, such as large deletes. For example, multiple smaller single partition procedures are
+     * particularly useful to age out large stale data where strong global consistency is not required.
+     * </p><p>
+     * When creating a single-partitioned procedure, you can use <strong>PARAMETER</strong> clause to specify the partitioning parameter which is used to determine the target partition.
+     * The <strong>PARAMETER</strong> should not be specified in the stored procedure used in this call since the stored procedure will be executed on every partition. If you only want to
+     * execute the procedure in the partition as designated with <strong>PARAMETER</strong>, use {@link #callProcedure(ProcedureCallback, String, Object...)} instead.
+     *
+     * When creating a class stored procedure, the first argument in the procedure's run method must be the partition key, which matches the partition column type, followed by the
+     * parameters as declared in the procedure. The argument partition key, not part of procedure's parameters,  is assigned during the iteration of the partition set.
+     * </P><p>
+     * Example: A stored procedure with a parameter of long type and partition column of string type
+     * </p><pre>
+     *   CREATE TABLE tableWithStringPartition (id bigint NOT NULL,value_string varchar(50) NOT NULL,
+     *                                          value1 bigint NOT NULL,value2 bigint NOT NULL);
+     *   PARTITION TABLE tableWithStringPartition ON COLUMN value_string;
+     *   CREATE PROCEDURE FROM CLASS example.Everywhere;
+     *   PARTITION PROCEDURE Everywhere ON TABLE tableWithStringPartition COLUMN value_string;
+     * </pre><pre>
+     *    public class Everywhere extends VoltProcedure {
+     *         public final SQLStmt stmt = new SQLStmt("SELECT count(*) FROM tableWithStringPartition where value1 &gt; ?;");
+     *         public VoltTable[] run(String partitionKey, long value1) {
+     *              voltQueueSQL(stmt, value1);
+     *              return voltExecuteSQL(true);
+     *         }
+     *    }
+     * </pre><p>
+     * The execution of the stored procedure may fail on one or more partitions. Thus check the status of the response on every partition.
+     * </p>
+     * @param callback {@link AllPartitionProcedureCallback} that will be invoked with procedure results.
+     * @param procedureName class name (not qualified by package) of the partitioned java procedure to execute.
+     * @param params  vararg list of procedure's parameter values.
+     * @return <code>false</code> if the procedures on all partition are not queued and <code>true</code> otherwise.
+     * @throws NoConnectionsException if this {@link Client} instance is not connected to any servers.
+     * @throws IOException if there is a Java network or connection problem.
+     * @throws ProcCallException on any VoltDB specific failure.
+     */
+    public boolean callAllPartitionProcedure(AllPartitionProcedureCallback callback, String procedureName, Object... params)
+            throws IOException, NoConnectionsException, ProcCallException;
 }

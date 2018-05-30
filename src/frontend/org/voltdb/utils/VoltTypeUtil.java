@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -285,22 +285,6 @@ public abstract class VoltTypeUtil {
         return (ret);
     }
 
-    public static long getHashableLongFromObject(Object obj) {
-        if (obj == null || VoltType.isNullVoltType(obj)) {
-            return 0;
-        } else if (obj instanceof Long) {
-            return ((Long) obj).longValue();
-        } else if (obj instanceof Integer) {
-            return ((Integer)obj).intValue();
-        } else if (obj instanceof Short) {
-            return ((Short)obj).shortValue();
-        } else if (obj instanceof Byte) {
-            return ((Byte)obj).byteValue();
-        } else {
-            throw new RuntimeException(obj + " cannot be casted to a long");
-        }
-    }
-
     public static java.sql.Timestamp getSqlTimestampFromMicrosSinceEpoch(long timestamp) {
         java.sql.Timestamp result;
 
@@ -355,5 +339,23 @@ public abstract class VoltTypeUtil {
             }
             return value;
         }
+    }
+
+    /**
+     * If the type is NUMERIC from hsqldb, VoltDB has to decide its real type.
+     * It's either INTEGER or DECIMAL according to the SQL Standard.
+     * Thanks for Hsqldb 1.9, FLOAT literal values have been handled well with E sign.
+     * @param vt
+     * @param value
+     * @return
+     */
+    public static VoltType getNumericLiteralType(VoltType vt, String value) {
+        try {
+            Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            // Our DECIMAL may not be bigger/smaller enough to store the constant value
+            return VoltType.DECIMAL;
+        }
+        return vt;
     }
 }

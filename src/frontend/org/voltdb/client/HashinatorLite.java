@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,16 +20,13 @@ package org.voltdb.client;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.zip.InflaterOutputStream;
 
 import org.apache.cassandra_voltpatches.MurmurHash3;
 import org.voltcore.utils.Bits;
 import org.voltcore.utils.Pair;
-import org.voltdb.ParameterConverter;
 import org.voltdb.VoltType;
 import org.voltdb.VoltTypeException;
-import org.voltdb.common.Constants;
 
 import com.google_voltpatches.common.base.Preconditions;
 
@@ -42,17 +39,6 @@ import com.google_voltpatches.common.base.Preconditions;
  *
  */
 public class HashinatorLite {
-
-    public static enum HashinatorLiteType {
-        LEGACY(0),
-        ELASTIC(1);
-
-        public final int typeId;
-
-        private HashinatorLiteType(int typeId) {
-            this.typeId = typeId;
-        }
-    };
 
     public static byte[] getLegacyConfigureBytes(int catalogPartitionCount) {
         ByteBuffer buf = ByteBuffer.allocate(4);
@@ -71,31 +57,18 @@ public class HashinatorLite {
     private long m_etokens = 0;
     private int m_etokenCount;
 
-    private final HashinatorLiteType m_type;
-
-    public HashinatorLiteType getType() {
-        return m_type;
-    }
-
     /**
      * Initialize TheHashinator with the specified implementation class and configuration.
      * The starting version number will be 0.
      */
-    public HashinatorLite(HashinatorLiteType type, byte configBytes[], boolean cooked) {
-        m_type = type;
-
-        if (type == HashinatorLiteType.ELASTIC) {
-            Pair<Long, Integer> p = (cooked ? updateCooked(configBytes) : updateRaw(configBytes));
-            m_etokens = p.getFirst();
-            m_etokenCount = p.getSecond();
-        }
-        else {
-            catalogPartitionCount = ByteBuffer.wrap(configBytes).getInt();
-        }
+    public HashinatorLite( byte configBytes[], boolean cooked) {
+        Pair<Long, Integer> p = (cooked ? updateCooked(configBytes) : updateRaw(configBytes));
+        m_etokens = p.getFirst();
+        m_etokenCount = p.getSecond();
     }
 
     public HashinatorLite(int numPartitions) {
-        this(HashinatorLiteType.LEGACY, getLegacyConfigureBytes(numPartitions), false);
+        this(getLegacyConfigureBytes(numPartitions), false);
     }
 
     @Override
@@ -189,23 +162,12 @@ public class HashinatorLite {
      * distributed.
      */
     int hashinateLong(long value) {
-        if (m_type.equals(HashinatorLiteType.ELASTIC)) {
-            //Elastic
-            if (value == Long.MIN_VALUE) {
-                return 0;
-            }
-
-            return partitionForToken(MurmurHash3.hash3_x64_128(value));
-        } else {
-            // special case this hard to hash value to 0 (in both c++ and java)
-            if (value == Long.MIN_VALUE) {
-                return 0;
-            }
-
-            // hash the same way c++ does
-            int index = (int) (value ^ (value >>> 32));
-            return java.lang.Math.abs(index % catalogPartitionCount);
+        //Elastic
+        if (value == Long.MIN_VALUE) {
+            return 0;
         }
+
+        return partitionForToken(MurmurHash3.hash3_x64_128(value));
     }
 
     /**
@@ -226,24 +188,16 @@ public class HashinatorLite {
      * @return A value between 0 and partitionCount-1, hopefully pretty evenly
      * distributed.
      */
-    int hashinateBytes(byte[] bytes) {
+    private int hashinateBytes(Object obj) {
+        byte[] bytes = VoltType.valueToBytes(obj);
         if (bytes == null) {
             return 0;
         }
 
-        if (m_type.equals(HashinatorLiteType.ELASTIC)) {
-            ByteBuffer buf = ByteBuffer.wrap(bytes);
-            final int hash = MurmurHash3.hash3_x64_128(buf, 0, bytes.length, 0);
-            long token = getTokenPtr(hash);
-            return Bits.unsafe.getInt(token + 4);
-        } else {
-            int hashCode = 0;
-            int offset = 0;
-            for (int ii = 0; ii < bytes.length; ii++) {
-                hashCode = 31 * hashCode + bytes[offset++];
-            }
-            return java.lang.Math.abs(hashCode % catalogPartitionCount);
-        }
+        ByteBuffer buf = ByteBuffer.wrap(bytes);
+        final int hash = MurmurHash3.hash3_x64_128(buf, 0, bytes.length, 0);
+        long token = getTokenPtr(hash);
+        return Bits.unsafe.getInt(token + 4);
     }
 
     private long getTokenPtr(int hash) {
@@ -269,100 +223,8 @@ public class HashinatorLite {
     /**
      * Given an object, map it to a partition. DON'T EVER MAKE ME PUBLIC
      */
-    int hashToPartition(VoltType type, Object obj) {
-        if (m_type.equals(HashinatorLiteType.ELASTIC)) {
-            return hashinateBytes(valueToBytes(obj));
-        }
-        // Annoying, legacy hashes numbers and bytes differently, need to preserve that.
-        if (obj == null || VoltType.isNullVoltType(obj)) {
-            return 0;
-        } else if (obj instanceof Long) {
-            long value = ((Long) obj).longValue();
-            return hashinateLong(value);
-        } else if (obj instanceof Integer) {
-            long value = ((Integer) obj).intValue();
-            return hashinateLong(value);
-        } else if (obj instanceof Short) {
-            long value = ((Short) obj).shortValue();
-            return hashinateLong(value);
-        } else if (obj instanceof Byte) {
-            long value = ((Byte) obj).byteValue();
-            return hashinateLong(value);
-        } else if (obj.getClass() == byte[].class) {
-            obj = bytesToValue(type, (byte[]) obj);
-            return hashinateBytes(valueToBytes(obj));
-        }
-
-        return hashinateBytes(valueToBytes(obj));
-    }
-
-    /**
-     * Converts the object into bytes for hashing.
-     * @param obj
-     * @return null if the obj is null or is a Volt null type.
-     */
-    public static byte[] valueToBytes(Object obj) {
-        long value = 0;
-        byte[] retval = null;
-
-        if (VoltType.isNullVoltType(obj)) {
-            return null;
-        } else if (obj instanceof Long) {
-            value = ((Long) obj).longValue();
-        } else if (obj instanceof String ) {
-            retval = ((String) obj).getBytes(Constants.UTF8ENCODING);
-        } else if (obj instanceof Integer) {
-            value = ((Integer)obj).intValue();
-        } else if (obj instanceof Short) {
-            value = ((Short)obj).shortValue();
-        } else if (obj instanceof Byte) {
-            value = ((Byte)obj).byteValue();
-        } else if (obj instanceof byte[]) {
-            retval = (byte[]) obj;
-        }
-
-        if (retval == null) {
-            ByteBuffer buf = ByteBuffer.allocate(8);
-            buf.order(ByteOrder.LITTLE_ENDIAN);
-            buf.putLong(value);
-            retval = buf.array();
-        }
-
-        return retval;
-    }
-
-    /**
-     * Converts a byte array with type back to the original partition value.
-     * This is the inverse of {@see TheHashinator#valueToBytes(Object)}.
-     * @param type VoltType of partition parameter.
-     * @param value Byte array representation of partition parameter.
-     * @return Java object of the correct type.
-     */
-    protected static Object bytesToValue(VoltType type, byte[] value) {
-        if ((type == VoltType.NULL) || (value == null)) {
-            return null;
-        }
-
-        ByteBuffer buf = ByteBuffer.wrap(value);
-        buf.order(ByteOrder.LITTLE_ENDIAN);
-
-        switch (type) {
-        case BIGINT:
-            return buf.getLong();
-        case STRING:
-            return new String(value, Constants.UTF8ENCODING);
-        case INTEGER:
-            return buf.getInt();
-        case SMALLINT:
-            return buf.getShort();
-        case TINYINT:
-            return buf.get();
-        case VARBINARY:
-            return value;
-        default:
-            throw new RuntimeException(
-                    "TheHashinator#bytesToValue failed to convert a non-partitionable type.");
-        }
+    private int hashToPartition(VoltType type, Object obj) {
+        return hashinateBytes(obj);
     }
 
     /**
@@ -376,9 +238,9 @@ public class HashinatorLite {
      * @return The partition best set up to execute the procedure.
      * @throws VoltTypeException
      */
-    public int getHashedPartitionForParameter(int partitionValueType, Object partitionValue)
+    public int getHashedPartitionForParameter(int partitionParameterType, Object partitionValue)
             throws VoltTypeException {
-        final VoltType partitionParamType = VoltType.get((byte) partitionValueType);
+        final VoltType partitionParamType = VoltType.get((byte) partitionParameterType);
 
         // Special cases:
         // 1) if the user supplied a string for a number column,
@@ -387,28 +249,25 @@ public class HashinatorLite {
         // requiring the loader to know precise the schema.
         // 2) For legacy hashinators, if we have a numeric column but the param is in a byte
         // array, convert the byte array back to the numeric value
-        if (partitionValue != null && partitionParamType.isPartitionableNumber()) {
+        if (partitionValue != null && partitionParamType.isAnyIntegerType()) {
             if (partitionValue.getClass() == String.class) {
-                {
-                    Object tempParam = ParameterConverter.stringToLong(
-                            partitionValue,
-                            partitionParamType.classFromType());
-                    // Just in case someone managed to feed us a non integer
-                    if (tempParam != null) {
-                        partitionValue = tempParam;
-                    }
+                try {
+                    partitionValue = Long.parseLong((String) partitionValue);
+                }
+                catch (NumberFormatException nfe) {
+                    throw new VoltTypeException(
+                            "getHashedPartitionForParameter: Unable to convert string " +
+                                    ((String) partitionValue) + " to "  +
+                                    partitionParamType.getMostCompatibleJavaTypeName() +
+                                    " target parameter ");
                 }
             }
             else if (partitionValue.getClass() == byte[].class) {
-                partitionValue = bytesToValue(partitionParamType, (byte[]) partitionValue);
+                partitionValue = partitionParamType.bytesToValue((byte[]) partitionValue);
             }
         }
 
         return hashToPartition(partitionParamType, partitionValue);
-    }
-
-    public HashinatorLiteType getConfigurationType() {
-        return m_type;
     }
 
     // copy and pasted code below from the compression service

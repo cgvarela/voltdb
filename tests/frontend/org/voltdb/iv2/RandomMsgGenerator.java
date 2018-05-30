@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -63,27 +63,30 @@ public class RandomMsgGenerator
     {
         StoredProcedureInvocation spi = mock(StoredProcedureInvocation.class);
         ParameterSet ps = mock(ParameterSet.class);
-        when(ps.toArray()).thenReturn(new Object[] {null, 0l, 0l, Long.MIN_VALUE, null});
         when(spi.getParams()).thenReturn(ps);
-        Iv2InitiateTaskMessage msg =
-            new Iv2InitiateTaskMessage(0l, 0l, 0l, Long.MIN_VALUE, 0l, readOnly, !isMp, spi,
-                    0l, 0l, false);
         if (binaryLog) {
+            when(ps.toArray()).thenReturn(new Object[] {null, 0l, 0l, Long.MIN_VALUE, Long.MIN_VALUE, null});
             if (!isMp) {
                 when(spi.getProcName()).thenReturn("@ApplyBinaryLogSP");
             } else {
                 when(spi.getProcName()).thenReturn("@ApplyBinaryLogMP");
             }
         } else {
+            when(ps.toArray()).thenReturn(new Object[] {null, 0l, 0l, Long.MIN_VALUE, null});
             when(spi.getProcName()).thenReturn("dummy");
         }
+        Iv2InitiateTaskMessage msg =
+                new Iv2InitiateTaskMessage(0l, 0l, 0l, Long.MIN_VALUE, 0l, readOnly, !isMp, spi,
+                        0l, 0l, false);
         return msg;
     }
 
     private FragmentTaskMessage makeFragmentTaskMsg(boolean readOnly, boolean isFinal)
     {
         FragmentTaskMessage msg =
-            new FragmentTaskMessage(0l, 0l, m_mpiTxnEgo.getTxnId(), 0l, readOnly, isFinal, false);
+            new FragmentTaskMessage(0l, 0l, m_mpiTxnEgo.getTxnId(),
+                    UniqueIdGenerator.makeIdFromComponents(System.currentTimeMillis(), 0, MpInitiator.MP_INIT_PID),
+                    readOnly, isFinal, false, false, TransactionInfoBaseMessage.INITIAL_TIMESTAMP);
         return msg;
     }
 
@@ -92,7 +95,7 @@ public class RandomMsgGenerator
     {
         CompleteTransactionMessage msg =
             new CompleteTransactionMessage(0l, 0l, m_mpiTxnEgo.getTxnId(), readOnly, 0, isRollback,
-                    false, isRestart, false);
+                    false, isRestart, false, false, false);
         return msg;
     }
 

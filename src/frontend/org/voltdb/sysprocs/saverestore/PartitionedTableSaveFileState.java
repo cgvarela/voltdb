@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -322,7 +322,8 @@ public class PartitionedTableSaveFileState extends TableSaveFileState
                 getTableName(),
                 originalHostsArray,
                 uncoveredPartitionsAtHost,
-                result_dependency_id);
+                result_dependency_id,
+                getIsRecoverParam());
         return plan_fragment;
     }
 
@@ -341,7 +342,8 @@ public class PartitionedTableSaveFileState extends TableSaveFileState
                 result_dependency_id,
                 (asReplicated ?
                         "Aggregating partitioned-to-replicated table restore results"
-                        : "Aggregating partitioned table restore results"));
+                        : "Aggregating partitioned table restore results"),
+                getIsRecoverParam());
         return plan_fragment;
     }
 

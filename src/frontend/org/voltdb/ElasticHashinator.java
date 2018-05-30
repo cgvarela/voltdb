@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,30 +17,40 @@
 package org.voltdb;
 
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.Thread.State;
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
-
-import com.google_voltpatches.common.collect.ImmutableSortedSet;
-import com.google_voltpatches.common.collect.Maps;
-import com.google_voltpatches.common.collect.SortedMapDifference;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 import org.apache.cassandra_voltpatches.MurmurHash3;
-import org.voltcore.logging.VoltLogger;
+import org.json_voltpatches.JSONException;
+import org.json_voltpatches.JSONStringer;
 import org.voltcore.utils.Bits;
 import org.voltcore.utils.Pair;
+import org.voltdb.utils.CompressionService;
+
+import sun.misc.Cleaner;
 
 import com.google_voltpatches.common.base.Preconditions;
 import com.google_voltpatches.common.base.Supplier;
 import com.google_voltpatches.common.base.Suppliers;
 import com.google_voltpatches.common.collect.ImmutableSortedMap;
+import com.google_voltpatches.common.collect.ImmutableSortedSet;
+import com.google_voltpatches.common.collect.Maps;
+import com.google_voltpatches.common.collect.SortedMapDifference;
 import com.google_voltpatches.common.collect.UnmodifiableIterator;
-
-import org.voltdb.utils.CompressionService;
-
-import sun.misc.Cleaner;
 
 /**
  * A hashinator that uses Murmur3_x64_128 to hash values and a consistent hash ring
@@ -66,6 +76,9 @@ public class ElasticHashinator extends TheHashinator {
      */
     private final long m_tokens;
     private final int m_tokenCount;
+
+    // Provide a hook for the GC
+    @SuppressWarnings("unused")
     private final Cleaner m_cleaner;
 
     private final Supplier<byte[]> m_configBytes;
@@ -89,9 +102,16 @@ public class ElasticHashinator extends TheHashinator {
         }
     });
 
+    private final Supplier<byte[]> m_configJSONCompressed = Suppliers.memoize(new Supplier<byte[]>() {
+        @Override
+        public byte[] get() {
+            return toJSONStringCompressed();
+        }
+    });
+
     @Override
     public int pHashToPartition(VoltType type, Object obj) {
-        return hashinateBytes(valueToBytes(obj));
+        return hashinateBytes(VoltType.valueToBytes(obj));
     }
 
     /**
@@ -194,6 +214,69 @@ public class ElasticHashinator extends TheHashinator {
     }
 
     /**
+     * Serializes the configuration into JSON, also updates the currently cached m_configJSON.
+     * @return The JSONString of the current configuration.
+     */
+
+    private String toJSONString() {
+        JSONStringer js = new JSONStringer();
+        try {
+            js.object();
+            for (Map.Entry<Integer, Integer> entry : m_tokensMap.get().entrySet()) {
+                js.key(entry.getKey().toString()).value(entry.getValue());
+            }
+            js.endObject();
+        } catch (JSONException e) {
+            throw new RuntimeException("Failed to serialize Hashinator Configuration to JSON.", e);
+        }
+        return js.toString();
+    }
+
+    /**
+     * Serializes the configuration into JSON, also updates the currently cached m_configJSON.
+     * @return The JSONString of the current configuration.
+     */
+
+    private byte[] toJSONStringCompressed() {
+        String str = toJSONString();
+        if (str == null || str.length() == 0) {
+            return new byte[0] ;
+        }
+        byte[] outStr;
+        try {
+            outStr = compressJSONString(str);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to serialize Hashinator Configuration to Compressed JSON .", e);
+        }
+        return outStr;
+    }
+
+    public static byte[] compressJSONString(String data) throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream(data.length());
+        try (GZIPOutputStream gzip = new GZIPOutputStream(bos)) {
+            gzip.write(data.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw e;
+        }
+        return bos.toByteArray();
+    }
+
+    public static String decompressJSONString(byte[] compressed) throws IOException {
+        ByteArrayOutputStream result = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(compressed);
+                GZIPInputStream gis = new GZIPInputStream(bis)) {
+            int length;
+            while ((length = gis.read(buffer)) != -1) {
+                result.write(buffer, 0, length);
+            }
+        } catch (IOException e) {
+            throw e;
+        }
+        return result.toString("UTF-8");
+    }
+
+    /**
      * For a given a value hash, find the token that corresponds to it. This will
      * be the first token <= the value hash, or if the value hash is < the first token in the ring,
      * it wraps around to the last token in the ring closest to Long.MAX_VALUE
@@ -262,7 +345,7 @@ public class ElasticHashinator extends TheHashinator {
 
     @Override
     public HashinatorConfig pGetCurrentConfig() {
-        return new HashinatorConfig(HashinatorType.ELASTIC, m_configBytes.get(), m_tokens, m_tokenCount) {
+        return new HashinatorConfig(m_configBytes.get(), m_tokens, m_tokenCount) {
             //Store a reference to this hashinator in the config so it doesn't get GCed and release
             //the pointer to the config data that is off heap
             private final ElasticHashinator myHashinator = ElasticHashinator.this;
@@ -383,6 +466,11 @@ public class ElasticHashinator extends TheHashinator {
         return ranges;
     }
 
+    @Override
+    public boolean pIsPristine() {
+        return Arrays.equals(((ElasticHashinator)m_pristineHashinator).m_configBytes.get(), m_configBytes.get());
+    }
+
     /**
      * Returns the configuration signature
      */
@@ -410,6 +498,26 @@ public class ElasticHashinator extends TheHashinator {
     public byte[] getConfigBytes()
     {
         return m_configBytes.get();
+    }
+
+    /**
+     * Returns raw config JSONString.
+     * @return config JSONString
+     */
+    @Override
+    public String getConfigJSON()
+    {
+        return toJSONString();
+    }
+
+    /**
+     * Returns compressed config JSONString.
+     * @return config compressed JSONString
+     */
+    @Override
+    public byte[] getConfigJSONCompressed()
+    {
+        return m_configJSONCompressed.get();
     }
 
     /**
@@ -584,11 +692,6 @@ public class ElasticHashinator extends TheHashinator {
     }
 
     @Override
-    public HashinatorType getConfigurationType() {
-        return TheHashinator.HashinatorType.ELASTIC;
-    }
-
-    @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
@@ -667,6 +770,7 @@ public class ElasticHashinator extends TheHashinator {
             this.size = size;
         }
 
+        @Override
         public void run() {
             if (address == 0) {
                 return;
@@ -675,5 +779,10 @@ public class ElasticHashinator extends TheHashinator {
             address = 0;
             m_allocatedHashinatorBytes.addAndGet(-size);
         }
+    }
+
+    @Override
+    public int getPartitionFromHashedToken(int hashedToken) {
+        return partitionForToken(hashedToken);
     }
 }

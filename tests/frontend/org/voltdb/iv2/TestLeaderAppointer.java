@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -25,14 +25,15 @@ package org.voltdb.iv2;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -47,18 +48,25 @@ import org.voltcore.messaging.HostMessenger;
 import org.voltcore.zk.LeaderElector;
 import org.voltcore.zk.ZKTestBase;
 import org.voltcore.zk.ZKUtil;
+import org.voltdb.AbstractTopology;
+import org.voltdb.ReplicationRole;
 import org.voltdb.TheHashinator;
 import org.voltdb.VoltDB;
+import org.voltdb.VoltDBInterface;
 import org.voltdb.VoltZK;
-import org.voltdb.compiler.ClusterConfig;
+import org.voltdb.iv2.LeaderCache.LeaderCallBackInfo;
 
 import com.google_voltpatches.common.collect.ImmutableMap;
+import com.google_voltpatches.common.collect.Maps;
+import com.google_voltpatches.common.collect.Sets;
 
 public class TestLeaderAppointer extends ZKTestBase {
 
     private final int NUM_AGREEMENT_SITES = 1;
-    private ClusterConfig m_config = null;
-    private List<Integer> m_hostIds;
+    private int m_kfactor;
+    private AbstractTopology m_topo;
+    private Set<Integer> m_hostIds;
+    private Map<Integer, String> m_hostGroups;
     private MpInitiator m_mpi = null;
     private HostMessenger m_hm = null;
     private ZooKeeper m_zk = null;
@@ -70,7 +78,7 @@ public class TestLeaderAppointer extends ZKTestBase {
     LeaderCache.Callback m_changeCallback = new LeaderCache.Callback()
     {
         @Override
-        public void run(ImmutableMap<Integer, Long> cache) {
+        public void run(ImmutableMap<Integer, LeaderCallBackInfo> cache) {
             m_newAppointee.set(true);
         }
     };
@@ -78,6 +86,9 @@ public class TestLeaderAppointer extends ZKTestBase {
     @Before
     public void setUp() throws Exception
     {
+        final VoltDBInterface mock = mock(VoltDBInterface.class);
+        when(mock.getReplicationRole()).thenReturn(ReplicationRole.NONE);
+        VoltDB.replaceVoltDBInstanceForTest(mock);
         VoltDB.ignoreCrash = false;
         VoltDB.wasCrashCalled = false;
         setUpZK(NUM_AGREEMENT_SITES);
@@ -106,12 +117,20 @@ public class TestLeaderAppointer extends ZKTestBase {
         when(m_hm.getZK()).thenReturn(m_zk);
         VoltZK.createPersistentZKNodes(m_zk);
 
-        m_config = new ClusterConfig(hostCount, sitesPerHost, replicationFactor);
-        TheHashinator.initialize(TheHashinator.getConfiguredHashinatorClass(), TheHashinator.getConfigureBytes(m_config.getPartitionCount()));
-        m_hostIds = new ArrayList<Integer>();
+        Map<Integer, Integer> sphMap = Maps.newHashMap();
+        for (int hostId = 0; hostId < hostCount; hostId++) {
+            sphMap.put(hostId, sitesPerHost);
+        }
+        m_hostIds = Sets.newTreeSet();
+        m_hostGroups = Maps.newHashMap();
         for (int i = 0; i < hostCount; i++) {
             m_hostIds.add(i);
+            m_hostGroups.put(i, "0");
         }
+        m_kfactor = replicationFactor;
+        m_topo = AbstractTopology.getTopology(sphMap, new HashSet<Integer>(), m_hostGroups, replicationFactor);
+        int partitionCount = m_topo.getPartitionCount();
+        TheHashinator.initialize(TheHashinator.getConfiguredHashinatorClass(), TheHashinator.getConfigureBytes(partitionCount));
         when(m_hm.getLiveHostIds()).thenReturn(m_hostIds);
         m_mpi = mock(MpInitiator.class);
         createAppointer(enablePPD);
@@ -123,10 +142,9 @@ public class TestLeaderAppointer extends ZKTestBase {
     void createAppointer(boolean enablePPD) throws JSONException
     {
         KSafetyStats stats = new KSafetyStats();
-        m_dut = new LeaderAppointer(m_hm, m_config.getPartitionCount(),
-                m_config.getReplicationFactor(), enablePPD,
-                null, false,
-                m_config.getTopology(m_hostIds), m_mpi, stats, false);
+        m_dut = new LeaderAppointer(m_hm, m_topo.getPartitionCount(),
+                m_kfactor,
+                m_topo.topologyToJSON(), m_mpi, stats, false);
         m_dut.onReplayCompletion();
     }
 
@@ -271,11 +289,13 @@ public class TestLeaderAppointer extends ZKTestBase {
         m_dut.shutdown();
         deleteReplica(0, m_cache.pointInTimeCache().get(0));
         // create a new appointer and start it up in the replay state
-        m_dut = new LeaderAppointer(m_hm, m_config.getPartitionCount(),
-                                    m_config.getReplicationFactor(), false,
-                                    null, false,
-                                    m_config.getTopology(m_hostIds), m_mpi,
-                                    new KSafetyStats(), false);
+        m_dut = new LeaderAppointer(m_hm,
+                                    m_topo.getPartitionCount(),
+                                    m_kfactor,
+                                    m_topo.topologyToJSON(),
+                                    m_mpi,
+                                    new KSafetyStats(),
+                                    false);
         m_newAppointee.set(false);
         VoltDB.ignoreCrash = true;
         boolean threw = false;
@@ -414,58 +434,6 @@ public class TestLeaderAppointer extends ZKTestBase {
     }
 
     @Test
-    public void testPartitionDetectionMinoritySet() throws Exception
-    {
-        Set<Integer> previous = new HashSet<Integer>();
-        Set<Integer> current = new HashSet<Integer>();
-
-        // current cluster has 2 hosts
-        current.add(0);
-        current.add(1);
-        // the pre-fail cluster had 5 hosts.
-        previous.addAll(current);
-        previous.add(2);
-        previous.add(3);
-        previous.add(4);
-        // this should trip partition detection
-        assertTrue(LeaderAppointer.makePPDDecision(previous, current));
-    }
-
-    @Test
-    public void testPartitionDetection5050KillBlessed() throws Exception
-    {
-        Set<Integer> previous = new HashSet<Integer>();
-        Set<Integer> current = new HashSet<Integer>();
-
-        // current cluster has 2 hosts
-        current.add(2);
-        current.add(3);
-        // the pre-fail cluster had 4 hosts and the lowest host ID
-        previous.addAll(current);
-        previous.add(0);
-        previous.add(1);
-        // this should trip partition detection
-        assertTrue(LeaderAppointer.makePPDDecision(previous, current));
-    }
-
-    @Test
-    public void testPartitionDetection5050KillNonBlessed() throws Exception
-    {
-        Set<Integer> previous = new HashSet<Integer>();
-        Set<Integer> current = new HashSet<Integer>();
-
-        // current cluster has 2 hosts
-        current.add(0);
-        current.add(1);
-        // the pre-fail cluster had 4 hosts but not the lowest host ID
-        previous.addAll(current);
-        previous.add(2);
-        previous.add(3);
-        // this should not trip partition detection
-        assertFalse(LeaderAppointer.makePPDDecision(previous, current));
-    }
-
-    @Test
     public void testAddPartition() throws Exception
     {
         // run once to get to a startup state
@@ -512,13 +480,6 @@ public class TestLeaderAppointer extends ZKTestBase {
         VoltDB.wasCrashCalled = false;
         deleteReplica(2, m_cache.pointInTimeCache().get(2));
 
-        if (TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY) {
-            while (!VoltDB.wasCrashCalled) {
-                Thread.yield();
-            }
-            return;
-        }
-
         //For elastic hashinator do more testing
         Thread.sleep(1000);
         assertFalse(VoltDB.wasCrashCalled);
@@ -542,6 +503,10 @@ public class TestLeaderAppointer extends ZKTestBase {
     @Test
     public void testFailureDuringSyncSnapshot() throws Exception
     {
+        final VoltDBInterface mVolt = mock(VoltDBInterface.class);
+        doReturn(ReplicationRole.REPLICA).when(mVolt).getReplicationRole();
+        VoltDB.replaceVoltDBInstanceForTest(mVolt);
+
         configure(2, 2, 1, false);
         Thread dutthread = new Thread() {
             @Override
@@ -567,11 +532,13 @@ public class TestLeaderAppointer extends ZKTestBase {
         m_dut.shutdown();
         deleteReplica(0, m_cache.pointInTimeCache().get(0));
         // create a new appointer and start it up with expectSyncSnapshot=true
-        m_dut = new LeaderAppointer(m_hm, m_config.getPartitionCount(),
-                                    m_config.getReplicationFactor(), false,
-                                    null, false,
-                                    m_config.getTopology(m_hostIds), m_mpi,
-                                    new KSafetyStats(), true);
+        m_dut = new LeaderAppointer(m_hm,
+                                    m_topo.getPartitionCount(),
+                                    m_kfactor,
+                                    m_topo.topologyToJSON(),
+                                    m_mpi,
+                                    new KSafetyStats(),
+                                    true);
         m_dut.onReplayCompletion();
         m_newAppointee.set(false);
         VoltDB.ignoreCrash = true;
@@ -583,5 +550,11 @@ public class TestLeaderAppointer extends ZKTestBase {
         }
         assertTrue(threw);
         assertTrue(VoltDB.wasCrashCalled);
+
+        // Promote the replica to a master before sync snapshot, failure should not crash now.
+        doReturn(ReplicationRole.NONE).when(mVolt).getReplicationRole();
+        VoltDB.wasCrashCalled = false;
+        m_dut.acceptPromotion();
+        assertFalse(VoltDB.wasCrashCalled);
     }
 }

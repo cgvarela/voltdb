@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,14 +20,16 @@ package org.voltdb;
 import java.util.Map;
 import java.util.Set;
 
+import org.voltdb.iv2.TransactionTask;
 import org.voltdb.messaging.Iv2InitiateTaskMessage;
 
 import com.google_voltpatches.common.util.concurrent.Futures;
 import com.google_voltpatches.common.util.concurrent.ListenableFuture;
+import com.google_voltpatches.common.util.concurrent.SettableFuture;
 
 public class DummyCommandLog implements CommandLog {
     @Override
-    public void init(CatalogContext context, long txnId, int partitionCount,
+    public void init(int logSize, long txnId, int partitionCount,
                      String affinity, Map<Integer, Long> perPartitionTxnId) {}
 
     @Override
@@ -39,7 +41,7 @@ public class DummyCommandLog implements CommandLog {
     public void shutdown() throws InterruptedException {}
 
     @Override
-    public void initForRejoin(CatalogContext context, long txnId, int partitionCount,
+    public void initForRejoin(int logSize, long txnId, int partitionCount,
                               boolean isRejoin, String affinity,
                               Map<Integer, Long> perPartitionTxnId) {}
 
@@ -49,14 +51,18 @@ public class DummyCommandLog implements CommandLog {
             long spHandle,
             int[] involvedPartitions,
             DurabilityListener l,
-            Object handle) {
-        return Futures.immediateFuture(null);
+            TransactionTask handle) {
+        return null;
     }
 
     @Override
-    public void logIv2Fault(long writerHSId, Set<Long> survivorHSId,
+    public SettableFuture<Boolean> logIv2Fault(long writerHSId, Set<Long> survivorHSId,
             int partitionId, long spHandle) {
+        return null;
     }
+
+    @Override
+    public void initializeLastDurableUniqueId(DurabilityListener listener, long uniqueId) {}
 
     @Override
     public boolean isEnabled()
@@ -82,4 +88,17 @@ public class DummyCommandLog implements CommandLog {
         rowValues[columnNameToIndex.get(CommandLogStats.StatName.FSYNC_INTERVAL.name())] = 0;
     }
 
+    public boolean isSynchronous() {
+        return false;
+    }
+
+    @Override
+    public boolean canOfferTask()
+    {
+        return true;
+    }
+
+    @Override
+    public void registerDurabilityListener(DurabilityListener durabilityListener) {
+    }
 }

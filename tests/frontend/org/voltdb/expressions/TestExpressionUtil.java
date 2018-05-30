@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -194,6 +194,8 @@ public class TestExpressionUtil extends TestCase {
                 TupleValueExpression in_tuple_exp = (TupleValueExpression)in_exp;
                 assertEquals(out_tuple_exp.getColumnIndex(), in_tuple_exp.getColumnIndex());
                 break;
+            default:
+                break;
         } // SWITCH
         return;
     }
@@ -209,7 +211,7 @@ public class TestExpressionUtil extends TestCase {
         AbstractExpression cloned_exp = null;
         try {
             if (ROOT_EXP != null) {
-                cloned_exp = (AbstractExpression) ROOT_EXP.clone();
+                cloned_exp = ROOT_EXP.clone();
             }
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -280,7 +282,7 @@ public class TestExpressionUtil extends TestCase {
 
         AbstractExpression combined_exp = null;
         try {
-            combined_exp = ExpressionUtil.combine(combine_exps);
+            combined_exp = ExpressionUtil.combinePredicates(combine_exps);
         } catch (Exception ex) {
             ex.printStackTrace();
         }
@@ -294,7 +296,7 @@ public class TestExpressionUtil extends TestCase {
         // sure that all of our sub-trees are contained within the new tree and that their
         // structure has not changed
         //
-        new TestExpressionTreeWalker() {
+        TestExpressionTreeWalker treeWalker = new TestExpressionTreeWalker() {
             @Override
             public void callback(AbstractExpression exp) {
                 //
@@ -319,7 +321,31 @@ public class TestExpressionUtil extends TestCase {
                     assertNotNull(exp.getRight());
                 }
             }
-        }.traverse(combined_exp);
+        };
+        treeWalker.traverse(combined_exp);
+
+        //
+        // Test  variadic combine
+        //
+        final List<AbstractExpression> combine_exps1 = new ArrayList<AbstractExpression>();
+        final List<AbstractExpression> combine_exps2 = new ArrayList<AbstractExpression>();
+        final List<AbstractExpression> combine_exps3 = new ArrayList<AbstractExpression>();
+        final List<AbstractExpression> combine_exps4 = null;
+        for (int ctr = 0; ctr < num_of_subtrees/2; ctr++) {
+            combine_exps1.add(combine_exps.get(ctr));
+        }
+        for (int ctr = num_of_subtrees/2; ctr < num_of_subtrees; ctr++) {
+            combine_exps2.add(combine_exps.get(ctr));
+        }
+        AbstractExpression var_combined_exp = null;
+        try {
+            var_combined_exp = ExpressionUtil.combinePredicates(combine_exps1, combine_exps2, combine_exps3, combine_exps4);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        assertNotNull(var_combined_exp);
+        assertEquals(var_combined_exp.getExpressionType(), ExpressionType.CONJUNCTION_AND);
+        treeWalker.traverse(var_combined_exp);
     }
 
     // This is basically just a check that the rules in
@@ -426,8 +452,8 @@ public class TestExpressionUtil extends TestCase {
             new OperatorExpression(ExpressionType.OPERATOR_MINUS, lit, bint);
 
         lit_bint.normalizeOperandTypes_recurse();
-        assertEquals(lit.m_valueType, VoltType.FLOAT);
-        assertEquals(lit.m_valueSize, VoltType.FLOAT.getLengthInBytesForFixedTypes());
+        assertEquals(lit.m_valueType, VoltType.DECIMAL);
+        assertEquals(lit.m_valueSize, VoltType.DECIMAL.getLengthInBytesForFixedTypes());
         assertEquals(bint.m_valueType, VoltType.BIGINT);
         assertEquals(bint.m_valueSize, VoltType.BIGINT.getLengthInBytesForFixedTypes());
 
@@ -547,27 +573,27 @@ public class TestExpressionUtil extends TestCase {
         //
         // Each of A through E should match an identical "cloned" expression,
         // with no "parameter binding" caveat.
-        AbstractExpression likeA = (AbstractExpression) exprA.clone();
+        AbstractExpression likeA = exprA.clone();
         result = likeA.bindingToIndexedExpression(exprA);
         assertNotNull(result);
         assertTrue(result.isEmpty());
 
-        AbstractExpression likeB = (AbstractExpression) exprB.clone();
+        AbstractExpression likeB = exprB.clone();
         result = likeB.bindingToIndexedExpression(exprB);
         assertNotNull(result);
         assertTrue(result.isEmpty());
 
-        AbstractExpression likeC = (AbstractExpression) exprC.clone();
+        AbstractExpression likeC = exprC.clone();
         result = likeC.bindingToIndexedExpression(exprC);
         assertNotNull(result);
         assertTrue(result.isEmpty());
 
-        AbstractExpression likeD = (AbstractExpression) exprD.clone();
+        AbstractExpression likeD = exprD.clone();
         result = likeD.bindingToIndexedExpression(exprD);
         assertNotNull(result);
         assertTrue(result.isEmpty());
 
-        AbstractExpression likeE = (AbstractExpression) exprE.clone();
+        AbstractExpression likeE = exprE.clone();
         result = likeE.bindingToIndexedExpression(exprE);
         assertNotNull(result);
         assertTrue(result.isEmpty());
@@ -584,7 +610,7 @@ public class TestExpressionUtil extends TestCase {
         otherParamifiedConstant.setOriginalValue(otherConstant);
 
         // D) math with a column and a constant ( 42 * T1.A ) works for ( ? * T1.A ) w/ ? == 42
-        AbstractExpression paramifiedD = (AbstractExpression) exprD.clone();
+        AbstractExpression paramifiedD = exprD.clone();
         paramifiedD.setLeft(paramifiedConstant);
         result = paramifiedD.bindingToIndexedExpression(exprD);
         assertNotNull(result);
@@ -697,13 +723,13 @@ public class TestExpressionUtil extends TestCase {
         // compiled statement.
 
         // D) math with a column and a constant ( 42 * T1.A ) for ( ? * T1.A ) w/ ? == 86
-        AbstractExpression crossParamifiedD = (AbstractExpression) exprD.clone();
+        AbstractExpression crossParamifiedD = exprD.clone();
         crossParamifiedD.setLeft(paramifiedNeitherConstant);
         result = crossParamifiedD.bindingToIndexedExpression(exprD);
         assertNull(result);
 
         // D) math with a column and a constant ( 42 * T1.A ) for ( ? * T1.A ) w/ ? == ???!
-        AbstractExpression userParamifiedD = (AbstractExpression) exprD.clone();
+        AbstractExpression userParamifiedD = exprD.clone();
         userParamifiedD.setLeft(actualUserProvidedParameter);
         result = userParamifiedD.bindingToIndexedExpression(exprD);
         assertNull(result);
@@ -893,104 +919,124 @@ public class TestExpressionUtil extends TestCase {
             // Wrong table
             assertTrue(!ExpressionUtil.isNullRejectingExpression(expr, "T"));
         }
-    }
 
-    {
-        // Test "ABS(T1.C) > 5" is NULL-rejecting
-        TupleValueExpression tve = new TupleValueExpression();
-        tve.setTableName("T1");
-        tve.setColumnName("C");
-        ArrayList<AbstractExpression> args = new ArrayList<AbstractExpression>();
-        args.add(tve);
-        FunctionExpression abs = new FunctionExpression();
-        abs.setArgs(args);
-        ConstantValueExpression cve = new ConstantValueExpression();
-        cve.setValue("5");
-        OperatorExpression expr = new OperatorExpression(ExpressionType.COMPARE_GREATERTHAN, abs, cve);
-        assertTrue(ExpressionUtil.isNullRejectingExpression(expr, "T1"));
-        // Wrong table
-        assertTrue(!ExpressionUtil.isNullRejectingExpression(expr, "T"));
-    }
+        {
+            // Test "ABS(T1.C) > 5" is NULL-rejecting
+            TupleValueExpression tve = new TupleValueExpression();
+            tve.setTableName("T1");
+            tve.setColumnName("C");
+            ArrayList<AbstractExpression> args = new ArrayList<AbstractExpression>();
+            args.add(tve);
+            FunctionExpression abs = new FunctionExpression();
+            abs.setArgs(args);
+            ConstantValueExpression cve = new ConstantValueExpression();
+            cve.setValue("5");
+            OperatorExpression expr = new OperatorExpression(ExpressionType.COMPARE_GREATERTHAN, abs, cve);
+            assertTrue(ExpressionUtil.isNullRejectingExpression(expr, "T1"));
+            // Wrong table
+            assertTrue(!ExpressionUtil.isNullRejectingExpression(expr, "T"));
+        }
 
-    {
-        // Test negation
-        // Test "!(T1.C > T2.C)" is NULL-rejecting
-        TupleValueExpression tve1 = new TupleValueExpression();
-        tve1.setTableName("T1");
-        tve1.setColumnName("C");
-        TupleValueExpression tve2 = new TupleValueExpression();
-        tve2.setTableName("T2");
-        tve2.setColumnName("C");
-        OperatorExpression expr1 = new OperatorExpression(ExpressionType.COMPARE_GREATERTHAN, tve1, tve2);
-        OperatorExpression expr2 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr1, null);
-        assertTrue(ExpressionUtil.isNullRejectingExpression(expr2, "T1"));
-        assertTrue(ExpressionUtil.isNullRejectingExpression(expr2, "T2"));
-        // Wrong table
-        assertTrue(!ExpressionUtil.isNullRejectingExpression(expr2, "T"));
+        {
+            // Test negation
+            // Test "!(T1.C > T2.C)" is NULL-rejecting
+            TupleValueExpression tve1 = new TupleValueExpression();
+            tve1.setTableName("T1");
+            tve1.setColumnName("C");
+            TupleValueExpression tve2 = new TupleValueExpression();
+            tve2.setTableName("T2");
+            tve2.setColumnName("C");
+            OperatorExpression expr1 = new OperatorExpression(ExpressionType.COMPARE_GREATERTHAN, tve1, tve2);
+            OperatorExpression expr2 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr1, null);
+            assertTrue(ExpressionUtil.isNullRejectingExpression(expr2, "T1"));
+            assertTrue(ExpressionUtil.isNullRejectingExpression(expr2, "T2"));
+            // Wrong table
+            assertTrue(!ExpressionUtil.isNullRejectingExpression(expr2, "T"));
 
-        // Test "!(P AND Q)" is equivalent to "!P OR !Q"
-        // !(T1.C IS NULL AND T2.C IS NULL) is not NULL-rejecting
-        OperatorExpression expr3 = new OperatorExpression(ExpressionType.OPERATOR_IS_NULL, tve1, null);
-        OperatorExpression expr4 = new OperatorExpression(ExpressionType.OPERATOR_IS_NULL, tve2, null);
-        OperatorExpression expr5 = new OperatorExpression(ExpressionType.CONJUNCTION_AND, expr3, expr4);
-        OperatorExpression expr6 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr5, null);
-        assertTrue(!ExpressionUtil.isNullRejectingExpression(expr6, "T1"));
-        assertTrue(!ExpressionUtil.isNullRejectingExpression(expr6, "T2"));
-        // Wrong table
-        assertTrue(!ExpressionUtil.isNullRejectingExpression(expr6, "T"));
+            // Test "!(P AND Q)" is equivalent to "!P OR !Q"
+            // !(T1.C IS NULL AND T2.C IS NULL) is not NULL-rejecting
+            OperatorExpression expr3 = new OperatorExpression(ExpressionType.OPERATOR_IS_NULL, tve1, null);
+            OperatorExpression expr4 = new OperatorExpression(ExpressionType.OPERATOR_IS_NULL, tve2, null);
+            OperatorExpression expr5 = new OperatorExpression(ExpressionType.CONJUNCTION_AND, expr3, expr4);
+            OperatorExpression expr6 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr5, null);
+            assertTrue(!ExpressionUtil.isNullRejectingExpression(expr6, "T1"));
+            assertTrue(!ExpressionUtil.isNullRejectingExpression(expr6, "T2"));
+            // Wrong table
+            assertTrue(!ExpressionUtil.isNullRejectingExpression(expr6, "T"));
 
-        // !(T1.C > T2.C AND T2.C IS NULL) is NULL-rejecting for T2 only
-        OperatorExpression expr7 = new OperatorExpression(ExpressionType.COMPARE_GREATERTHAN, tve1, tve2);
-        OperatorExpression expr8 = new OperatorExpression(ExpressionType.CONJUNCTION_AND, expr7, expr4);
-        OperatorExpression expr9 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr8, null);
-        assertTrue(!ExpressionUtil.isNullRejectingExpression(expr9, "T1"));
-        assertTrue(ExpressionUtil.isNullRejectingExpression(expr9, "T2"));
-        // Wrong table
-        assertTrue(!ExpressionUtil.isNullRejectingExpression(expr9, "T"));
+            // !(T1.C > T2.C AND T2.C IS NULL) is NULL-rejecting for T2 only
+            OperatorExpression expr7 = new OperatorExpression(ExpressionType.COMPARE_GREATERTHAN, tve1, tve2);
+            OperatorExpression expr8 = new OperatorExpression(ExpressionType.CONJUNCTION_AND, expr7, expr4);
+            OperatorExpression expr9 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr8, null);
+            assertTrue(!ExpressionUtil.isNullRejectingExpression(expr9, "T1"));
+            assertTrue(ExpressionUtil.isNullRejectingExpression(expr9, "T2"));
+            // Wrong table
+            assertTrue(!ExpressionUtil.isNullRejectingExpression(expr9, "T"));
 
-        // Test "!(P OR Q)" is equivalent to "!P AND !Q"
-        // !(T1.C IS NULL OR T2.C IS NULL) is NULL-rejecting for T1 and T2
-        OperatorExpression expr10 = new OperatorExpression(ExpressionType.CONJUNCTION_OR, expr3, expr4);
-        OperatorExpression expr11 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr10, null);
-        assertTrue(ExpressionUtil.isNullRejectingExpression(expr11, "T1"));
-        assertTrue(ExpressionUtil.isNullRejectingExpression(expr11, "T2"));
-        // Wrong table
-        assertTrue(!ExpressionUtil.isNullRejectingExpression(expr11, "T"));
+            // Test "!(P OR Q)" is equivalent to "!P AND !Q"
+            // !(T1.C IS NULL OR T2.C IS NULL) is NULL-rejecting for T1 and T2
+            OperatorExpression expr10 = new OperatorExpression(ExpressionType.CONJUNCTION_OR, expr3, expr4);
+            OperatorExpression expr11 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr10, null);
+            assertTrue(ExpressionUtil.isNullRejectingExpression(expr11, "T1"));
+            assertTrue(ExpressionUtil.isNullRejectingExpression(expr11, "T2"));
+            // Wrong table
+            assertTrue(!ExpressionUtil.isNullRejectingExpression(expr11, "T"));
 
-        // !(T1.C > T2.C OR T2.C IS NULL) is NULL-rejecting for T1 and T2
-        OperatorExpression expr12 = new OperatorExpression(ExpressionType.CONJUNCTION_OR, expr7, expr4);
-        OperatorExpression expr13 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr12, null);
-        assertTrue(ExpressionUtil.isNullRejectingExpression(expr13, "T1"));
-        assertTrue(ExpressionUtil.isNullRejectingExpression(expr13, "T2"));
-        // Wrong table
-        assertTrue(!ExpressionUtil.isNullRejectingExpression(expr13, "T"));
-    }
+            // !(T1.C > T2.C OR T2.C IS NULL) is NULL-rejecting for T1 and T2
+            OperatorExpression expr12 = new OperatorExpression(ExpressionType.CONJUNCTION_OR, expr7, expr4);
+            OperatorExpression expr13 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr12, null);
+            assertTrue(ExpressionUtil.isNullRejectingExpression(expr13, "T1"));
+            assertTrue(ExpressionUtil.isNullRejectingExpression(expr13, "T2"));
+            // Wrong table
+            assertTrue(!ExpressionUtil.isNullRejectingExpression(expr13, "T"));
+        }
 
-    {
-        // Test double negation "NOT T.C IS NOT NULL"
-        TupleValueExpression tve = new TupleValueExpression();
-        tve.setTableName("T");
-        tve.setColumnName("C");
-        OperatorExpression expr1 = new OperatorExpression(ExpressionType.OPERATOR_IS_NULL, tve, null);
-        OperatorExpression expr2 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr1, null);
-        OperatorExpression expr3 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr2, null);
-        assertTrue(!ExpressionUtil.isNullRejectingExpression(expr3, "T"));
+        {
+            // Test double negation "NOT T.C IS NOT NULL"
+            TupleValueExpression tve = new TupleValueExpression();
+            tve.setTableName("T");
+            tve.setColumnName("C");
+            OperatorExpression expr1 = new OperatorExpression(ExpressionType.OPERATOR_IS_NULL, tve, null);
+            OperatorExpression expr2 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr1, null);
+            OperatorExpression expr3 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr2, null);
+            assertTrue(!ExpressionUtil.isNullRejectingExpression(expr3, "T"));
 
-        // NOT (P AND NOT Q) --> (NOT P) OR NOT NOT Q --> (NOT P) OR Q
-        // NOT (T.C IS NULL AND NOT T.C > T.A) --> ( NOT T.C IS NULL) OR  T.C > T.A
-        TupleValueExpression tve1 = new TupleValueExpression();
-        tve.setTableName("T");
-        tve.setColumnName("A");
-        OperatorExpression expr4 = new OperatorExpression(ExpressionType.COMPARE_GREATERTHAN, tve, tve1);
-        OperatorExpression expr5 = new OperatorExpression(ExpressionType.CONJUNCTION_AND, expr1, expr4);
-        OperatorExpression expr6 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr5, null);
-        assertTrue(ExpressionUtil.isNullRejectingExpression(expr6, "T"));
+            // NOT (P AND NOT Q) --> (NOT P) OR NOT NOT Q --> (NOT P) OR Q
+            // NOT (T.C IS NULL AND NOT T.C > T.A) --> ( NOT T.C IS NULL) OR T.C
+            // > T.A
+            TupleValueExpression tve1 = new TupleValueExpression();
+            tve.setTableName("T");
+            tve.setColumnName("A");
+            OperatorExpression expr4 = new OperatorExpression(ExpressionType.COMPARE_GREATERTHAN, tve, tve1);
+            OperatorExpression expr5 = new OperatorExpression(ExpressionType.CONJUNCTION_AND, expr1, expr4);
+            OperatorExpression expr6 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr5, null);
+            assertTrue(ExpressionUtil.isNullRejectingExpression(expr6, "T"));
 
-        // NOT (T.C IS NOT NULL AND T.C > T.A) --> T.C IS NULL OR  NOT( T.C > T.A)
-        OperatorExpression expr7 = new OperatorExpression(ExpressionType.CONJUNCTION_AND, expr2, expr4);
-        OperatorExpression expr8 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr7, null);
-        assertFalse(ExpressionUtil.isNullRejectingExpression(expr8, "T"));
+            // NOT (T.C IS NOT NULL AND T.C > T.A) --> T.C IS NULL OR NOT( T.C >
+            // T.A)
+            OperatorExpression expr7 = new OperatorExpression(ExpressionType.CONJUNCTION_AND, expr2, expr4);
+            OperatorExpression expr8 = new OperatorExpression(ExpressionType.OPERATOR_NOT, expr7, null);
+            assertFalse(ExpressionUtil.isNullRejectingExpression(expr8, "T"));
+        }
+        {
+            // COALESCE expression
+            TupleValueExpression tve1 = new TupleValueExpression("T1", "T1", "C", "C", 1);
+            TupleValueExpression tve2 = new TupleValueExpression("T2", "T2", "C", "C", 1);
+            OperatorExpression isnull = new OperatorExpression(ExpressionType.OPERATOR_IS_NULL, tve1, null);
+            OperatorExpression alternative = new OperatorExpression(ExpressionType.OPERATOR_ALTERNATIVE, tve2, tve1);
+            OperatorExpression colalesce = new OperatorExpression(ExpressionType.OPERATOR_CASE_WHEN, isnull, alternative);
 
+            assertFalse(ExpressionUtil.isNullRejectingExpression(colalesce, "T1"));
+            assertFalse(ExpressionUtil.isNullRejectingExpression(colalesce, "T2"));
+            assertFalse(ExpressionUtil.isNullRejectingExpression(colalesce, "T"));
+
+            TupleValueExpression tve3 = new TupleValueExpression("T3", "T3", "C", "C", 1);
+            OperatorExpression compExpr = new OperatorExpression(
+                    ExpressionType.COMPARE_GREATERTHAN, tve3, colalesce);
+            assertFalse(ExpressionUtil.isNullRejectingExpression(compExpr, "T1"));
+            assertFalse(ExpressionUtil.isNullRejectingExpression(compExpr, "T2"));
+            assertTrue(ExpressionUtil.isNullRejectingExpression(compExpr, "T3"));
+        }
     }
 
     // Test compiler time expression evaluation.
@@ -1066,7 +1112,7 @@ public class TestExpressionUtil extends TestCase {
 
             // expr or expr => no change
             expr = new OperatorExpression(ExpressionType.CONJUNCTION_OR, comp, comp);
-            AbstractExpression origExpr = (AbstractExpression) expr.clone();
+            AbstractExpression origExpr = expr.clone();
             expr = ExpressionUtil.evaluateExpression(expr);
             assertEquals(origExpr, expr);
 

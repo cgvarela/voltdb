@@ -24,16 +24,17 @@ import com.google_voltpatches.common.annotations.Beta;
 import com.google_voltpatches.common.annotations.GwtCompatible;
 import com.google_voltpatches.common.annotations.GwtIncompatible;
 import com.google_voltpatches.common.base.Objects;
-
+import com.google_voltpatches.common.collect.Maps.IteratorBasedAbstractMap;
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
+import com.google_voltpatches.j2objc.annotations.WeakOuter;
 import java.io.Serializable;
 import java.lang.reflect.Array;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -75,7 +76,7 @@ import javax.annotation_voltpatches.Nullable;
  * to one cell and a thread that reads from another.
  *
  * <p>See the Guava User Guide article on <a href=
- * "http://code.google.com/p/guava-libraries/wiki/NewCollectionTypesExplained#Table">
+ * "https://github.com/google/guava/wiki/NewCollectionTypesExplained#table">
  * {@code Table}</a>.
  *
  * @author Jared Levy
@@ -129,8 +130,8 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
    */
   public static <R, C, V> ArrayTable<R, C, V> create(Table<R, C, V> table) {
     return (table instanceof ArrayTable<?, ?, ?>)
-      ? new ArrayTable<R, C, V>((ArrayTable<R, C, V>) table)
-      : new ArrayTable<R, C, V>(table);
+        ? new ArrayTable<R, C, V>((ArrayTable<R, C, V>) table)
+        : new ArrayTable<R, C, V>(table);
   }
 
   private final ImmutableList<R> rowList;
@@ -141,8 +142,7 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
   private final ImmutableMap<C, Integer> columnKeyToIndex;
   private final V[][] array;
 
-  private ArrayTable(Iterable<? extends R> rowKeys,
-      Iterable<? extends C> columnKeys) {
+  private ArrayTable(Iterable<? extends R> rowKeys, Iterable<? extends C> columnKeys) {
     this.rowList = ImmutableList.copyOf(rowKeys);
     this.columnList = ImmutableList.copyOf(columnKeys);
     checkArgument(!rowList.isEmpty());
@@ -153,23 +153,14 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
      * columnKeys is empty but rowKeys isn't, the table is empty but
      * containsRow() can return true and rowKeySet() isn't empty.
      */
-    rowKeyToIndex = index(rowList);
-    columnKeyToIndex = index(columnList);
+    rowKeyToIndex = Maps.indexMap(rowList);
+    columnKeyToIndex = Maps.indexMap(columnList);
 
     @SuppressWarnings("unchecked")
-    V[][] tmpArray
-        = (V[][]) new Object[rowList.size()][columnList.size()];
+    V[][] tmpArray = (V[][]) new Object[rowList.size()][columnList.size()];
     array = tmpArray;
     // Necessary because in GWT the arrays are initialized with "undefined" instead of null.
     eraseAll();
-  }
-
-  private static <E> ImmutableMap<E, Integer> index(List<E> list) {
-    ImmutableMap.Builder<E, Integer> columnBuilder = ImmutableMap.builder();
-    for (int i = 0; i < list.size(); i++) {
-      columnBuilder.put(list.get(i), i);
-    }
-    return columnBuilder.build();
   }
 
   private ArrayTable(Table<R, C, V> table) {
@@ -192,7 +183,7 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
     }
   }
 
-  private abstract static class ArrayMap<K, V> extends Maps.ImprovedAbstractMap<K, V> {
+  private abstract static class ArrayMap<K, V> extends IteratorBasedAbstractMap<K, V> {
     private final ImmutableMap<K, Integer> keyIndex;
 
     private ArrayMap(ImmutableMap<K, Integer> keyIndex) {
@@ -210,9 +201,11 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
 
     abstract String getKeyRole();
 
-    @Nullable abstract V getValue(int index);
+    @Nullable
+    abstract V getValue(int index);
 
-    @Nullable abstract V setValue(int index, V newValue);
+    @Nullable
+    abstract V setValue(int index, V newValue);
 
     @Override
     public int size() {
@@ -225,41 +218,31 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
     }
 
     @Override
-    protected Set<Entry<K, V>> createEntrySet() {
-      return new Maps.EntrySet<K, V>() {
+    Iterator<Entry<K, V>> entryIterator() {
+      return new AbstractIndexedListIterator<Entry<K, V>>(size()) {
         @Override
-        Map<K, V> map() {
-          return ArrayMap.this;
-        }
-
-        @Override
-        public Iterator<Entry<K, V>> iterator() {
-          return new AbstractIndexedListIterator<Entry<K, V>>(size()) {
+        protected Entry<K, V> get(final int index) {
+          return new AbstractMapEntry<K, V>() {
             @Override
-            protected Entry<K, V> get(final int index) {
-              return new AbstractMapEntry<K, V>() {
-                @Override
-                public K getKey() {
-                  return ArrayMap.this.getKey(index);
-                }
+            public K getKey() {
+              return ArrayMap.this.getKey(index);
+            }
 
-                @Override
-                public V getValue() {
-                  return ArrayMap.this.getValue(index);
-                }
+            @Override
+            public V getValue() {
+              return ArrayMap.this.getValue(index);
+            }
 
-                @Override
-                public V setValue(V value) {
-                  return ArrayMap.this.setValue(index, value);
-                }
-              };
+            @Override
+            public V setValue(V value) {
+              return ArrayMap.this.setValue(index, value);
             }
           };
         }
       };
     }
 
-    // TODO(user): consider an optimized values() implementation
+    // TODO(lowasser): consider an optimized values() implementation
 
     @Override
     public boolean containsKey(@Nullable Object key) {
@@ -349,6 +332,7 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
    *     or {@code columnIndex} is greater then or equal to the number of
    *     allowed column keys
    */
+  @CanIgnoreReturnValue
   public V set(int rowIndex, int columnIndex, @Nullable V value) {
     // In GWT array access never throws IndexOutOfBoundsException.
     checkElementIndex(rowIndex, rowList.size());
@@ -368,12 +352,10 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
    *
    * @param valueClass class of values stored in the returned array
    */
-  @GwtIncompatible("reflection")
+  @GwtIncompatible // reflection
   public V[][] toArray(Class<V> valueClass) {
-    // Can change to use varargs in JDK 1.6 if we want
     @SuppressWarnings("unchecked") // TODO: safe?
-    V[][] copy = (V[][]) Array.newInstance(
-        valueClass, new int[] { rowList.size(), columnList.size() });
+    V[][] copy = (V[][]) Array.newInstance(valueClass, rowList.size(), columnList.size());
     for (int i = 0; i < rowList.size(); i++) {
       System.arraycopy(array[i], 0, copy[i], 0, array[i].length);
     }
@@ -387,7 +369,8 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
    * @deprecated Use {@link #eraseAll}
    */
   @Override
-  @Deprecated public void clear() {
+  @Deprecated
+  public void clear() {
     throw new UnsupportedOperationException();
   }
 
@@ -444,8 +427,7 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
   public V get(@Nullable Object rowKey, @Nullable Object columnKey) {
     Integer rowIndex = rowKeyToIndex.get(rowKey);
     Integer columnIndex = columnKeyToIndex.get(columnKey);
-    return (rowIndex == null || columnIndex == null)
-        ? null : at(rowIndex, columnIndex);
+    return (rowIndex == null || columnIndex == null) ? null : at(rowIndex, columnIndex);
   }
 
   /**
@@ -462,6 +444,7 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
    * @throws IllegalArgumentException if {@code rowKey} is not in {@link
    *     #rowKeySet()} or {@code columnKey} is not in {@link #columnKeySet()}.
    */
+  @CanIgnoreReturnValue
   @Override
   public V put(R rowKey, C columnKey, @Nullable V value) {
     checkNotNull(rowKey);
@@ -469,8 +452,7 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
     Integer rowIndex = rowKeyToIndex.get(rowKey);
     checkArgument(rowIndex != null, "Row %s not in %s", rowKey, rowList);
     Integer columnIndex = columnKeyToIndex.get(columnKey);
-    checkArgument(columnIndex != null,
-        "Column %s not in %s", columnKey, columnList);
+    checkArgument(columnIndex != null, "Column %s not in %s", columnKey, columnList);
     return set(rowIndex, columnIndex, value);
   }
 
@@ -501,8 +483,10 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
    * @throws UnsupportedOperationException always
    * @deprecated Use {@link #erase}
    */
+  @CanIgnoreReturnValue
   @Override
-  @Deprecated public V remove(Object rowKey, Object columnKey) {
+  @Deprecated
+  public V remove(Object rowKey, Object columnKey) {
     throw new UnsupportedOperationException();
   }
 
@@ -519,6 +503,7 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
    * @return the value previously associated with the keys, or {@code null} if
    *     no mapping existed for the keys
    */
+  @CanIgnoreReturnValue
   public V erase(@Nullable Object rowKey, @Nullable Object columnKey) {
     Integer rowIndex = rowKeyToIndex.get(rowKey);
     Integer columnIndex = columnKeyToIndex.get(columnKey);
@@ -556,18 +541,22 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
   @Override
   Iterator<Cell<R, C, V>> cellIterator() {
     return new AbstractIndexedListIterator<Cell<R, C, V>>(size()) {
-      @Override protected Cell<R, C, V> get(final int index) {
+      @Override
+      protected Cell<R, C, V> get(final int index) {
         return new Tables.AbstractCell<R, C, V>() {
           final int rowIndex = index / columnList.size();
           final int columnIndex = index % columnList.size();
+
           @Override
           public R getRowKey() {
             return rowList.get(rowIndex);
           }
+
           @Override
           public C getColumnKey() {
             return columnList.get(columnIndex);
           }
+
           @Override
           public V getValue() {
             return at(rowIndex, columnIndex);
@@ -593,8 +582,7 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
   public Map<R, V> column(C columnKey) {
     checkNotNull(columnKey);
     Integer columnIndex = columnKeyToIndex.get(columnKey);
-    return (columnIndex == null)
-        ? ImmutableMap.<R, V>of() : new Column(columnIndex);
+    return (columnIndex == null) ? ImmutableMap.<R, V>of() : new Column(columnIndex);
   }
 
   private class Column extends ArrayMap<R, V> {
@@ -640,6 +628,7 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
     return (map == null) ? columnMap = new ColumnMap() : map;
   }
 
+  @WeakOuter
   private class ColumnMap extends ArrayMap<C, Map<R, V>> {
     private ColumnMap() {
       super(columnKeyToIndex);
@@ -729,6 +718,7 @@ public final class ArrayTable<R, C, V> extends AbstractTable<R, C, V> implements
     return (map == null) ? rowMap = new RowMap() : map;
   }
 
+  @WeakOuter
   private class RowMap extends ArrayMap<R, Map<C, V>> {
     private RowMap() {
       super(rowKeyToIndex);

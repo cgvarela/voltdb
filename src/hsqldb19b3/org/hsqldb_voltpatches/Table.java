@@ -66,9 +66,7 @@
 
 package org.hsqldb_voltpatches;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.hsqldb_voltpatches.HSQLInterface.HSQLParseException;
@@ -287,13 +285,15 @@ public class Table extends TableBase implements SchemaObject {
                                          this, true);
     }
 
+    @Override
     public int getType() {
         return SchemaObject.TABLE;
     }
 
     /**
-     *  Returns the HsqlName object fo the table
+     *  Returns the HsqlName object for the table
      */
+    @Override
     public final HsqlName getName() {
         return tableName;
     }
@@ -301,6 +301,7 @@ public class Table extends TableBase implements SchemaObject {
     /**
      * Returns the catalog name or null, depending on a database property.
      */
+    @Override
     public HsqlName getCatalogName() {
         return database.getCatalogName();
     }
@@ -308,14 +309,17 @@ public class Table extends TableBase implements SchemaObject {
     /**
      * Returns the schema name.
      */
+    @Override
     public HsqlName getSchemaName() {
         return tableName.schema;
     }
 
+    @Override
     public Grantee getOwner() {
         return tableName.schema.owner;
     }
 
+    @Override
     public OrderedHashSet getReferences() {
 
         OrderedHashSet set = new OrderedHashSet();
@@ -331,6 +335,7 @@ public class Table extends TableBase implements SchemaObject {
         return set;
     }
 
+    @Override
     public OrderedHashSet getComponents() {
 
         OrderedHashSet set = new OrderedHashSet();
@@ -347,6 +352,7 @@ public class Table extends TableBase implements SchemaObject {
         return set;
     }
 
+    @Override
     public void compile(Session session) {}
 
     String[] getSQL(OrderedHashSet resolved, OrderedHashSet unresolved) {
@@ -422,6 +428,7 @@ public class Table extends TableBase implements SchemaObject {
         return array;
     }
 
+    @Override
     public String getSQL() {
 
         StringBuffer sb = new StringBuffer();
@@ -532,6 +539,7 @@ public class Table extends TableBase implements SchemaObject {
     /**
      * Used to create row id's
      */
+    @Override
     public int getId() {
         return tableName.hashCode();
     }
@@ -1043,6 +1051,7 @@ public class Table extends TableBase implements SchemaObject {
             // A VoltDB extension to support indexed expressions and assume unique attribute
             Expression[] exprArr = idx.getExpressions();
             boolean assumeUnique = idx.isAssumeUnique();
+            Expression predicate = idx.getPredicate();
             // End of VoltDB extension
             idx = tn.createIndexStructure(idx.getName(), colarr,
                                           idx.getColumnDesc(), null,
@@ -1053,8 +1062,8 @@ public class Table extends TableBase implements SchemaObject {
             if (exprArr != null) {
                 idx = idx.withExpressions(adjustExprs(exprArr, colIndex, adjust));
             }
-            if (idx.getPredicate() != null) {
-                idx = idx.withPredicate(idx.getPredicate());
+            if (predicate != null) {
+                idx = idx.withPredicate(adjustExpr(predicate, colIndex, adjust));
             }
             idx = idx.setAssumeUnique(assumeUnique);
             // End of VoltDB extension
@@ -1960,7 +1969,7 @@ public class Table extends TableBase implements SchemaObject {
 
                 for (int j = 0; j < constraints.length; j++) {
                     constraints[j].checkCheckConstraint(session, this,
-                                                        (Object) data[i]);
+                                                        data[i]);
                 }
             }
 
@@ -2253,7 +2262,7 @@ public class Table extends TableBase implements SchemaObject {
         RowSetNavigator nav   = result.initialiseNavigator();
 
         while (nav.hasNext()) {
-            Object[] data = (Object[]) nav.getNext();
+            Object[] data = nav.getNext();
             Object[] newData =
                 (Object[]) ArrayUtil.resizeArrayIfDifferent(data,
                     getColumnCount());
@@ -2302,7 +2311,7 @@ public class Table extends TableBase implements SchemaObject {
         int             count = 0;
 
         while (nav.hasNext()) {
-            insertSys(store, (Object[]) nav.getNext());
+            insertSys(store, nav.getNext());
 
             count++;
         }
@@ -2319,7 +2328,7 @@ public class Table extends TableBase implements SchemaObject {
         RowSetNavigator nav = ins.initialiseNavigator();
 
         while (nav.hasNext()) {
-            Object[] data = (Object[]) nav.getNext();
+            Object[] data = nav.getNext();
             Object[] newData =
                 (Object[]) ArrayUtil.resizeArrayIfDifferent(data,
                     getColumnCount());
@@ -2606,6 +2615,7 @@ public class Table extends TableBase implements SchemaObject {
         }
     }
 
+    @Override
     public void clearAllData(Session session) {
 
         super.clearAllData(session);
@@ -2615,6 +2625,7 @@ public class Table extends TableBase implements SchemaObject {
         }
     }
 
+    @Override
     public void clearAllData(PersistentStore store) {
 
         super.clearAllData(store);
@@ -2650,6 +2661,16 @@ public class Table extends TableBase implements SchemaObject {
         return exprArr;
     }
 
+    /** Index expressions as exported to VoltDB are "column name based" not "column index based",
+     *  so they are not thrown off by column re-numbering.
+     *  VoltDB is responsible for re-resolving the names to the moved columns (changed column index numbers).
+     *  This stubbed pass-through method is here in case that someday changes in a way that would require
+     *  processing of the expression trees.
+     */
+    private Expression adjustExpr(Expression expr, int colIndex, int adjust) {
+        return expr;
+    }
+
     /**
      * VoltDB added method to get a non-catalog-dependent
      * representation of this HSQLDB object.
@@ -2662,7 +2683,6 @@ public class Table extends TableBase implements SchemaObject {
             throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException
     {
         VoltXMLElement table = new VoltXMLElement("table");
-        Map<String, String> autoGenNameMap = new HashMap<String, String>();
 
         // add table metadata
         String tableName = getName().name;
@@ -2670,8 +2690,6 @@ public class Table extends TableBase implements SchemaObject {
 
         // read all the columns
         VoltXMLElement columns = new VoltXMLElement("columns");
-        // Hacky, need a "name" for the diffing stuff to work correctly
-        // See VoltXMLElement.java for further explanation of TEH HORROR
         columns.attributes.put("name", "columns");
         table.children.add(columns);
         int[] columnIndices = getColumnMap();
@@ -2683,66 +2701,32 @@ public class Table extends TableBase implements SchemaObject {
             assert(colChild != null);
         }
 
+        // read all the constraints
+        VoltXMLElement constraints = new VoltXMLElement("constraints");
+        constraints.attributes.put("name", "constraints");
+        Map<String, VoltXMLElement> indexConstraintMap = new HashMap<>();
+        for (Constraint constraint : getConstraints()) {
+            VoltXMLElement constraintChild = constraint.voltGetConstraintXML();
+            constraints.children.add(constraintChild);
+            if (constraintChild.attributes.containsKey("index")) {
+                indexConstraintMap.put(constraintChild.attributes.get("index"), constraintChild);
+            }
+        }
+
         // read all the indexes
         VoltXMLElement indexes = new VoltXMLElement("indexes");
-        // Hacky, need a "name" for the diffing stuff to work correctly
-        // See VoltXMLElement.java for further explanation of TEH HORROR
         indexes.attributes.put("name", "indexes");
-        table.children.add(indexes);
         for (Index index : indexList) {
-            VoltXMLElement indexChild = index.voltGetIndexXML(session, tableName);
-            autoGenNameMap.put(index.getName().name, indexChild.attributes.get("name"));
+            VoltXMLElement indexChild = index.voltGetIndexXML(session, tableName, indexConstraintMap);
             indexes.children.add(indexChild);
             assert(indexChild != null);
         }
 
-        // read all the constraints
-        VoltXMLElement constraints = new VoltXMLElement("constraints");
-        // Hacky, need a "name" for the diffing stuff to work correctly
-        // See VoltXMLElement.java for further explanation of TEH HORROR
-        constraints.attributes.put("name", "constraints");
+        // Indexes must come before constraints when converting to the catalog.
+        table.children.add(indexes);
         table.children.add(constraints);
-        List<VoltXMLElement> revisitList = new ArrayList<VoltXMLElement>();
-        for (Constraint constraint : getConstraints()) {
-            VoltXMLElement constraintChild = constraint.voltGetConstraintXML();
-            if (constraintChild != null) {
-                String constraintName = constraintChild.attributes.get("index");
-                String autoGenName = autoGenNameMap.get(constraintName);
-                if (autoGenName != null) {
-                    constraintChild.attributes.put("index", autoGenName);
-                    String constName;
-                    if (autoGenName.startsWith(HSQLInterface.AUTO_GEN_CONSTRAINT_WRAPPER_PREFIX)) {
-                        constName = autoGenName.substring(HSQLInterface.AUTO_GEN_CONSTRAINT_WRAPPER_PREFIX.length());
-                    }
-                    else {
-                        constName = autoGenName;
-                    }
-                    autoGenNameMap.put(constraintChild.attributes.get("name"), constName);
-                    constraintChild.attributes.put("name", constName);
-                }
-                else {
-                    int const_type = constraint.getConstraintType();
-                    if (const_type == Constraint.PRIMARY_KEY || const_type == Constraint.UNIQUE
-                            || const_type == Constraint.LIMIT || const_type == Constraint.FOREIGN_KEY) {
-                        revisitList.add(constraintChild);
-                        continue;
-                    }
-                }
-                constraints.children.add(constraintChild);
-            }
-        }
 
-        for (VoltXMLElement constraintChild : revisitList) {
-            String constraintName = constraintChild.attributes.get("index");
-            String autoGenName = autoGenNameMap.get(constraintName);
-            if (autoGenName != null) {
-                constraintChild.attributes.put("index", autoGenName);
-                String constName = HSQLInterface.AUTO_GEN_CONSTRAINT_WRAPPER_PREFIX +
-                        autoGenName.substring(HSQLInterface.AUTO_GEN_PREFIX.length());
-                autoGenNameMap.put(constraintChild.attributes.get("name"), constName);
-            }
-            constraints.children.add(constraintChild);
-        }
+        assert(indexConstraintMap.isEmpty());
 
         return table;
     }

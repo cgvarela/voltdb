@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,13 +20,13 @@
 
 #include "common/ids.h"
 #include "common/types.h"
+
 #include <vector>
 #include <map>
 
 namespace voltdb {
 class StatsSource;
-class Table;
-
+class TempTable;
 /**
  * StatsAgent serves as a central registrar for all sources of statistical runtime information in an EE. In the future this could perform
  * further aggregation and processing on the collected statistics. Right now statistics are only collected on persistent tables but that
@@ -50,7 +50,7 @@ public:
     /**
      * Unassociate all instances of this selector type
      */
-    void unregisterStatsSource(voltdb::StatisticsSelectorType sst);
+    void unregisterStatsSource(voltdb::StatisticsSelectorType sst, int32_t relativeIndexOfTable = -1);
 
     /**
      * Get statistics for the specified resources
@@ -59,8 +59,9 @@ public:
      * @param interval Return counters since the beginning or since this method was last invoked
      * @param now Timestamp to return with each row
      */
-    Table* getStats(
+    TempTable* getStats(
             voltdb::StatisticsSelectorType sst,
+            int64_t m_siteId, int32_t m_partitionId,
             std::vector<voltdb::CatalogId> catalogIds,
             bool interval,
             int64_t now);
@@ -76,7 +77,7 @@ private:
     /**
      * Temporary tables for aggregating the results of table statistics keyed by type of statistic
      */
-    std::map<voltdb::StatisticsSelectorType, voltdb::Table*> m_statsTablesByStatsSelector;
+    std::map<voltdb::StatisticsSelectorType, voltdb::TempTable*> m_statsTablesByStatsSelector;
 };
 
 }

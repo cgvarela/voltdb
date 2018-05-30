@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,15 +17,17 @@
 
 package org.voltcore.network;
 
-import com.google_voltpatches.common.base.Function;
-import com.google_voltpatches.common.cache.Cache;
-import com.google_voltpatches.common.cache.CacheBuilder;
-import org.voltcore.utils.CoreUtils;
-
 import java.net.InetAddress;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+
+import org.voltcore.utils.CoreUtils;
+
+import com.google_voltpatches.common.base.Function;
+import com.google_voltpatches.common.cache.Cache;
+import com.google_voltpatches.common.cache.CacheBuilder;
 
 /**
  * A configurable cache mapping from InetAddress to the hostnames of InetAddresses.
@@ -33,8 +35,8 @@ import java.util.concurrent.TimeUnit;
  * to DNS lookups that will time out and works around the lack of async DNS lookups in Java
  */
 public class ReverseDNSCache {
-    public static final ThreadPoolExecutor m_es =
-        new ThreadPoolExecutor(0, 16, 1, TimeUnit.SECONDS,
+    private static volatile ThreadPoolExecutor m_es =
+        new ThreadPoolExecutor(1, 16, 1, TimeUnit.SECONDS,
                                new SynchronousQueue<Runnable>(),
                                CoreUtils.getThreadFactory("Reverse DNS lookups"));
 
@@ -66,6 +68,41 @@ public class ReverseDNSCache {
     private final Cache<InetAddress, String> m_failures;
 
 
+    public static synchronized void start() {
+        if (m_es == null) {
+            m_es = new ThreadPoolExecutor(1, 16, 1, TimeUnit.SECONDS,
+                   new SynchronousQueue<Runnable>(),
+                   CoreUtils.getThreadFactory("Reverse DNS lookups"));
+            try {
+                m_es.submit(new Runnable() {
+                    @Override
+                    public void run() {}
+                }).get();
+            } catch (InterruptedException | ExecutionException e) {
+                throw new RuntimeException("Unable to prime ReverseDNSCache", e);
+            }
+        }
+    }
+
+    public static synchronized void stop() throws InterruptedException{
+        if (m_es != null) {
+            m_es.shutdown();
+            try {
+                m_es.awaitTermination(365, TimeUnit.DAYS);
+            } catch (InterruptedException e) {
+                throw new RuntimeException("Unable to shutdown ReverseDNSCache", e);
+            }
+            m_es = null;
+        }
+    }
+
+    public static void submit(Runnable r) {
+        final ThreadPoolExecutor es = m_es;
+        if (es == null || es.isShutdown()) {
+            throw new IllegalStateException("ReverseDNSCache is closed");
+        }
+        es.submit(r);
+    }
 
     /**
      * Passing in null for entries or timeout results in no limit being set

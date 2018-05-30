@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import org.voltcore.messaging.VoltMessage;
+import org.voltdb.DependencyPair;
 import org.voltdb.VoltTable;
 import org.voltdb.messaging.FragmentResponseMessage;
 import org.voltdb.utils.MiscUtils;
@@ -42,8 +44,10 @@ public class SysProcDuplicateCounter extends DuplicateCounter
     SysProcDuplicateCounter(
             long destinationHSId,
             long realTxnId,
-            List<Long> expectedHSIds, String procName)    {
-        super(destinationHSId, realTxnId, expectedHSIds, procName);
+            List<Long> expectedHSIds,
+            VoltMessage message)
+    {
+        super(destinationHSId, realTxnId, expectedHSIds, message);
     }
 
     /**
@@ -97,7 +101,10 @@ public class SysProcDuplicateCounter extends DuplicateCounter
             tables.add(dep);
         }
 
-        return checkCommon(hash, message.isRecovering(), null, message);
+        // needs to be a three long array to work
+        int[] hashes = new int[] { (int) hash, 0, 0 };
+
+        return checkCommon(hashes, message.isRecovering(), null, message, false);
     }
 
     @Override
@@ -108,7 +115,7 @@ public class SysProcDuplicateCounter extends DuplicateCounter
         // union up all the deps we've collected and jam them in
         for (Entry<Integer, List<VoltTable>> dep : m_alldeps.entrySet()) {
             VoltTable grouped = VoltTableUtil.unionTables(dep.getValue());
-            unioned.addDependency(dep.getKey(), grouped);
+            unioned.addDependency(new DependencyPair.TableDependencyPair(dep.getKey(), grouped));
         }
         return unioned;
     }

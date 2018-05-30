@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,10 +21,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.voltcore.logging.Level;
 import org.voltcore.logging.VoltLogger;
+import org.voltcore.utils.CoreUtils;
 import org.voltdb.DependencyPair;
 import org.voltdb.ParameterSet;
-import org.voltdb.ProcInfo;
 import org.voltdb.SystemProcedureExecutionContext;
 import org.voltdb.VoltDB;
 import org.voltdb.VoltSystemProcedure;
@@ -40,7 +41,6 @@ import org.voltdb.dtxn.DtxnConstants;
  *
  * Invoking this procedure immediately attempts to terminate each node in the cluster.
  */
-@ProcInfo(singlePartition = false)
 public class Shutdown extends VoltSystemProcedure {
 
     private static final int DEP_shutdownSync = (int) SysProcFragmentId.PF_shutdownSync
@@ -54,17 +54,21 @@ public class Shutdown extends VoltSystemProcedure {
             try {
                 Thread.sleep(10000);
             } catch (InterruptedException e) {}
-            new VoltLogger("HOST").warn("VoltDB shutting down as requested by @Shutdown command.");
+            VoltLogger voltLogger = new VoltLogger("HOST");
+            String msg = "VoltDB shutting down as requested by @Shutdown command.";
+            CoreUtils.printAsciiArtLog(voltLogger, msg, Level.INFO);
             System.exit(0);
         }
     };
 
     @Override
-    public void init() {
-        registerPlanFragment(SysProcFragmentId.PF_shutdownSync);
-        registerPlanFragment(SysProcFragmentId.PF_shutdownSyncDone);
-        registerPlanFragment(SysProcFragmentId.PF_shutdownCommand);
-        registerPlanFragment(SysProcFragmentId.PF_procedureDone);
+    public long[] getPlanFragmentIds() {
+        return new long[]{
+            SysProcFragmentId.PF_shutdownSync,
+            SysProcFragmentId.PF_shutdownSyncDone,
+            SysProcFragmentId.PF_shutdownCommand,
+            SysProcFragmentId.PF_procedureDone
+        };
     }
 
     @Override
@@ -77,14 +81,16 @@ public class Shutdown extends VoltSystemProcedure {
             VoltDB.instance().getHostMessenger().prepareForShutdown();
             if (!m_failsafeArmed.getAndSet(true)) {
                 m_failsafe.start();
-                new VoltLogger("HOST").warn("VoltDB shutdown operation requested and in progress.  Cluster will terminate shortly.");
+                VoltLogger voltLogger = new VoltLogger("HOST");
+                String msg = "VoltDB shutdown operation requested and in progress. Cluster will terminate shortly.";
+                CoreUtils.printAsciiArtLog(voltLogger, msg, Level.INFO);
             }
-            return new DependencyPair(DEP_shutdownSync,
-                    new VoltTable(new ColumnInfo[] { new ColumnInfo("HA", VoltType.STRING) } ));
+            VoltTable rslt = new VoltTable(new ColumnInfo[] { new ColumnInfo("HA", VoltType.STRING) });
+            return new DependencyPair.TableDependencyPair(DEP_shutdownSync, rslt);
         }
         else if (fragmentId == SysProcFragmentId.PF_shutdownSyncDone) {
-            return new DependencyPair(DEP_shutdownSyncDone,
-                    new VoltTable(new ColumnInfo[] { new ColumnInfo("HA", VoltType.STRING) } ));
+            VoltTable rslt = new VoltTable(new ColumnInfo[] { new ColumnInfo("HA", VoltType.STRING) });
+            return new DependencyPair.TableDependencyPair(DEP_shutdownSyncDone, rslt);
         }
         else if (fragmentId == SysProcFragmentId.PF_shutdownCommand) {
             Thread shutdownThread = new Thread() {
@@ -99,7 +105,9 @@ public class Shutdown extends VoltSystemProcedure {
                                 e);
                     }
                     if (die) {
-                        new VoltLogger("HOST").warn("VoltDB shutting down as requested by @Shutdown command.");
+                        VoltLogger voltLogger = new VoltLogger("HOST");
+                        String msg = "VoltDB shutting down as requested by @Shutdown command.";
+                        CoreUtils.printAsciiArtLog(voltLogger, msg, Level.INFO);
                         System.exit(0);
                     }
                     else {

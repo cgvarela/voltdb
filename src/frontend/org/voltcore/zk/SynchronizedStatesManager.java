@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -93,7 +94,14 @@ public class SynchronizedStatesManager {
     private final String m_ssmRootNode;
     private final String m_stateMachineRoot;
     private final String m_stateMachineMemberPath;
-    private final String m_memberId;
+    private String m_memberId;
+    private final String m_canonical_memberId;
+    private int m_resetCounter;
+    private int m_resetLimit;
+    private final int m_resetAllowance; // number of resets allowed within a reset clear threshold duration
+    private long m_lastResetTimeInMillis = -1L;
+
+    private static final long RESET_CLEAR_THRESHOLD = TimeUnit.DAYS.toMillis(1);
 
     private enum REQUEST_TYPE {
         INITIALIZING,
@@ -175,15 +183,16 @@ public class SynchronizedStatesManager {
      */
 
     public abstract class StateMachineInstance {
-        protected final String m_stateMachineId;
+        protected String m_stateMachineId;
+        private final String m_stateMachineName;
         private Set<String> m_knownMembers;
         private boolean m_membershipChangePending = false;
         private final String m_statePath;
         private final String m_lockPath;
         private final String m_barrierResultsPath;
-        private final String m_myResultPath;
+        private String m_myResultPath;
         private final String m_barrierParticipantsPath;
-        private final String m_myPartiticpantsPath;
+        private String m_myParticipantPath;
         private boolean m_stateChangeInitiator = false;
         private String m_ourDistributedLockName = null;
         private String m_lockWaitingOn = null;
@@ -196,6 +205,18 @@ public class SynchronizedStatesManager {
         private int m_currentParticipants = 0;
         private Set<String> m_memberResults = null;
         private int m_lastProposalVersion = 0;
+
+        private boolean m_initializationCompleted = false;
+
+        private boolean isInitializationCompleted() {
+            lockLocalState();
+            unlockLocalState();
+            return m_initializationCompleted;
+        }
+
+        public int getResetCounter() {
+            return m_resetCounter;
+        }
 
         private final Lock m_mutex = new ReentrantLock();
         private int m_mutexLockedCnt = 0;
@@ -267,7 +288,7 @@ public class SynchronizedStatesManager {
             public void process(final WatchedEvent event) {
                 try {
                     if (!m_done.get()) {
-                        m_shared_es.submit(HandlerForBarrierPartiticpantsEvent);
+                        m_shared_es.submit(HandlerForBarrierParticipantsEvent);
                     }
                 } catch (RejectedExecutionException e) {
                 }
@@ -307,13 +328,14 @@ public class SynchronizedStatesManager {
         public StateMachineInstance()
         {
             m_statePath = "MockInstanceStatePath";
-            m_stateMachineId = "MockInstanceId";
             m_barrierResultsPath = "MockBarrierResultsPath";
             m_myResultPath = "MockMyResultPath";
             m_barrierParticipantsPath = "MockParticipantsPath";
-            m_myPartiticpantsPath = "MockMyParticipantPath";
+            m_myParticipantPath = "MockMyParticipantPath";
             m_lockPath = "MockLockPath";
             m_log = null;
+            m_stateMachineId = "MockStateMachineId";
+            m_stateMachineName = "MockStateMachineName";
         }
 
         public StateMachineInstance(String instanceName, VoltLogger logger) throws RuntimeException {
@@ -321,15 +343,18 @@ public class SynchronizedStatesManager {
                 throw new RuntimeException("State machine name may not be named " + m_memberNode);
             }
             assert(!instanceName.equals(m_memberNode));
+            m_stateMachineName = instanceName;
             m_statePath = ZKUtil.joinZKPath(m_stateMachineRoot, instanceName);
             m_lockPath = ZKUtil.joinZKPath(m_statePath, "LOCK_CONTENDERS");
             m_barrierResultsPath = ZKUtil.joinZKPath(m_statePath, "BARRIER_RESULTS");
             m_myResultPath = ZKUtil.joinZKPath(m_barrierResultsPath, m_memberId);
             m_barrierParticipantsPath = ZKUtil.joinZKPath(m_statePath, "BARRIER_PARTICIPANTS");
-            m_myPartiticpantsPath = ZKUtil.joinZKPath(m_barrierParticipantsPath, m_memberId);
+            m_myParticipantPath = ZKUtil.joinZKPath(m_barrierParticipantsPath, m_memberId);
             m_log = logger;
-            m_stateMachineId = "SMI " + m_ssmRootNode + "/" + instanceName  + "/" + m_memberId;
-            m_log.debug(m_stateMachineId + " created.");
+            m_stateMachineId = "SMI " + m_ssmRootNode + "/" + m_stateMachineName + "/" + m_memberId;
+            if (m_log.isDebugEnabled()) {
+                m_log.debug(m_stateMachineId + " created.");
+            }
         }
 
 
@@ -341,6 +366,13 @@ public class SynchronizedStatesManager {
             registerStateMachine(this);
         }
 
+        /**
+         * Notify the derived class that the state machine instance is being reset,
+         * the derived class should reset its own specific states and provide a reset state
+         * @param isDirectVictim true if the reset is caused by callback exception in this instance
+         * @return a ByteBuffer encapsulating the reset state provided by the derived class
+         */
+        protected abstract ByteBuffer notifyOfStateMachineReset(boolean isDirectVictim);
 
         private void initializeStateMachine(Set<String> knownMembers) throws KeeperException, InterruptedException {
             addIfMissing(m_statePath, CreateMode.PERSISTENT, null);
@@ -380,10 +412,19 @@ public class SynchronizedStatesManager {
                 m_lockWaitingOn = "bogus"; // Avoids call to notifyDistributedLockWaiter
                 m_log.info(m_stateMachineId + ": Initialized (first member) with State " +
                         stateToString(m_synchronizedState.asReadOnlyBuffer()));
+                m_initializationCompleted = true;
                 cancelDistributedLock();
                 checkForBarrierParticipantsChange();
                 // Notify the derived object that we have a stable state
-                setInitialState(readOnlyResult);
+                try {
+                    setInitialState(readOnlyResult);
+                } catch (Exception e) {
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug("Error in StateMachineInstance callbacks.", e);
+                    }
+                    m_initializationCompleted = false;
+                    m_shared_es.submit(new CallbackExceptionHandler(this));
+                }
             }
             else {
                 // To get a stable result set, we need to get the lock for this state machine. If someone else has the
@@ -420,15 +461,52 @@ public class SynchronizedStatesManager {
          */
         private void disableMembership() throws InterruptedException {
             lockLocalState();
+            // put in two separate try-catch blocks so that both actions are attempted
             try {
-                m_zk.delete(m_myPartiticpantsPath, -1);
+                m_zk.delete(m_myParticipantPath, -1);
+            }
+            catch (KeeperException e) {
+            }
+            try {
                 if (m_ourDistributedLockName != null) {
                     m_zk.delete(m_ourDistributedLockName, -1);
                 }
             }
             catch (KeeperException e) {
             }
+            m_initializationCompleted = false;
             unlockLocalState();
+        }
+
+        private void reset(boolean isDirectVictim) {
+            ByteBuffer resetState = notifyOfStateMachineReset(isDirectVictim);
+            // if we are the direct victim, use the reset state as requested initial state
+            if (isDirectVictim) {
+                m_requestedInitialState = resetState;
+            }
+            // else simply use currently requested initial state or synchronized state as requested initial state
+            else {
+                if (m_requestedInitialState == null) {
+                    assert(m_synchronizedState != null);
+                    m_requestedInitialState = m_synchronizedState;
+                }
+            }
+            m_synchronizedState = null;
+
+            m_membershipChangePending = false;
+            m_stateChangeInitiator = false;
+            m_ourDistributedLockName = null;
+            m_lockWaitingOn = null;
+            m_holdingDistributedLock = false;
+            m_pendingProposal = null;
+            m_currentRequestType = REQUEST_TYPE.INITIALIZING;
+            m_memberResults = null;
+            m_lastProposalVersion = 0;
+            m_mutexLockedCnt = 0;
+
+            m_myResultPath = ZKUtil.joinZKPath(m_barrierResultsPath, m_memberId);
+            m_myParticipantPath = ZKUtil.joinZKPath(m_barrierParticipantsPath, m_memberId);
+            m_stateMachineId = "SMI " + m_ssmRootNode + "/" + m_stateMachineName + "/" + m_memberId;
         }
 
         private int getProposalVersion() {
@@ -438,14 +516,20 @@ public class SynchronizedStatesManager {
                 m_zk.getData(m_barrierResultsPath, null, nodeStat);
                 proposalVersion = nodeStat.getVersion();
             } catch (KeeperException.SessionExpiredException e) {
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in getProposalVersion");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in getProposalVersion");
+                }
             } catch (KeeperException.ConnectionLossException e) {
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in getProposalVersion");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in getProposalVersion");
+                }
             } catch (InterruptedException e) {
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in getProposalVersion");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in getProposalVersion");
+                }
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in StateMachine.", true, e);
+                        "Unexpected failure in StateMachine.", true, e);
             }
             return proposalVersion;
         }
@@ -518,7 +602,7 @@ public class SynchronizedStatesManager {
                             else {
                                 // We track the number of people waiting on the results so we know when the result is stale and
                                 // the next lock holder can initiate a new state proposal.
-                                m_zk.create(m_myPartiticpantsPath, null, Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+                                m_zk.create(m_myParticipantPath, null, Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
 
                                 m_pendingProposal = existingAndProposedStates.m_proposal;
                                 ByteBuffer proposedState = m_pendingProposal.asReadOnlyBuffer();
@@ -535,10 +619,26 @@ public class SynchronizedStatesManager {
                                 }
                                 unlockLocalState();
                                 if (type == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
-                                    stateChangeProposed(proposedState);
+                                    try {
+                                        stateChangeProposed(proposedState);
+                                    } catch (Exception e) {
+                                        if (m_log.isDebugEnabled()) {
+                                            m_log.debug("Error in StateMachineInstance callbacks.", e);
+                                        }
+                                        m_initializationCompleted = false;
+                                        m_shared_es.submit(new CallbackExceptionHandler(this));
+                                    }
                                 }
                                 else {
-                                    taskRequested(proposedState);
+                                    try {
+                                        taskRequested(proposedState);
+                                    } catch (Exception e) {
+                                        if (m_log.isDebugEnabled()) {
+                                            m_log.debug("Error in StateMachineInstance callbacks.", e);
+                                        }
+                                        m_initializationCompleted = false;
+                                        m_shared_es.submit(new CallbackExceptionHandler(this));
+                                    }
                                 }
                             }
                         }
@@ -552,7 +652,15 @@ public class SynchronizedStatesManager {
                             // provide a result.
                             ByteBuffer taskRequest = m_pendingProposal.asReadOnlyBuffer();
                             unlockLocalState();
-                            taskRequested(taskRequest);
+                            try {
+                                taskRequested(taskRequest);
+                            } catch (Exception e) {
+                                if (m_log.isDebugEnabled()) {
+                                    m_log.debug("Error in StateMachineInstance callbacks.", e);
+                                }
+                                m_initializationCompleted = false;
+                                m_shared_es.submit(new CallbackExceptionHandler(this));
+                            }
                         }
                         else {
                             unlockLocalState();
@@ -573,20 +681,26 @@ public class SynchronizedStatesManager {
                 // lost the full connection. some test cases do this...
                 // means zk shutdown without the elector being shutdown.
                 // ignore.
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in checkForBarrierParticipantsChange");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in checkForBarrierParticipantsChange");
+                }
                 unlockLocalState();
             } catch (KeeperException.ConnectionLossException e) {
                 // lost the full connection. some test cases do this...
                 // means shutdown without the elector being
                 // shutdown; ignore.
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in checkForBarrierParticipantsChange");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in checkForBarrierParticipantsChange");
+                }
                 unlockLocalState();
             } catch (InterruptedException e) {
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in checkForBarrierParticipantsChange");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in checkForBarrierParticipantsChange");
+                }
                 unlockLocalState();
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in StateMachine.", true, e);
+                        "Unexpected failure in StateMachine.", true, e);
             }
             assert(!debugIsLocalStateLocked());
         }
@@ -633,27 +747,37 @@ public class SynchronizedStatesManager {
                     if (result != null) {
                         ByteBuffer bb = ByteBuffer.wrap(result);
                         results.add(bb);
-                        m_log.debug(m_stateMachineId + ":    " + memberId + " reports Result " +
-                                taskResultToString(taskRequest.asReadOnlyBuffer(), bb.asReadOnlyBuffer()));
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug(m_stateMachineId + ":    " + memberId + " reports Result " +
+                                    taskResultToString(taskRequest.asReadOnlyBuffer(), bb.asReadOnlyBuffer()));
+                        }
                     }
                     else {
-                        m_log.debug(m_stateMachineId + ":    " + memberId + " did not supply a Task Result");
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug(m_stateMachineId + ":    " + memberId + " did not supply a Task Result");
+                        }
                     }
                 }
                 // Remove ourselves from the participants list to unblock the next distributed lock waiter
-                m_zk.delete(m_myPartiticpantsPath, -1);
+                m_zk.delete(m_myParticipantPath, -1);
             } catch (KeeperException.SessionExpiredException e) {
                 results = new ArrayList<ByteBuffer>();
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in getUncorrelatedResults");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in getUncorrelatedResults");
+                }
             } catch (KeeperException.ConnectionLossException e) {
                 results = new ArrayList<ByteBuffer>();
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in getUncorrelatedResults");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in getUncorrelatedResults");
+                }
             } catch (InterruptedException e) {
                 results = new ArrayList<ByteBuffer>();
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in getUncorrelatedResults");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in getUncorrelatedResults");
+                }
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in StateMachine.", true, e);
+                        "Unexpected failure in StateMachine.", true, e);
             }
             return results;
         }
@@ -668,27 +792,37 @@ public class SynchronizedStatesManager {
                     if (result != null) {
                         ByteBuffer bb = ByteBuffer.wrap(result);
                         results.put(memberId, bb);
-                        m_log.debug(m_stateMachineId + ":    " + memberId + " reports Result " +
-                                taskResultToString(taskRequest.asReadOnlyBuffer(), bb.asReadOnlyBuffer()));
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug(m_stateMachineId + ":    " + memberId + " reports Result " +
+                                    taskResultToString(taskRequest.asReadOnlyBuffer(), bb.asReadOnlyBuffer()));
+                        }
                     }
                     else {
-                        m_log.debug(m_stateMachineId + ":    " + memberId + " did not supply a Task Result");
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug(m_stateMachineId + ":    " + memberId + " did not supply a Task Result");
+                        }
                     }
                 }
                 // Remove ourselves from the participants list to unblock the next distributed lock waiter
-                m_zk.delete(m_myPartiticpantsPath, -1);
+                m_zk.delete(m_myParticipantPath, -1);
             } catch (KeeperException.SessionExpiredException e) {
                 results = new HashMap<String, ByteBuffer>();
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in getCorrelatedResults");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in getCorrelatedResults");
+                }
             } catch (KeeperException.ConnectionLossException e) {
                 results = new HashMap<String, ByteBuffer>();
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in getCorrelatedResults");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in getCorrelatedResults");
+                }
             } catch (InterruptedException e) {
                 results = new HashMap<String, ByteBuffer>();
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in getCorrelatedResults");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in getCorrelatedResults");
+                }
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in StateMachine.", true, e);
+                        "Unexpected failure in StateMachine.", true, e);
             }
             return results;
         }
@@ -753,16 +887,22 @@ public class SynchronizedStatesManager {
                     }
 
                     // Remove ourselves from the participants list to unblock the next distributed lock waiter
-                    m_zk.delete(m_myPartiticpantsPath, -1);
+                    m_zk.delete(m_myParticipantPath, -1);
                 } catch (KeeperException.SessionExpiredException e) {
-                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in processResultQuorum");
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug(m_stateMachineId + ": Received SessionExpiredException in processResultQuorum");
+                    }
                 } catch (KeeperException.ConnectionLossException e) {
-                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in processResultQuorum");
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug(m_stateMachineId + ": Received ConnectionLossException in processResultQuorum");
+                    }
                 } catch (InterruptedException e) {
-                    m_log.debug(m_stateMachineId + ": Received InterruptedException in processResultQuorum");
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug(m_stateMachineId + ": Received InterruptedException in processResultQuorum");
+                    }
                 } catch (Exception e) {
                     org.voltdb.VoltDB.crashLocalVoltDB(
-                            "Unexepected failure in StateMachine.", true, e);
+                            "Unexpected failure in StateMachine.", true, e);
                 }
                 if (m_stateChangeInitiator) {
                     m_stateChangeInitiator = false;
@@ -775,12 +915,23 @@ public class SynchronizedStatesManager {
                     m_pendingProposal = null;
                     m_log.info(m_stateMachineId + ": Initialized (concensus) with State " +
                             stateToString(m_synchronizedState.asReadOnlyBuffer()));
+                    m_initializationCompleted = true;
                     unlockLocalState();
-                    setInitialState(readOnlyResult);
+                    try {
+                        setInitialState(readOnlyResult);
+                    } catch (Exception e) {
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug("Error in StateMachineInstance callbacks.", e);
+                        }
+                        m_initializationCompleted = false;
+                        m_shared_es.submit(new CallbackExceptionHandler(this));
+                    }
 
-                    // If we are ready to provide an initial state to the derived state machine, add us to
-                    // participants watcher so we can see the next request
-                    monitorParticipantChanges();
+                    if (m_initializationCompleted) {
+                        // If we are ready to provide an initial state to the derived state machine, add us to
+                        // participants watcher so we can see the next request
+                        monitorParticipantChanges();
+                    }
                 }
                 else {
                     unlockLocalState();
@@ -797,7 +948,7 @@ public class SynchronizedStatesManager {
                         // We don't have a result yet but it is available
                         RESULT_CONCENSUS result = resultsAgreeOnSuccess(memberList);
                         // Now that we have a result we can remove ourselves from the participants list.
-                        m_zk.delete(m_myPartiticpantsPath, -1);
+                        m_zk.delete(m_myParticipantPath, -1);
                         if (result == RESULT_CONCENSUS.AGREE) {
                             success = true;
                             m_synchronizedState = m_pendingProposal;
@@ -814,24 +965,41 @@ public class SynchronizedStatesManager {
                         }
                     } catch (KeeperException.SessionExpiredException e) {
                         success = false;
-                        m_log.debug(m_stateMachineId + ": Received SessionExpiredException in processResultQuorum");
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug(m_stateMachineId + ": Received SessionExpiredException in processResultQuorum");
+                        }
                     } catch (KeeperException.ConnectionLossException e) {
                         success = false;
-                        m_log.debug(m_stateMachineId + ": Received ConnectionLossException in processResultQuorum");
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug(m_stateMachineId + ": Received ConnectionLossException in processResultQuorum");
+                        }
                     } catch (InterruptedException e) {
                         success = false;
-                        m_log.debug(m_stateMachineId + ": Received InterruptedException in processResultQuorum");
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug(m_stateMachineId + ": Received InterruptedException in processResultQuorum");
+                        }
                     } catch (Exception e) {
                         org.voltdb.VoltDB.crashLocalVoltDB(
-                                "Unexepected failure in StateMachine.", true, e);
+                                "Unexpected failure in StateMachine.", true, e);
                         success = false;
                     }
                     m_log.info(m_stateMachineId + ": Proposed state " + (success?"succeeded ":"failed ") +
                             stateToString(attemptedChange.asReadOnlyBuffer()));
                     unlockLocalState();
                     // Notify the derived state machine engine of the current state
-                    proposedStateResolved(initiator, attemptedChange, success);
-                    monitorParticipantChanges();
+                    try {
+                        proposedStateResolved(initiator, attemptedChange, success);
+                    } catch (Exception e) {
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug("Error in StateMachineInstance callbacks.", e);
+                        }
+                        m_initializationCompleted = false;
+                        m_shared_es.submit(new CallbackExceptionHandler(this));
+                    }
+
+                    if (m_initializationCompleted) {
+                        monitorParticipantChanges();
+                    }
                 }
                 else {
                     // Process the results of a TASK request
@@ -847,7 +1015,15 @@ public class SynchronizedStatesManager {
                             cancelDistributedLock();
                         }
                         unlockLocalState();
-                        correlatedTaskCompleted(initiator, taskRequest, results);
+                        try {
+                            correlatedTaskCompleted(initiator, taskRequest, results);
+                        } catch (Exception e) {
+                            if (m_log.isDebugEnabled()) {
+                                m_log.debug("Error in StateMachineInstance callbacks.", e);
+                            }
+                            m_initializationCompleted = false;
+                            m_shared_es.submit(new CallbackExceptionHandler(this));
+                        }
                     }
                     else {
                         ArrayList<ByteBuffer> results = getUncorrelatedResults(taskRequest, memberList);
@@ -858,9 +1034,20 @@ public class SynchronizedStatesManager {
                             cancelDistributedLock();
                         }
                         unlockLocalState();
-                        uncorrelatedTaskCompleted(initiator, taskRequest, results);
+                        try {
+                            uncorrelatedTaskCompleted(initiator, taskRequest, results);
+                        } catch (Exception e) {
+                            if (m_log.isDebugEnabled()) {
+                                m_log.debug("Error in StateMachineInstance callbacks.", e);
+                            }
+                            m_initializationCompleted = false;
+                            m_shared_es.submit(new CallbackExceptionHandler(this));
+                        }
                     }
-                    monitorParticipantChanges();
+
+                    if (m_initializationCompleted) {
+                        monitorParticipantChanges();
+                    }
                 }
             }
         }
@@ -878,16 +1065,22 @@ public class SynchronizedStatesManager {
                         m_barrierResultsWatcher));
             } catch (KeeperException.SessionExpiredException e) {
                 membersWithResults = new TreeSet<String>(Arrays.asList("We died so avoid Quorum path"));
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in checkForBarrierResultsChanges");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in checkForBarrierResultsChanges");
+                }
             } catch (KeeperException.ConnectionLossException e) {
                 membersWithResults = new TreeSet<String>(Arrays.asList("We died so avoid Quorum path"));
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in checkForBarrierResultsChanges");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in checkForBarrierResultsChanges");
+                }
             } catch (InterruptedException e) {
                 membersWithResults = new TreeSet<String>(Arrays.asList("We died so avoid Quorum path"));
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in checkForBarrierResultsChanges");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in checkForBarrierResultsChanges");
+                }
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in StateMachine.", true, e);
+                        "Unexpected failure in StateMachine.", true, e);
                 membersWithResults = new TreeSet<String>();
             }
             if (Sets.difference(m_knownMembers, membersWithResults).isEmpty()) {
@@ -963,27 +1156,50 @@ public class SynchronizedStatesManager {
                     if (existingAndProposedStates.m_requestType != REQUEST_TYPE.INITIALIZING) {
                         staleTask = existingAndProposedStates.m_proposal.asReadOnlyBuffer();
                     }
+                    m_initializationCompleted = true;
                     cancelDistributedLock();
                     // Add an acceptable result so the next initializing member recognizes an immediate quorum.
                     m_lockWaitingOn = "bogus"; // Avoids call to notifyDistributedLockWaiter below
                     checkForBarrierParticipantsChange();
                 }
             } catch (KeeperException.SessionExpiredException e) {
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in initializeFromActiveCommunity");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in initializeFromActiveCommunity");
+                }
             } catch (KeeperException.ConnectionLossException e) {
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in initializeFromActiveCommunity");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in initializeFromActiveCommunity");
+                }
             } catch (InterruptedException e) {
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in initializeFromActiveCommunity");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in initializeFromActiveCommunity");
+                }
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in StateMachine.", true, e);
+                        "Unexpected failure in StateMachine.", true, e);
             }
             if (readOnlyResult != null) {
                 // Notify the derived object that we have a stable state
-                setInitialState(readOnlyResult);
+                try {
+                    setInitialState(readOnlyResult);
+                } catch (Exception e) {
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug("Error in StateMachineInstance callbacks.", e);
+                    }
+                    m_initializationCompleted = false;
+                    m_shared_es.submit(new CallbackExceptionHandler(this));
+                }
             }
             if (staleTask != null) {
-                staleTaskRequestNotification(staleTask);
+                try {
+                    staleTaskRequestNotification(staleTask);
+                } catch (Exception e) {
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug("Error in StateMachineInstance callbacks.", e);
+                    }
+                    m_initializationCompleted = false;
+                    m_shared_es.submit(new CallbackExceptionHandler(this));
+                }
             }
         }
 
@@ -997,22 +1213,30 @@ public class SynchronizedStatesManager {
                     m_zk.delete(ZKUtil.joinZKPath(m_barrierResultsPath, resultNode), -1);
                 }
                 Stat newProposalStat = m_zk.setData(m_barrierResultsPath, proposal, -1);
-                m_zk.create(m_myPartiticpantsPath, null, Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+                m_zk.create(m_myParticipantPath, null, Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                 newProposalVersion = newProposalStat.getVersion();
+                // force the participant count to be 1, so that lock notifications can be correctly guarded
+                m_currentParticipants = 1;
             } catch (KeeperException.SessionExpiredException e) {
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in wakeCommunityWithProposal");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in wakeCommunityWithProposal");
+                }
             } catch (KeeperException.ConnectionLossException e) {
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in wakeCommunityWithProposal");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in wakeCommunityWithProposal");
+                }
             } catch (InterruptedException e) {
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in wakeCommunityWithProposal");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in wakeCommunityWithProposal");
+                }
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in StateMachine.", true, e);
+                        "Unexpected failure in StateMachine.", true, e);
             }
             return newProposalVersion;
         }
 
-        private final Runnable HandlerForBarrierPartiticpantsEvent = new Runnable() {
+        private final Runnable HandlerForBarrierParticipantsEvent = new Runnable() {
             @Override
             public void run() {
                 lockLocalStateForParticipantRunner();
@@ -1050,7 +1274,9 @@ public class SynchronizedStatesManager {
                 //Process my lower nodes and put a watch on whats live
                 String previous = ZKUtil.joinZKPath(m_lockPath, iter.previous());
                 if (m_zk.exists(previous, m_lockWatcher) != null) {
-                    m_log.debug(m_stateMachineId + ": " + m_ourDistributedLockName + " waiting on " + previous);
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug(m_stateMachineId + ": " + m_ourDistributedLockName + " waiting on " + previous);
+                    }
                     nextLower = previous;
                     break;
                 }
@@ -1070,17 +1296,23 @@ public class SynchronizedStatesManager {
                     try {
                         m_lockWaitingOn = getNextLockNodeFromList();
                     } catch (KeeperException.SessionExpiredException e) {
-                        m_log.debug(m_stateMachineId + ": Received SessionExpiredException in HandlerForDistributedLockEvent");
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug(m_stateMachineId + ": Received SessionExpiredException in HandlerForDistributedLockEvent");
+                        }
                         m_lockWaitingOn = "We died so we can't ever get the distributed lock";
                     } catch (KeeperException.ConnectionLossException e) {
-                        m_log.debug(m_stateMachineId + ": Received ConnectionLossException in HandlerForDistributedLockEvent");
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug(m_stateMachineId + ": Received ConnectionLossException in HandlerForDistributedLockEvent");
+                        }
                         m_lockWaitingOn = "We died so we can't ever get the distributed lock";
                     } catch (InterruptedException e) {
-                        m_log.debug(m_stateMachineId + ": Received InterruptedException in HandlerForDistributedLockEvent");
+                        if (m_log.isDebugEnabled()) {
+                            m_log.debug(m_stateMachineId + ": Received InterruptedException in HandlerForDistributedLockEvent");
+                        }
                         m_lockWaitingOn = "We died so we can't ever get the distributed lock";
                     } catch (Exception e) {
                         org.voltdb.VoltDB.crashLocalVoltDB(
-                                "Unexepected failure in StateMachine.", true, e);
+                                "Unexpected failure in StateMachine.", true, e);
                     }
                     if (m_lockWaitingOn.equals(m_ourDistributedLockName) && m_currentParticipants == 0) {
                         // There are no more members still processing the last result
@@ -1100,19 +1332,27 @@ public class SynchronizedStatesManager {
 
         private void cancelDistributedLock() {
             assert(debugIsLocalStateLocked());
-            m_log.debug(m_stateMachineId + ": cancelLockRequest for " + m_ourDistributedLockName);
+            if (m_log.isDebugEnabled()) {
+                m_log.debug(m_stateMachineId + ": cancelLockRequest for " + m_ourDistributedLockName);
+            }
             assert(m_holdingDistributedLock);
             try {
                 m_zk.delete(m_ourDistributedLockName, -1);
             } catch (KeeperException.SessionExpiredException e) {
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in cancelDistributedLock");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in cancelDistributedLock");
+                }
             } catch (KeeperException.ConnectionLossException e) {
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in cancelDistributedLock");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in cancelDistributedLock");
+                }
             } catch (InterruptedException e) {
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in cancelDistributedLock");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in cancelDistributedLock");
+                }
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in SynchronizedStatesManager.", true, e);
+                        "Unexpected failure in SynchronizedStatesManager.", true, e);
             }
             m_ourDistributedLockName = null;
             m_holdingDistributedLock = false;
@@ -1145,7 +1385,15 @@ public class SynchronizedStatesManager {
                 unlockLocalState();
             }
             if (notInitializing) {
-                membershipChanged(addedMembers, removedMembers);
+                try {
+                    membershipChanged(addedMembers, removedMembers);
+                } catch (Exception e) {
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug("Error in StateMachineInstance callbacks.", e);
+                    }
+                    m_initializationCompleted = false;
+                    m_shared_es.submit(new CallbackExceptionHandler(this));
+                }
             }
             assert(!debugIsLocalStateLocked());
         }
@@ -1157,14 +1405,20 @@ public class SynchronizedStatesManager {
             try {
                 m_knownMembers = ImmutableSet.copyOf(m_zk.getChildren(m_stateMachineMemberPath, null));
             } catch (KeeperException.SessionExpiredException e) {
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in getLatestMembership");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in getLatestMembership");
+                }
             } catch (KeeperException.ConnectionLossException e) {
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in getLatestMembership");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in getLatestMembership");
+                }
             } catch (InterruptedException e) {
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in getLatestMembership");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in getLatestMembership");
+                }
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in SynchronizedStatesManager.", true, e);
+                        "Unexpected failure in SynchronizedStatesManager.", true, e);
             }
         }
 
@@ -1184,24 +1438,40 @@ public class SynchronizedStatesManager {
                 assert(!debugIsLocalStateLocked());
             }
             else {
-                m_log.debug(m_stateMachineId + ": Granted lockRequest for " + m_ourDistributedLockName);
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Granted lockRequest for " + m_ourDistributedLockName);
+                }
                 m_lockWaitingOn = null;
                 unlockLocalState();
                 // Notify the derived class that the lock is available
-                lockRequestCompleted();
+                try {
+                    lockRequestCompleted();
+                } catch (Exception e) {
+                    cancelLockRequest();
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug("Error in StateMachineInstance callbacks.", e);
+                    }
+                    m_initializationCompleted = false;
+                    m_shared_es.submit(new CallbackExceptionHandler(this));
+                }
             }
         }
 
         private boolean requestDistributedLock() {
             try {
-                assert(m_ourDistributedLockName == null);
+                if (m_ourDistributedLockName != null) {
+                    m_log.error(m_stateMachineId + ": Requested distributed lock before prior state change or task has been completed");
+                    return false;
+                }
                 assert(debugIsLocalStateLocked());
                 m_ourDistributedLockName = m_zk.create(ZKUtil.joinZKPath(m_lockPath, "lock_"), null,
                         Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
                 m_lockWaitingOn = getNextLockNodeFromList();
                 if (m_lockWaitingOn.equals(m_ourDistributedLockName) && m_currentParticipants == 0) {
                     // Prevents a second notification.
-                    m_log.debug(m_stateMachineId + ": requestLock successful for " + m_ourDistributedLockName);
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug(m_stateMachineId + ": requestLock successful for " + m_ourDistributedLockName);
+                    }
                     m_lockWaitingOn = null;
                     m_holdingDistributedLock = true;
                     if (m_membershipChangePending) {
@@ -1210,14 +1480,20 @@ public class SynchronizedStatesManager {
                     return true;
                 }
             } catch (KeeperException.SessionExpiredException e) {
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in requestDistributedLock");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in requestDistributedLock");
+                }
             } catch (KeeperException.ConnectionLossException e) {
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in requestDistributedLock");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in requestDistributedLock");
+                }
             } catch (InterruptedException e) {
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in requestDistributedLock");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in requestDistributedLock");
+                }
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in StateMachine.", true, e);
+                        "Unexpected failure in StateMachine.", true, e);
             }
             return false;
         }
@@ -1226,11 +1502,17 @@ public class SynchronizedStatesManager {
             try {
                 m_zk.create(m_myResultPath, result, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
             } catch (KeeperException.SessionExpiredException e) {
-                m_log.debug(m_stateMachineId + ": Received SessionExpiredException in addResultEntry");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in addResultEntry");
+                }
             } catch (KeeperException.ConnectionLossException e) {
-                m_log.debug(m_stateMachineId + ": Received ConnectionLossException in addResultEntry");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in addResultEntry");
+                }
             } catch (InterruptedException e) {
-                m_log.debug(m_stateMachineId + ": Received InterruptedException in addResultEntry");
+                if (m_log.isDebugEnabled()) {
+                    m_log.debug(m_stateMachineId + ": Received InterruptedException in addResultEntry");
+                }
             }
             catch (KeeperException.NodeExistsException e) {
                 // There is a race during initialization where a null result is assigned once so a current proposal
@@ -1238,11 +1520,11 @@ public class SynchronizedStatesManager {
                 // and the call to checkForBarrierParticipantsChange, a second null result is assigned.
                 if (m_requestedInitialState == null || result != null) {
                     org.voltdb.VoltDB.crashLocalVoltDB(
-                            "Unexepected failure in StateMachine; Two results created for one proposal.", true, e);
+                            "Unexpected failure in StateMachine; Two results created for one proposal.", true, e);
                 }
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in StateMachine.", true, e);
+                        "Unexpected failure in StateMachine.", true, e);
             }
         }
 
@@ -1258,18 +1540,25 @@ public class SynchronizedStatesManager {
                 checkForBarrierResultsChanges();
             }
             else {
+                m_pendingProposal = null;
                 try {
                     // Since we don't care about the outcome remove ourself from the participant list
-                    m_zk.delete(m_myPartiticpantsPath, -1);
+                    m_zk.delete(m_myParticipantPath, -1);
                 } catch (KeeperException.SessionExpiredException e) {
-                    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in assignStateChangeAgreement");
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug(m_stateMachineId + ": Received SessionExpiredException in assignStateChangeAgreement");
+                    }
                 } catch (KeeperException.ConnectionLossException e) {
-                    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in assignStateChangeAgreement");
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug(m_stateMachineId + ": Received ConnectionLossException in assignStateChangeAgreement");
+                    }
                 } catch (InterruptedException e) {
-                    m_log.debug(m_stateMachineId + ": Received InterruptedException in assignStateChangeAgreement");
+                    if (m_log.isDebugEnabled()) {
+                        m_log.debug(m_stateMachineId + ": Received InterruptedException in assignStateChangeAgreement");
+                    }
                 } catch (Exception e) {
                     org.voltdb.VoltDB.crashLocalVoltDB(
-                            "Unexepected failure in StateMachine.", true, e);
+                            "Unexpected failure in StateMachine.", true, e);
                 }
                 unlockLocalState();
             }
@@ -1282,7 +1571,7 @@ public class SynchronizedStatesManager {
         protected boolean isInitialized() {
             boolean initialized;
             lockLocalState();
-            initialized = m_requestedInitialState == null;
+            initialized = m_initializationCompleted && m_requestedInitialState == null;
             unlockLocalState();
             return initialized;
         }
@@ -1298,7 +1587,10 @@ public class SynchronizedStatesManager {
          */
         protected boolean requestLock() {
             lockLocalState();
-            boolean rslt = requestDistributedLock();
+            boolean rslt = false;
+            if (m_initializationCompleted) {
+                rslt = requestDistributedLock();
+            }
             unlockLocalState();
             return rslt;
         }
@@ -1310,8 +1602,10 @@ public class SynchronizedStatesManager {
          */
         protected void cancelLockRequest() {
             lockLocalState();
-            assert(m_pendingProposal == null);
-            cancelDistributedLock();
+            if (m_initializationCompleted) {
+                assert (m_pendingProposal == null);
+                cancelDistributedLock();
+            }
             unlockLocalState();
         }
 
@@ -1327,6 +1621,10 @@ public class SynchronizedStatesManager {
             assert(proposedState != null);
             assert(proposedState.remaining() < Short.MAX_VALUE);
             lockLocalState();
+            if (!m_initializationCompleted) {
+                unlockLocalState();
+                return;
+            }
             // Only the lock owner can initiate a barrier request
             assert(m_requestedInitialState == null);
             if (proposedState.position() == 0) {
@@ -1339,7 +1637,9 @@ public class SynchronizedStatesManager {
                         proposedState.arrayOffset()+proposedState.position(), proposedState.remaining());
                 m_pendingProposal.flip();
             }
-            m_log.debug(m_stateMachineId + ": Proposing new state " + stateToString(m_pendingProposal.asReadOnlyBuffer()));
+            if (m_log.isDebugEnabled()) {
+                m_log.debug(m_stateMachineId + ": Proposing new state " + stateToString(m_pendingProposal.asReadOnlyBuffer()));
+            }
             m_stateChangeInitiator = true;
             m_currentRequestType = REQUEST_TYPE.STATE_CHANGE_REQUEST;
             ByteBuffer stateChange = buildProposal(REQUEST_TYPE.STATE_CHANGE_REQUEST,
@@ -1359,9 +1659,15 @@ public class SynchronizedStatesManager {
          */
         protected void requestedStateChangeAcceptable(boolean acceptable) {
             lockLocalState();
+            if (!m_initializationCompleted) {
+                unlockLocalState();
+                return;
+            }
             assert(!m_stateChangeInitiator);
-            m_log.debug(m_stateMachineId + (acceptable?": Agrees with State proposal":
-                    ": Disagrees with State proposal"));
+            if (m_log.isDebugEnabled()) {
+                m_log.debug(m_stateMachineId + (acceptable ? ": Agrees with State proposal" :
+                        ": Disagrees with State proposal"));
+            }
             assignStateChangeAgreement(acceptable);
         }
 
@@ -1378,36 +1684,35 @@ public class SynchronizedStatesManager {
             assert(proposedTask != null);
             assert(proposedTask.remaining() < Short.MAX_VALUE);
             lockLocalState();
-            // Only the lock owner can initiate a barrier request
-            assert(m_requestedInitialState == null);
-            if (proposedTask.position() == 0) {
+            if (m_initializationCompleted) {
+                // Only the lock owner can initiate a barrier request
+                assert (m_requestedInitialState == null);
+                if (proposedTask.position() == 0) {
+                    m_pendingProposal = proposedTask;
+                } else {
+                    // Move to a new 0 aligned buffer
+                    m_pendingProposal = ByteBuffer.allocate(proposedTask.remaining());
+                    m_pendingProposal.put(proposedTask.array(),
+                            proposedTask.arrayOffset() + proposedTask.position(), proposedTask.remaining());
+                    m_pendingProposal.flip();
+                }
+                if (m_log.isDebugEnabled()) {
+                    if (m_pendingProposal.hasRemaining()) {
+                        m_log.debug(m_stateMachineId + ": Requested new Task " + taskToString(m_pendingProposal.asReadOnlyBuffer()));
+                    } else {
+                        m_log.debug(m_stateMachineId + ": Requested unspecified new Task");
+                    }
+                }
+                m_stateChangeInitiator = true;
+                m_currentRequestType = correlated ?
+                        REQUEST_TYPE.CORRELATED_COORDINATED_TASK :
+                        REQUEST_TYPE.UNCORRELATED_COORDINATED_TASK;
+                ByteBuffer taskProposal = buildProposal(m_currentRequestType,
+                        m_synchronizedState.asReadOnlyBuffer(), proposedTask.asReadOnlyBuffer());
                 m_pendingProposal = proposedTask;
+                // Since we don't update m_lastProposalVersion, we will wake ourselves up
+                wakeCommunityWithProposal(taskProposal.array());
             }
-            else {
-                // Move to a new 0 aligned buffer
-                m_pendingProposal = ByteBuffer.allocate(proposedTask.remaining());
-                m_pendingProposal.put(proposedTask.array(),
-                        proposedTask.arrayOffset()+proposedTask.position(), proposedTask.remaining());
-                m_pendingProposal.flip();
-            }
-            if (m_log.isDebugEnabled()) {
-                if (m_pendingProposal.hasRemaining()) {
-                    m_log.debug(m_stateMachineId + ": Requested new Task " + taskToString(m_pendingProposal.asReadOnlyBuffer()));
-                }
-                else {
-                    m_log.debug(m_stateMachineId + ": Requested unspecified new Task");
-
-                }
-            }
-            m_stateChangeInitiator = true;
-            m_currentRequestType = correlated ?
-                    REQUEST_TYPE.CORRELATED_COORDINATED_TASK :
-                    REQUEST_TYPE.UNCORRELATED_COORDINATED_TASK;
-            ByteBuffer taskProposal = buildProposal(m_currentRequestType,
-                    m_synchronizedState.asReadOnlyBuffer(), proposedTask.asReadOnlyBuffer());
-            m_pendingProposal = proposedTask;
-            // Since we don't update m_lastProposalVersion, we will wake ourselves up
-            wakeCommunityWithProposal(taskProposal.array());
             unlockLocalState();
         }
 
@@ -1429,6 +1734,10 @@ public class SynchronizedStatesManager {
         protected void requestedTaskComplete(ByteBuffer result)
         {
             lockLocalState();
+            if (!m_initializationCompleted) {
+                unlockLocalState();
+                return;
+            }
             assert(m_pendingProposal != null);
             if (m_log.isDebugEnabled()) {
                 if (result.hasRemaining()) {
@@ -1461,8 +1770,14 @@ public class SynchronizedStatesManager {
          * warning: The ByteBuffer taskRequest is not guaranteed to start at position 0 (avoid rewind, flip, ...)
          */
         protected ByteBuffer getCurrentState() {
+            ByteBuffer currentState;
             lockLocalState();
-            ByteBuffer currentState = m_synchronizedState.asReadOnlyBuffer();
+            if (m_initializationCompleted) {
+                currentState = m_synchronizedState.asReadOnlyBuffer();
+            }
+            else {
+                currentState = ByteBuffer.allocate(0);
+            }
             unlockLocalState();
             return currentState;
         }
@@ -1494,6 +1809,8 @@ public class SynchronizedStatesManager {
         }
 
         protected boolean holdingDistributedLock() {
+            lockLocalState();
+            unlockLocalState();
             return m_holdingDistributedLock;
         }
 
@@ -1517,9 +1834,17 @@ public class SynchronizedStatesManager {
         m_stateMachineRoot = "MockRootForSSM";
         m_stateMachineMemberPath = "MockRootMembershipNode";
         m_memberId = "MockMemberId";
+        m_canonical_memberId = "MockCanonicalMemberId";
+        m_resetAllowance = 5;
+        m_resetLimit = m_resetAllowance;
     }
 
     public SynchronizedStatesManager(ZooKeeper zk, String rootPath, String ssmNodeName, String memberId, int registeredInstances)
+            throws KeeperException, InterruptedException {
+        this(zk, rootPath, ssmNodeName, memberId, registeredInstances, 5); // default resetAllowance is 5
+    }
+
+    public SynchronizedStatesManager(ZooKeeper zk, String rootPath, String ssmNodeName, String memberId, int registeredInstances, int resetAllowance)
             throws KeeperException, InterruptedException {
         m_zk = zk;
         // We will not add ourselves as members in ZooKeeper until all StateMachineInstances have registered
@@ -1530,7 +1855,11 @@ public class SynchronizedStatesManager {
         numberOfInstances.putInt(registeredInstances);
         addIfMissing(m_stateMachineRoot, CreateMode.PERSISTENT, numberOfInstances.array());
         m_stateMachineMemberPath = ZKUtil.joinZKPath(m_stateMachineRoot, m_memberNode);
-        m_memberId = memberId;
+        m_canonical_memberId = memberId;
+        m_resetCounter = 0;
+        m_resetAllowance = resetAllowance;
+        m_resetLimit = m_resetAllowance;
+        m_memberId = m_canonical_memberId + "_v" + m_resetCounter;
     }
 
     public void ShutdownSynchronizedStatesManager() throws InterruptedException {
@@ -1548,27 +1877,23 @@ public class SynchronizedStatesManager {
         @Override
         public void run() {
             try {
+                m_done.set(true);
                 for (StateMachineInstance stateMachine : m_registeredStateMachines) {
                     stateMachine.disableMembership();
                 }
-                m_done.set(true);
                 m_zk.delete(ZKUtil.joinZKPath(m_stateMachineMemberPath, m_memberId), -1);
             } catch (KeeperException.SessionExpiredException e) {
                 // lost the full connection. some test cases do this...
                 // means zk shutdown without the elector being shutdown.
                 // ignore.
-                m_done.set(true);
             } catch (KeeperException.ConnectionLossException e) {
                 // lost the full connection. some test cases do this...
                 // means shutdown without the elector being
                 // shutdown; ignore.
-                m_done.set(true);
             } catch (InterruptedException e) {
-                m_done.set(true);
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in SynchronizedStatesManager.", true, e);
-                m_done.set(true);
+                        "Unexpected failure in SynchronizedStatesManager.", true, e);
             }
         }
     };
@@ -1589,7 +1914,7 @@ public class SynchronizedStatesManager {
             } catch (InterruptedException e) {
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in SynchronizedStatesManager.", true, e);
+                        "Unexpected failure in SynchronizedStatesManager.", true, e);
             }
         }
     };
@@ -1642,7 +1967,7 @@ public class SynchronizedStatesManager {
                 m_done.set(true);
             } catch (Exception e) {
                 org.voltdb.VoltDB.crashLocalVoltDB(
-                        "Unexepected failure in initializeInstances.", true, e);
+                        "Unexpected failure in initializeInstances.", true, e);
                 m_done.set(true);
             }
         }
@@ -1651,8 +1976,8 @@ public class SynchronizedStatesManager {
     private synchronized void registerStateMachine(StateMachineInstance machine) throws InterruptedException {
         assert(m_registeredStateMachineInstances < m_registeredStateMachines.length);
 
-        m_registeredStateMachines[m_registeredStateMachineInstances] = machine;
-        m_registeredStateMachineInstances++;
+        m_registeredStateMachines[m_registeredStateMachineInstances] = (machine);
+        ++m_registeredStateMachineInstances;
         if (m_registeredStateMachineInstances == m_registeredStateMachines.length) {
             if (machine.m_log.isDebugEnabled()) {
                 // lets make sure all the state machines are using unique paths
@@ -1672,6 +1997,52 @@ public class SynchronizedStatesManager {
             }
             catch (ExecutionException e) {
                 Throwables.propagate(e.getCause());
+            }
+        }
+    }
+
+    private class CallbackExceptionHandler implements Runnable {
+        final StateMachineInstance m_directVictim;
+
+        CallbackExceptionHandler(StateMachineInstance directVictim) {
+            m_directVictim = directVictim;
+        }
+
+        @Override
+        public void run() {
+            // if the direct victim has already been reset, ignore the stale callback exception handling task
+            if (!m_directVictim.isInitializationCompleted()) {
+                assert (m_registeredStateMachineInstances > 0 && m_registeredStateMachineInstances == m_registeredStateMachines.length);
+
+                disableInstances.run();
+
+                if (m_lastResetTimeInMillis == -1L) {
+                    m_lastResetTimeInMillis = System.currentTimeMillis();
+                } else {
+                    long currentTimeInMillis = System.currentTimeMillis();
+                    // if a full reset clear threshold duration has passed after last reset, bump the reset limit
+                    if (currentTimeInMillis - m_lastResetTimeInMillis >= RESET_CLEAR_THRESHOLD) {
+                        m_resetLimit = m_resetCounter + m_resetAllowance;
+                    }
+                    m_lastResetTimeInMillis = currentTimeInMillis;
+                }
+
+                ++m_resetCounter;
+                if (m_resetCounter > m_resetLimit) {
+                    return;
+                }
+
+                m_memberId = m_canonical_memberId + "_v" + m_resetCounter;
+                try {
+                    for (StateMachineInstance instance : m_registeredStateMachines) {
+                        instance.reset(instance == m_directVictim);
+                    }
+                } catch (Exception e) {
+                    return; // if something wrong happened in reset(), give up as if the reset limit is hit
+                }
+                m_done.set(false);
+
+                initializeInstances.run();
             }
         }
     }

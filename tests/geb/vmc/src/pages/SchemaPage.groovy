@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -41,7 +41,7 @@ class SchemaPage extends VoltDBManagementCenterPage {
         sizeLink    (to: SchemaPageSizeWorksheetTab){ sizeTab.find('a') }
         ddlLink     (to: SchemaPageDdlSourceTab)    { ddlTab.find('a') }
         voltDbDocumentationLink { $('a#iconDoc') }
-        refreshbutton 		{ $(class:"refreshBtn schm", text:"Refresh") }
+        refreshbutton       { $(class:"refreshBtn schm", text:"Refresh") }
     }
 
 
@@ -73,7 +73,7 @@ class SchemaPage extends VoltDBManagementCenterPage {
                     return false
                 }
             } catch(org.openqa.selenium.StaleElementReferenceException e) {
-                
+
             }
         }
     }
@@ -95,7 +95,7 @@ class SchemaPage extends VoltDBManagementCenterPage {
                     return false
                 }
             } catch(org.openqa.selenium.StaleElementReferenceException e) {
-                
+
             }
         }
     }
@@ -118,7 +118,7 @@ class SchemaPage extends VoltDBManagementCenterPage {
                     return false
                 }
             } catch(org.openqa.selenium.StaleElementReferenceException e) {
-                
+
             }
         }
     }
@@ -141,7 +141,7 @@ class SchemaPage extends VoltDBManagementCenterPage {
                     return false
                 }
             } catch(org.openqa.selenium.StaleElementReferenceException e) {
-                
+
             }
         }
     }
@@ -164,7 +164,7 @@ class SchemaPage extends VoltDBManagementCenterPage {
                     return false
                 }
             } catch(org.openqa.selenium.StaleElementReferenceException e) {
-                
+
             }
         }
     }
@@ -254,6 +254,25 @@ class SchemaPage extends VoltDBManagementCenterPage {
         while((line = br.readLine()) != "#delete") {
         }
 
+        while ((line = br.readLine()) != "#deleteOnly") {
+            // process the line.
+            query = query + line + "\n"
+        }
+
+        return query
+    }
+
+    /*
+     * get query to delete a table
+     */
+    def String getQueryToDeleteTableOnly() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
+        String line;
+        String query = ""
+
+        while((line = br.readLine()) != "#deleteOnly") {
+        }
+
         while ((line = br.readLine()) != "#name") {
             // process the line.
             query = query + line + "\n"
@@ -274,7 +293,43 @@ class SchemaPage extends VoltDBManagementCenterPage {
         while((line = br.readLine()) != "#name") {
         }
 
-        while ((line = br.readLine()) != null) {
+        while ((line = br.readLine()) != "#index") {
+            query = query + line + "\n"
+        }
+
+        return query
+    }
+
+    /*
+     * get query to create index
+     */
+    def String getQueryToCreateIndex() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
+        String line;
+        String query = ""
+
+        while((line = br.readLine()) != "#index") {
+        }
+
+        while ((line = br.readLine()) != "#view") {
+            query = query + line + "\n"
+        }
+
+        return query
+    }
+
+    /*
+    * get query to create index
+    */
+    def String getQueryToCreateView() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
+        String line;
+        String query = ""
+
+        while((line = br.readLine()) != "#view") {
+        }
+
+        while ((line = br.readLine()) != "#createStoredProcedure") {
             query = query + line + "\n"
         }
 
@@ -295,5 +350,16 @@ class SchemaPage extends VoltDBManagementCenterPage {
 
     def boolean gotoSchemaSubTab() {
         schemaSubLink.click()
+    }
+
+    public String removeLastTwoChar(String s) {
+        if (s == null || s.length() == 0) {
+            return s;
+        }
+        return s.substring(0, s.length()-2);
+    }
+
+    public String returnIdOfRowCount(int index) {
+        return "s-size-" + String.valueOf(index) + "-count"
     }
 }

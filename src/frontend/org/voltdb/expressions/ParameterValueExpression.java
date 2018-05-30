@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -61,16 +61,6 @@ public class ParameterValueExpression extends AbstractValueExpression {
         m_correlatedExpr = expr;
     }
 
-    @Override
-    public Object clone() {
-        ParameterValueExpression clone = (ParameterValueExpression)super.clone();
-        clone.m_paramIndex = m_paramIndex;
-        clone.m_paramIsVector = m_paramIsVector;
-        clone.m_originalValue = m_originalValue;
-        clone.m_correlatedExpr = m_correlatedExpr;
-        return clone;
-    }
-
     /**
      * @return the param
      */
@@ -104,7 +94,7 @@ public class ParameterValueExpression extends AbstractValueExpression {
     @Override
     public void toJSONString(JSONStringer stringer) throws JSONException {
         super.toJSONString(stringer);
-        stringer.key(Members.PARAM_IDX.name()).value(m_paramIndex);
+        stringer.keySymbolValuePair(Members.PARAM_IDX.name(), m_paramIndex);
     }
 
     @Override
@@ -137,7 +127,7 @@ public class ParameterValueExpression extends AbstractValueExpression {
         if (columnType == null) {
             return;
         }
-        if ((columnType == VoltType.FLOAT) || (columnType == VoltType.DECIMAL) || columnType.isInteger()) {
+        if ((columnType == VoltType.FLOAT) || (columnType == VoltType.DECIMAL) || columnType.isBackendIntegerType()) {
             m_valueType = columnType;
             m_valueSize = columnType.getLengthInBytesForFixedTypes();
         } else if (m_valueType == null) {

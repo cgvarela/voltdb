@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -22,8 +22,6 @@ import java.io.File;
 import org.hsqldb_voltpatches.VoltXMLElement;
 import org.json_voltpatches.JSONException;
 import org.json_voltpatches.JSONObject;
-import org.voltdb.catalog.Cluster;
-import org.voltdb.catalog.Database;
 import org.voltdb.compiler.DatabaseEstimates;
 import org.voltdb.compiler.DeterminismMode;
 import org.voltdb.compiler.ScalarValueHints;
@@ -40,10 +38,6 @@ import org.voltdb.utils.BuildDirectoryUtils;
  *
  */
 public class PlanSelector implements Cloneable {
-    /** pointer to the cluster object in the catalog */
-    final Cluster m_cluster;
-    /** pointer to the database object in the catalog */
-    final Database m_db;
     /** pointer to the database estimates */
     DatabaseEstimates m_estimates;
     /** The name of the sql statement to be planned */
@@ -73,7 +67,6 @@ public class PlanSelector implements Cloneable {
     /**
      * Initialize plan processor.
      *
-     * @param cluster Catalog info about the physical layout of the cluster.
      * @param db Catalog info about schema, metadata and procedures.
      * @param estimates database estimates
      * @param stmtName The name of the sql statement to be planned.
@@ -85,13 +78,11 @@ public class PlanSelector implements Cloneable {
      * @param quietPlanner Controls the output.
      * @param fullDebug Controls the debug output.
      */
-    public PlanSelector(Cluster cluster, Database db, DatabaseEstimates estimates,
+    public PlanSelector(DatabaseEstimates estimates,
             String stmtName, String procName, String sql,
             AbstractCostModel costModel, ScalarValueHints[] paramHints,
             DeterminismMode detMode, boolean quietPlanner)
     {
-        m_cluster = cluster;
-        m_db = db;
         m_estimates = estimates;
         m_stmtName = stmtName;
         m_procName = procName;
@@ -108,7 +99,7 @@ public class PlanSelector implements Cloneable {
      */
     @Override
     public Object clone() {
-        return new PlanSelector(m_cluster, m_db, m_estimates, m_stmtName, m_procName, m_sql,
+        return new PlanSelector(m_estimates, m_stmtName, m_procName, m_sql,
                 m_costModel, m_paramHints, m_detMode, m_quietPlanner);
     }
 
@@ -160,7 +151,7 @@ public class PlanSelector implements Cloneable {
         AbstractPlanNode planGraph = plan.rootPlanGraph;
 
         // compute statistics about a plan
-        planGraph.computeEstimatesRecursively(m_stats, m_cluster, m_db, m_estimates, m_paramHints);
+        planGraph.computeEstimatesRecursively(m_stats, m_estimates, m_paramHints);
 
         // compute the cost based on the resources using the current cost model
         plan.cost = m_costModel.getPlanCost(m_stats);
@@ -246,6 +237,20 @@ public class PlanSelector implements Cloneable {
                                       true);
     }
 
+    public static String outputPlanDebugString(AbstractPlanNode planGraph) throws JSONException {
+        PlanNodeList nodeList = new PlanNodeList(planGraph, false);
+
+        // get the json serialized version of the plan
+        String json = null;
+
+        String crunchJson = nodeList.toJSONString();
+        //System.out.println(crunchJson);
+        //System.out.flush();
+        JSONObject jobj = new JSONObject(crunchJson);
+        json = jobj.toString(4);
+        return json;
+    }
+
     /**
      * @param plan
      * @param planGraph
@@ -256,17 +261,11 @@ public class PlanSelector implements Cloneable {
         // GENERATE JSON DEBUGGING OUTPUT BEFORE WE CLEAN UP THE
         // PlanColumns
         // convert a tree into an execution list
-        PlanNodeList nodeList = new PlanNodeList(planGraph);
+        PlanNodeList nodeList = new PlanNodeList(planGraph, plan.getIsLargeQuery());
 
-        // get the json serialized version of the plan
-        String json = null;
-
+        String json;
         try {
-            String crunchJson = nodeList.toJSONString();
-            //System.out.println(crunchJson);
-            //System.out.flush();
-            JSONObject jobj = new JSONObject(crunchJson);
-            json = jobj.toString(4);
+            json = outputPlanDebugString(planGraph);
         } catch (JSONException e2) {
             // Any plan that can't be serialized to JSON to
             // write to debugging output is also going to fail
@@ -279,7 +278,6 @@ public class PlanSelector implements Cloneable {
             // For now, just skip the output and go on to the next plan.
             return errorMsg;
         }
-
         // output a description of the parsed stmt
         json = "PLAN:\n" + json;
         json = "COST: " + String.valueOf(plan.cost) + "\n" + json;

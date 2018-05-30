@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,18 +18,15 @@
 package org.voltdb.plannodes;
 
 import java.util.Collection;
-import java.util.TreeMap;
 
 import org.json_voltpatches.JSONException;
 import org.json_voltpatches.JSONObject;
 import org.json_voltpatches.JSONStringer;
-import org.voltdb.catalog.Cluster;
 import org.voltdb.catalog.Database;
 import org.voltdb.compiler.DatabaseEstimates;
 import org.voltdb.compiler.ScalarValueHints;
 import org.voltdb.expressions.AbstractExpression;
 import org.voltdb.expressions.AbstractSubqueryExpression;
-import org.voltdb.expressions.ExpressionUtil;
 import org.voltdb.expressions.TupleValueExpression;
 import org.voltdb.types.PlanNodeType;
 import org.voltdb.types.SortDirectionType;
@@ -63,7 +60,11 @@ public class NestLoopIndexPlanNode extends AbstractJoinPlanNode {
         m_children.get(0).generateOutputSchema(db);
         // Join the schema together to form the output schema
         // The child subplan's output is the outer table
-        // The inlined node's output is the inner table
+        // The inlined node's output is the inner table.
+        //
+        // Note that the inner table's contribution to the join_tuple doesn't include
+        // all the columns from the inner table---just the ones needed as determined by
+        // the inlined scan's own inlined projection, as described above.
         m_outputSchemaPreInlineAgg =
             m_children.get(0).getOutputSchema().
             join(inlineScan.getOutputSchema()).copyAndReplaceWithTVE();
@@ -72,90 +73,97 @@ public class NestLoopIndexPlanNode extends AbstractJoinPlanNode {
         generateRealOutputSchema(db);
 
         // Generate the output schema for subqueries
-        ExpressionUtil.generateSubqueryExpressionOutputSchema(m_preJoinPredicate, db);
-        ExpressionUtil.generateSubqueryExpressionOutputSchema(m_joinPredicate, db);
-        ExpressionUtil.generateSubqueryExpressionOutputSchema(m_wherePredicate, db);
+        Collection<AbstractExpression> subqueryExpressions = findAllSubquerySubexpressions();
+        for (AbstractExpression subqueryExpression : subqueryExpressions) {
+            assert(subqueryExpression instanceof AbstractSubqueryExpression);
+            ((AbstractSubqueryExpression) subqueryExpression).generateOutputSchema(db);
+        }
     }
 
     @Override
-    public void resolveColumnIndexes()
-    {
-        IndexScanPlanNode inline_scan =
+    public void resolveColumnIndexes() {
+        IndexScanPlanNode inlineScan =
             (IndexScanPlanNode) m_inlineNodes.get(PlanNodeType.INDEXSCAN);
-        assert (m_children.size() == 1 && inline_scan != null);
-        for (AbstractPlanNode child : m_children)
-        {
+        assert (m_children.size() == 1 && inlineScan != null);
+        for (AbstractPlanNode child : m_children) {
             child.resolveColumnIndexes();
         }
 
         LimitPlanNode limit = (LimitPlanNode)getInlinePlanNode(PlanNodeType.LIMIT);
-        if (limit != null)
-        {
+        if (limit != null) {
             // output schema of limit node has not been used
             limit.m_outputSchema = m_outputSchemaPreInlineAgg;
             limit.m_hasSignificantOutputSchema = false;
         }
 
         // We need the schema from the target table from the inlined index
-        final NodeSchema index_schema = inline_scan.getTableSchema();
+        final NodeSchema completeInnerTableSchema = inlineScan.getTableSchema();
         // We need the output schema from the child node
-        final NodeSchema outer_schema = m_children.get(0).getOutputSchema();
+        final NodeSchema outerSchema = m_children.get(0).getOutputSchema();
 
         // pull every expression out of the inlined index scan
         // and resolve all of the TVEs against our two input schema from above.
-        resolvePredicate(inline_scan.getPredicate(), outer_schema, index_schema);
-        resolvePredicate(inline_scan.getEndExpression(), outer_schema, index_schema);
-        resolvePredicate(inline_scan.getInitialExpression(), outer_schema, index_schema);
-        resolvePredicate(inline_scan.getSkipNullPredicate(), outer_schema, index_schema);
-        resolvePredicate(inline_scan.getSearchKeyExpressions(), outer_schema, index_schema);
+        //
+        // Tickets ENG-9389, ENG-9533: we use the complete schema for the inner
+        // table (rather than the smaller schema from the inlined index scan's
+        // inlined project node) because the inlined scan has no temp table,
+        // so predicates will be accessing the index-scanned table directly.
+        resolvePredicate(inlineScan.getPredicate(),
+                outerSchema, completeInnerTableSchema);
+        resolvePredicate(inlineScan.getEndExpression(),
+                outerSchema, completeInnerTableSchema);
+        resolvePredicate(inlineScan.getInitialExpression(),
+                outerSchema, completeInnerTableSchema);
+        resolvePredicate(inlineScan.getSkipNullPredicate(),
+                outerSchema, completeInnerTableSchema);
+        resolvePredicate(inlineScan.getSearchKeyExpressions(),
+                outerSchema, completeInnerTableSchema);
+        resolvePredicate(m_preJoinPredicate,
+                outerSchema, completeInnerTableSchema);
+        resolvePredicate(m_joinPredicate,
+                outerSchema, completeInnerTableSchema);
+        resolvePredicate(m_wherePredicate,
+                outerSchema, completeInnerTableSchema);
 
-        // resolve other predicates
-        resolvePredicate(m_preJoinPredicate, outer_schema, index_schema);
-        resolvePredicate(m_joinPredicate, outer_schema, index_schema);
-        resolvePredicate(m_wherePredicate, outer_schema, index_schema);
+        // Resolve subquery expression indexes
+        resolveSubqueryColumnIndexes();
 
-        // resolve subqueries
-        Collection<AbstractExpression> exprs = findAllExpressionsOfClass(AbstractSubqueryExpression.class);
-        for (AbstractExpression expr: exprs) {
-            ExpressionUtil.resolveSubqueryExpressionColumnIndexes(expr);
-        }
+        // Resolve TVE indexes for each schema column.
+        for (int i = 0; i < m_outputSchemaPreInlineAgg.size(); ++i) {
+            SchemaColumn col = m_outputSchemaPreInlineAgg.getColumn(i);
 
-        // need to resolve the indexes of the output schema and
-        // order the combined output schema coherently
-        TreeMap<Integer, SchemaColumn> sort_cols =
-            new TreeMap<Integer, SchemaColumn>();
-        for (SchemaColumn col : m_outputSchemaPreInlineAgg.getColumns())
-        {
-            // Right now these all need to be TVEs
+            // These are all TVEs.
             assert(col.getExpression() instanceof TupleValueExpression);
             TupleValueExpression tve = (TupleValueExpression)col.getExpression();
-            int index = outer_schema.getIndexOfTve(tve);
-            int tableIdx = 0;   // 0 for outer table
-            if (index == -1)
-            {
-                index = tve.resolveColumnIndexesUsingSchema(index_schema);
-                if (index == -1)
-                {
-                    throw new RuntimeException("Unable to find index for column: " +
-                                               col.toString());
+
+            int index;
+            int tableIdx;
+            if (i < outerSchema.size()) {
+                tableIdx = 0; // 0 for outer table
+                index = outerSchema.getIndexOfTve(tve);
+                if (index >= 0) {
+                    tve.setColumnIndex(index);
                 }
-                sort_cols.put(index + outer_schema.size(), col);
+            }
+            else {
                 tableIdx = 1;   // 1 for inner table
+                index = tve.setColumnIndexUsingSchema(completeInnerTableSchema);
             }
-            else
-            {
-                sort_cols.put(index, col);
+
+            if (index == -1) {
+                throw new RuntimeException("Unable to find index for column: " +
+                                           col.toString());
             }
-            tve.setColumnIndex(index);
+
             tve.setTableIndex(tableIdx);
         }
-        // rebuild the output schema from the tree-sorted columns
-        NodeSchema new_output_schema = new NodeSchema();
-        for (SchemaColumn col : sort_cols.values())
-        {
-            new_output_schema.addColumn(col);
-        }
-        m_outputSchemaPreInlineAgg = new_output_schema;
+
+        // We want the output columns to be ordered like [outer table columns][inner table columns],
+        // and further ordered by TVE index within the left- and righthand sides.
+        // generateOutputSchema already places outer columns on the left and inner on the right,
+        // so we just need to order the left- and righthand sides by TVE index separately.
+        m_outputSchemaPreInlineAgg.sortByTveIndex(0, outerSchema.size());
+        m_outputSchemaPreInlineAgg.sortByTveIndex(outerSchema.size(), m_outputSchemaPreInlineAgg.size());
         m_hasSignificantOutputSchema = true;
 
         resolveRealOutputSchema();
@@ -196,9 +204,7 @@ public class NestLoopIndexPlanNode extends AbstractJoinPlanNode {
         if ( ! super.isOrderDeterministic()) {
             return false;
         }
-        IndexScanPlanNode index_scan =
-            (IndexScanPlanNode) getInlinePlanNode(PlanNodeType.INDEXSCAN);
-        assert(index_scan != null);
+        IndexScanPlanNode index_scan = getInlineIndexScan();
         if ( ! index_scan.isOrderDeterministic()) {
             m_nondeterminismDetail = index_scan.m_nondeterminismDetail;
             return false;
@@ -208,8 +214,7 @@ public class NestLoopIndexPlanNode extends AbstractJoinPlanNode {
 
     @Override
     public boolean hasInlinedIndexScanOfTable(String tableName) {
-        IndexScanPlanNode index_scan = (IndexScanPlanNode) getInlinePlanNode(PlanNodeType.INDEXSCAN);
-        assert(index_scan != null);
+        IndexScanPlanNode index_scan = getInlineIndexScan();
         if (index_scan.getTargetTableName().equals(tableName)) {
             return true;
         } else {
@@ -218,19 +223,25 @@ public class NestLoopIndexPlanNode extends AbstractJoinPlanNode {
     }
 
     @Override
-    public void computeCostEstimates(long childOutputTupleCountEstimate, Cluster cluster, Database db, DatabaseEstimates estimates, ScalarValueHints[] paramHints) {
+    public void computeCostEstimates(long childOutputTupleCountEstimate, DatabaseEstimates estimates, ScalarValueHints[] paramHints) {
 
         // Add the cost of the inlined index scan to the cost of processing the input tuples.
         // This isn't really a fair representation of what's going on, as the index is scanned once
         // per input tuple, but I think it will still cause the plan selector to pick the join
         // order with the lowest total access cost.
 
+        IndexScanPlanNode indexScan = getInlineIndexScan();
+
+        m_estimatedOutputTupleCount = indexScan.getEstimatedOutputTupleCount() + childOutputTupleCountEstimate;
+        // Discount outer child estimates based on the number of its filters
+        m_estimatedProcessedTupleCount = indexScan.getEstimatedProcessedTupleCount() + discountEstimatedProcessedTupleCount(m_children.get(0));
+    }
+
+    public IndexScanPlanNode getInlineIndexScan() {
         IndexScanPlanNode indexScan =
                 (IndexScanPlanNode) getInlinePlanNode(PlanNodeType.INDEXSCAN);
         assert(indexScan != null);
-
-        m_estimatedOutputTupleCount = indexScan.getEstimatedOutputTupleCount() + childOutputTupleCountEstimate;
-        m_estimatedProcessedTupleCount = indexScan.getEstimatedProcessedTupleCount() + childOutputTupleCountEstimate;
+        return indexScan;
     }
 
     @Override
@@ -241,20 +252,22 @@ public class NestLoopIndexPlanNode extends AbstractJoinPlanNode {
     }
 
     @Override
-    public void toJSONString(JSONStringer stringer) throws JSONException
-    {
+    public void toJSONString(JSONStringer stringer) throws JSONException {
         super.toJSONString(stringer);
         if (m_sortDirection != SortDirectionType.INVALID) {
-            stringer.key(Members.SORT_DIRECTION.name()).value(m_sortDirection.toString());
+            stringer.keySymbolValuePair(Members.SORT_DIRECTION.name(),
+                    m_sortDirection.toString());
         }
     }
 
     @Override
-    public void loadFromJSONObject( JSONObject jobj, Database db ) throws JSONException
-    {
+    public void loadFromJSONObject(JSONObject jobj, Database db)
+            throws JSONException {
         super.loadFromJSONObject(jobj, db);
-        if (!jobj.isNull(Members.SORT_DIRECTION.name())) {
-            m_sortDirection = SortDirectionType.get( jobj.getString( Members.SORT_DIRECTION.name() ) );
+        if ( ! jobj.isNull(Members.SORT_DIRECTION.name())) {
+            m_sortDirection = SortDirectionType.get(
+                    jobj.getString(Members.SORT_DIRECTION.name()));
         }
     }
+
 }

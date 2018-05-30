@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -50,9 +50,6 @@
 
 package com.procedures;
 
-import java.io.UnsupportedEncodingException;
-
-import org.voltdb.ProcInfo;
 import org.voltdb.SQLStmt;
 import org.voltdb.VoltProcedure;
 import org.voltdb.VoltTable;
@@ -65,10 +62,7 @@ import org.voltdb.types.TimestampType;
  * Warehouse related queries. See deps.pdf for dependencies between the queries
  * in original paymentByCustomerName.
  */
-@ProcInfo (
-    partitionInfo = "WAREHOUSE.W_ID: 0",
-    singlePartition = true
-)
+
 public class paymentByCustomerNameW extends VoltProcedure {
     public final SQLStmt getCidByLastName = new SQLStmt("SELECT C_ID FROM CUSTOMER_NAME WHERE C_LAST = ? AND C_D_ID = ? AND C_W_ID = ? ORDER BY C_FIRST;");// c_last, d_id, w_id
 
@@ -116,19 +110,13 @@ public class paymentByCustomerNameW extends VoltProcedure {
         return new VoltTable[]{warehouse, district};
     }
 
-    public VoltTable[] run(short w_id, byte d_id, double h_amount, short c_w_id, byte c_d_id, byte[] c_last, TimestampType timestamp) throws VoltAbortException {
+    public VoltTable[] run(short w_id, byte d_id, double h_amount, short c_w_id, byte c_d_id, String c_last, TimestampType timestamp) throws VoltAbortException {
         // retrieve c_id from replicated CUSTOMER_NAME table
         voltQueueSQL(getCidByLastName, c_last, c_d_id, c_w_id);
         final VoltTable result = voltExecuteSQL()[0];
         final int namecnt = result.getRowCount();
         if (namecnt == 0) {
-            String c_lastString = null;
-            try {
-                c_lastString = new String(c_last, "UTF-8");
-            } catch (UnsupportedEncodingException e) {
-                throw new RuntimeException(e);
-            }
-            throw new VoltAbortException("paymentByCustomerNameW: no customers with last name: " + c_lastString
+            throw new VoltAbortException("paymentByCustomerNameW: no customers with last name: " + c_last
                     + " in warehouse: "
                     + c_w_id + " and in district " + c_d_id);
         }

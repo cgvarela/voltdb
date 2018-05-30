@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -57,13 +57,15 @@
 
 #include <string>
 #include <vector>
+#include <iostream>
 
 class Test;
 
 // Contains and runs a collection of tests.
 class TestSuite {
 public:
-    void registerTest(Test* (*test_factory)());
+    typedef Test * (*test_factory_t)();
+    void registerTest(test_factory_t);
 
     // Returns the number of failed tests.
     int runAll();
@@ -73,7 +75,7 @@ public:
     static TestSuite* globalInstance();
 
 private:
-    std::vector<Test* (*)()> test_factories_;
+    std::vector<test_factory_t> test_factories_;
 };
 
 // Base class for a single test. Each test creates a subclass of this that
@@ -111,6 +113,9 @@ public:
     RegisterTest(TestSuite* suite) {
         if (suite != NULL)
             suite->registerTest(&RegisterTest<T>::create);
+    }
+
+    ~RegisterTest() {
     }
 
     static Test* create() {
@@ -181,6 +186,9 @@ public:
 #define STUPIDUNIT_ASSERT_BREAKPOINT_CODE
 #endif
 
+// A simple macro to fail a test and print out the file and line number
+#define FAIL(msg) fail(__FILE__, __LINE__, msg)
+
 // Abuse macros to easily define all the EXPECT and ASSERT variants
 #define STUPIDUNIT_MAKE_EXPECT_MACRO(operation, one, two) \
 do { \
@@ -188,7 +196,7 @@ do { \
         STUPIDUNIT_ASSERT_BREAKPOINT_CODE \
         fail(__FILE__, __LINE__, #one " " #operation " " #two); \
     } \
-} while (0)
+} while (false)
 
 #define EXPECT_EQ(one, two) STUPIDUNIT_MAKE_EXPECT_MACRO(==, one, two)
 #define EXPECT_NE(one, two) STUPIDUNIT_MAKE_EXPECT_MACRO(!=, one, two)
@@ -230,22 +238,34 @@ do { \
 #define ASSERT_GT(one, two) STUPIDUNIT_MAKE_ASSERT_MACRO(>, one, two)
 #define ASSERT_GE(one, two) STUPIDUNIT_MAKE_ASSERT_MACRO(>=, one, two)
 
-#define ASSERT_TRUE(value) \
-do { \
-    if (!(value)) { \
-        STUPIDUNIT_ASSERT_BREAKPOINT_CODE \
-        fail(__FILE__, __LINE__, "Expected true; " #value " is false"); \
-        return; \
-    } \
-} while (0)
-#define ASSERT_FALSE(value) \
-do { \
-    if ((value)) { \
-        STUPIDUNIT_ASSERT_BREAKPOINT_CODE \
-        fail(__FILE__, __LINE__, "Expected false; " #value " is true"); \
-        return; \
-    } \
-} while (0)
+#define ASSERT_TRUE_WITH_MESSAGE(value, msg)    \
+    do {                                        \
+        if (!(value)) {                         \
+            STUPIDUNIT_ASSERT_BREAKPOINT_CODE   \
+                fail(__FILE__, __LINE__, msg);  \
+            return;                             \
+        }                                       \
+    } while (0)
+
+#define ASSERT_TRUE(value) ASSERT_TRUE_WITH_MESSAGE(value, "Expected true; " #value " is false")
+#define ASSERT_FALSE(value) ASSERT_TRUE_WITH_MESSAGE(!(value), "Expected false; " #value " is true")
+
+#define ASSERT_FATAL_EXCEPTION(msgFragment, expr)                       \
+    do {                                                                \
+        try {                                                           \
+            expr;                                                       \
+            fail(__FILE__, __LINE__,                                    \
+                 "expected FatalException that did not occur");         \
+        }                                                               \
+        catch (FatalException& exc) {                                   \
+            std::ostringstream oss;                                     \
+            oss << "did not find \""                                    \
+                << (msgFragment) << "\" in \""                          \
+                << exc.m_reason << "\"";                                \
+            ASSERT_TRUE_WITH_MESSAGE(exc.m_reason.find(msgFragment) != std::string::npos, \
+                                     oss.str().c_str());                \
+        }                                                               \
+    } while(false)
 
 
 namespace stupidunit {

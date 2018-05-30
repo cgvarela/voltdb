@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -70,14 +70,6 @@ public class TestSQLLexer {
         checkDDL("-- alter table pants", null);
         checkDDL("altar table pants", null);
 
-        checkDDL("export table pants", "export");
-        checkDDL("EXPORT table pants", "export");
-        checkDDL("ExPoRt table pants", "export");
-        checkDDL("   export table pants    ", "export");
-        checkDDL("exporttable pants", null);
-        checkDDL("-- export table pants", null);
-        checkDDL("exprot table pants", null);
-
         checkDDL("dr table pants", "dr");
         checkDDL("DR table pants", "dr");
         checkDDL("Dr table pants", "dr");
@@ -92,14 +84,6 @@ public class TestSQLLexer {
         checkDDL("drtable pants disable", null);
         checkDDL("-- dr table pants disable", null);
 
-        checkDDL("import class org.dont.exist", "import");
-        checkDDL("IMPORT class org.dont.exist", "import");
-        checkDDL("ImPoRt class org.dont.exist", "import");
-        checkDDL("    import class org.dont.exist", "import");
-        checkDDL("importclass org.dont.exist", null);
-        checkDDL("-- import class org.dont.exist", null);
-        checkDDL("improt class org.dont.exist", null);
-
         checkDDL("partition table pants", "partition");
         checkDDL("PARTITION table pants", "partition");
         checkDDL("pArTiTioN table pants", "partition");
@@ -107,6 +91,8 @@ public class TestSQLLexer {
         checkDDL("partitiontable pants", null);
         checkDDL("-- partition table pants", null);
         checkDDL("partitoin table pants", null);
+
+        checkDDL("set abc=123", "set");
     }
 
     @Test
@@ -179,6 +165,8 @@ public class TestSQLLexer {
         tester.testOK("alter table pants add column blargy blarg;");
         tester.testOK("alter table pants add constraint blargy blarg;");
         tester.testOK("alter index pants");
+
+        tester.testOK("set abc=123;");
 
         //=== Statements that should be filtered out by the white-list.
 

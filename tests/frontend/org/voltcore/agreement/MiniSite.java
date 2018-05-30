@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -25,7 +25,9 @@ package org.voltcore.agreement;
 
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.voltcore.logging.VoltLogger;
@@ -49,9 +51,11 @@ class MiniSite extends Thread implements MeshAide
     Set<Long> m_initialHSIds = new HashSet<Long>();
     Set<Long> m_currentHSIds = new HashSet<Long>();
     Set<Long> m_failedHSIds = new HashSet<Long>();
+    Random m_rand;
+    final private static int MAX_INJECTED_DELAY = 50; // in milliseconds, larger if you want to simulate slow network
 
     MiniSite(Mailbox mbox, Set<Long> HSIds, DisconnectFailedHostsCallback callback,
-            VoltLogger logger)
+            VoltLogger logger, long givenSeed)
     {
         m_siteLog = logger;
         m_initialHSIds.addAll(HSIds);
@@ -59,6 +63,12 @@ class MiniSite extends Thread implements MeshAide
         m_mailbox = mbox;
         m_arbiter = new MeshArbiter(mbox.getHSId(), mbox, this);
         m_failedHosts = callback;
+        long seed = System.currentTimeMillis() + mbox.getHSId();
+        if (givenSeed != 0L) {
+            seed = givenSeed;
+        }
+        logger.info("MiniSite seed:" + seed);
+        m_rand = new Random(seed);
     }
 
     void shutdown()
@@ -82,6 +92,10 @@ class MiniSite extends Thread implements MeshAide
     }
 
     public void reportFault(long faultingSite) {
+        try {
+            Thread.sleep(m_rand.nextInt(MAX_INJECTED_DELAY));
+        } catch (InterruptedException ingoreit) {}
+
         if (m_siteLog.isDebugEnabled()) {
             m_siteLog.debug("Reported fault: " + faultingSite + ", witnessed?: true" );
         }
@@ -91,6 +105,10 @@ class MiniSite extends Thread implements MeshAide
     }
 
     public void reportFault(FaultMessage fm) {
+        try {
+            Thread.sleep(m_rand.nextInt(MAX_INJECTED_DELAY));
+        } catch (InterruptedException ingoreit) {}
+
         fm.m_sourceHSId = m_mailbox.getHSId();
         if (m_siteLog.isDebugEnabled()) {
             m_siteLog.debug("Reporting fault: " + fm);
@@ -173,8 +191,9 @@ class MiniSite extends Thread implements MeshAide
         if (m_siteLog.isDebugEnabled()) {
             m_siteLog.debug("Saw fault: " + faultMessage);
         }
-        Map<Long, Long> results = m_arbiter.reconfigureOnFault(m_currentHSIds, faultMessage);
-        if (results.isEmpty()) {
+        Set<Long> unknownFaultedSites = new TreeSet<>();
+        Map<Long, Long> results = m_arbiter.reconfigureOnFault(m_currentHSIds, faultMessage, unknownFaultedSites);
+        if (results.isEmpty() && unknownFaultedSites.isEmpty()) {
             return;
         }
         m_failedHSIds.addAll(results.keySet());
@@ -182,6 +201,9 @@ class MiniSite extends Thread implements MeshAide
         ImmutableSet.Builder<Integer> failedHosts = ImmutableSet.builder();
         for (long HSId : results.keySet()) {
             failedHosts.add(CoreUtils.getHostIdFromHSId(HSId));
+        }
+        for (long hsId : unknownFaultedSites) {
+            failedHosts.add(CoreUtils.getHostIdFromHSId(hsId));
         }
         m_failedHosts.disconnect(failedHosts.build());
         // need to "disconnect" these failed guys somehow?

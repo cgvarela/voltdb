@@ -33,6 +33,7 @@ package org.hsqldb_voltpatches;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Objects;
 
 import org.hsqldb_voltpatches.lib.IntKeyIntValueHashMap;
 import org.hsqldb_voltpatches.store.ValuePool;
@@ -133,7 +134,8 @@ public class FunctionCustom extends FunctionSQL {
     private static final int FUNC_SUBSTR           = 139;
     private static final int FUNC_DATEDIFF         = 140;
     private static final int FUNC_SECONDS_MIDNIGHT = 141;
-
+    private static final int FUNC_CSC              = 142;
+    private static final int FUNC_SEC              = 143;
     //
     static final IntKeyIntValueHashMap customRegularFuncMap =
         new IntKeyIntValueHashMap();
@@ -229,6 +231,8 @@ public class FunctionCustom extends FunctionSQL {
         customRegularFuncMap.put(Tokens.SOUNDEX, FUNC_SOUNDEX);
         customRegularFuncMap.put(Tokens.SPACE, FUNC_SPACE);
         customRegularFuncMap.put(Tokens.DATEDIFF, FUNC_DATEDIFF);
+        customRegularFuncMap.put(Tokens.CSC, FUNC_CSC);
+        customRegularFuncMap.put(Tokens.SEC, FUNC_SEC);
     }
 
     static final IntKeyIntValueHashMap customValueFuncMap =
@@ -242,13 +246,22 @@ public class FunctionCustom extends FunctionSQL {
 
     private int extractSpec;
 
-    public static FunctionSQL newCustomFunction(String token, int tokenType) {
+    public static int getFunctionId(String functionName) {
+        int tokenType = Tokens.get(functionName.toUpperCase());
+        return getFunctionId(tokenType);
+    }
 
+    public static int getFunctionId(int tokenType) {
         int id = customRegularFuncMap.get(tokenType, -1);
-
         if (id == -1) {
             id = customValueFuncMap.get(tokenType, -1);
         }
+        return id;
+    }
+
+    public static FunctionSQL newCustomFunction(String token, int tokenType) {
+
+        int id = getFunctionId(tokenType);
 
         if (id == -1) {
             return null;
@@ -256,7 +269,12 @@ public class FunctionCustom extends FunctionSQL {
 
         switch (tokenType) {
 
+            // A VoltDB extension to customize the SQL function set support
+            case Tokens.LOG :
+            /* disable 1 line
             case Tokens.LN :
+             ... disabled 1 line */
+            // End of VoltDB extension
             case Tokens.LCASE :
             case Tokens.UCASE :
             case Tokens.LENGTH :
@@ -478,10 +496,38 @@ public class FunctionCustom extends FunctionSQL {
                 break;
 
             case FUNC_PI :
+                name = Tokens.T_PI;
                 parseList = emptyParamList;
-                // A VoltDB extension to customize the SQL function set support
-                voltDisabled = DISABLED_IN_FUNCTIONCUSTOM_CONSTRUCTOR;
-                // End of VoltDB extension
+                parseListAlt = noParamList;
+                break;
+            case FUNC_SIN :
+                name = Tokens.T_SIN;
+                parseList = singleParamList;
+                break;
+            case FUNC_COS :
+                name = Tokens.T_COS;
+                parseList = singleParamList;
+                break;
+            case FUNC_TAN :
+                name = Tokens.T_TAN;
+                parseList = singleParamList;
+                break;
+            case FUNC_COT :
+                name = Tokens.T_COT;
+                parseList = singleParamList;
+                break;
+            case FUNC_SEC :
+                name = Tokens.T_SEC;
+                parseList = singleParamList;
+                break;
+            case FUNC_CSC :
+                name = Tokens.T_CSC;
+                parseList = singleParamList;
+                break;
+
+            case FUNC_LOG10 :
+                name = Tokens.T_LOG10;
+                parseList = singleParamList;
                 break;
 
             case FUNC_RAND :
@@ -491,17 +537,20 @@ public class FunctionCustom extends FunctionSQL {
                 // End of VoltDB extension
                 break;
 
+            case FUNC_DEGREES :
+                name = Tokens.T_DEGREES;
+                parseList = singleParamList;
+                break;
+
+            case FUNC_RADIANS :
+                name = Tokens.T_RADIANS;
+                parseList = singleParamList;
+                break;
+
             case FUNC_ACOS :
             case FUNC_ASIN :
             case FUNC_ATAN :
             case FUNC_ATAN2 :
-            case FUNC_COS :
-            case FUNC_COT :
-            case FUNC_DEGREES :
-            case FUNC_SIN :
-            case FUNC_TAN :
-            case FUNC_LOG10 :
-            case FUNC_RADIANS :
             case FUNC_ROUNDMAGIC :
             case FUNC_SIGN :
             case FUNC_SOUNDEX :
@@ -562,6 +611,7 @@ public class FunctionCustom extends FunctionSQL {
         }
     }
 
+    @Override
     public void setArguments(Expression[] nodes) {
 
         switch (funcType) {
@@ -602,6 +652,7 @@ public class FunctionCustom extends FunctionSQL {
         super.setArguments(nodes);
     }
 
+    @Override
     public Expression getFunctionExpression() {
 
         switch (funcType) {
@@ -624,6 +675,7 @@ public class FunctionCustom extends FunctionSQL {
         return super.getFunctionExpression();
     }
 
+    @Override
     Object getValue(Session session, Object[] data) {
 
         switch (funcType) {
@@ -931,6 +983,20 @@ public class FunctionCustom extends FunctionSQL {
 
                 return Double.valueOf(java.lang.Math.cos(d));
             }
+            case FUNC_CSC : {
+                if (data[0] == null) {
+                    return null;
+                }
+
+                double c = NumberType.toDouble(data[0]);
+                double sinValue = java.lang.Math.sin(c);
+                if(sinValue == 0){
+                    return null;
+                }
+                double d = 1.0 / sinValue;
+
+                return Double.valueOf(d);
+            }
             case FUNC_COT : {
                 if (data[0] == null) {
                     return null;
@@ -959,6 +1025,20 @@ public class FunctionCustom extends FunctionSQL {
 
                 return Double.valueOf(java.lang.Math.sin(d));
             }
+            case FUNC_SEC : {
+                if (data[0] == null) {
+                    return null;
+                }
+
+                double c = NumberType.toDouble(data[0]);
+                double cosValue = java.lang.Math.cos(c);
+                if(cosValue == 0){
+                    return null;
+                }
+                double d = 1.0 / cosValue;
+
+                return Double.valueOf(d);
+            }
             case FUNC_TAN : {
                 if (data[0] == null) {
                     return null;
@@ -974,7 +1054,9 @@ public class FunctionCustom extends FunctionSQL {
                 }
 
                 double d = NumberType.toDouble(data[0]);
-
+                if (d <= 0) {
+                    throw Error.error(ErrorCode.X_2201E);
+                }
                 return Double.valueOf(java.lang.Math.log10(d));
             }
             case FUNC_RADIANS : {
@@ -1188,6 +1270,7 @@ public class FunctionCustom extends FunctionSQL {
         }
     }
 
+    @Override
     public void resolveTypes(Session session, Expression parent) {
 
         for (int i = 0; i < nodes.length; i++) {
@@ -1417,9 +1500,11 @@ public class FunctionCustom extends FunctionSQL {
             case FUNC_ASIN :
             case FUNC_ATAN :
             case FUNC_COS :
+            case FUNC_CSC:
             case FUNC_COT :
             case FUNC_DEGREES :
             case FUNC_SIN :
+            case FUNC_SEC:
             case FUNC_TAN :
             case FUNC_LOG10 :
             case FUNC_RADIANS :
@@ -1651,6 +1736,7 @@ public class FunctionCustom extends FunctionSQL {
         }
     }
 
+    @Override
     public String getSQL() {
 
         switch (funcType) {
@@ -1708,9 +1794,11 @@ public class FunctionCustom extends FunctionSQL {
             case FUNC_ATAN :
             case FUNC_ATAN2 :
             case FUNC_COS :
+            case FUNC_CSC :
             case FUNC_COT :
             case FUNC_DEGREES :
             case FUNC_SIN :
+            case FUNC_SEC :
             case FUNC_TAN :
             case FUNC_LOG10 :
             case FUNC_RADIANS :
@@ -1761,5 +1849,28 @@ public class FunctionCustom extends FunctionSQL {
 
     private static String DISABLED_IN_FUNCTIONCUSTOM_CONSTRUCTOR = "Custom Function";
     private static String DISABLED_IN_FUNCTIONCUSTOM_FACTORY_METHOD = "Custom Function Special Case";
+
+    public int getExtraSpace() {
+        return extractSpec;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (!super.equals(other)) return false;
+        if (other instanceof FunctionCustom == false) return false;
+
+        FunctionCustom function = (FunctionCustom) other;
+        if (function.getExtraSpace() != extractSpec) return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int val = super.hashCode();
+        val += Objects.hashCode(extractSpec);
+        return val;
+    }
+
     /**********************************************************************/
 }

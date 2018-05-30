@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -94,9 +94,18 @@ public abstract class TableSaveFileState
         return m_rootDependencyId;
     }
 
+    public void setIsRecover(boolean isRecover) {
+        this.m_isRecover = isRecover;
+    }
+
+    protected String getIsRecoverParam(){
+        return m_isRecover ? "true" : "false";
+    }
+
     int m_rootDependencyId;
     protected String m_consistencyResult;
     private final String m_tableName;
     private final long m_txnId;
     private final Set<Integer> m_planDependencyIds;
+    private boolean m_isRecover;
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -47,8 +47,10 @@ public:
     static const char* volt_output_buffer_overflow;
     static const char* volt_temp_table_memory_overflow;
     static const char* volt_decimal_serialization_error;
+    static const char* volt_user_defined_function_error;
 
     SQLException(std::string sqlState, std::string message);
+    SQLException(std::string sqlState, int error_no, std::string message);
     SQLException(std::string sqlState, std::string message, VoltEEExceptionType type);
     SQLException(std::string sqlState, std::string message, int internalFlags);
     virtual ~SQLException() {}
@@ -56,8 +58,9 @@ public:
     const std::string& getSqlState() const { return m_sqlState; }
 
     // internal flags that are not serialized to java
-    static const int TYPE_UNDERFLOW = 1;
-    static const int TYPE_OVERFLOW = 2;
+    static const int TYPE_UNDERFLOW             = 1;
+    static const int TYPE_OVERFLOW              = 2;
+    static const int TYPE_VAR_LENGTH_MISMATCH   = 4;
     int getInternalFlags() const { return m_internalFlags; }
 
 protected:

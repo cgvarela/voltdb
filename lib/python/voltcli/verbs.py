@@ -1,29 +1,18 @@
 # This file is part of VoltDB.
-
-# Copyright (C) 2008-2015 VoltDB Inc.
+# Copyright (C) 2008-2018 VoltDB Inc.
 #
-# This file contains original code and/or modifications of original code.
-# Any modifications made by VoltDB Inc. are licensed under the following
-# terms and conditions:
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
 #
-# Permission is hereby granted, free of charge, to any person obtaining
-# a copy of this software and associated documentation files (the
-# "Software"), to deal in the Software without restriction, including
-# without limitation the rights to use, copy, modify, merge, publish,
-# distribute, sublicense, and/or sell copies of the Software, and to
-# permit persons to whom the Software is furnished to do so, subject to
-# the following conditions:
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
 #
-# The above copyright notice and this permission notice shall be
-# included in all copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-# IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-# OTHER DEALINGS IN THE SOFTWARE.
+# You should have received a copy of the GNU Affero General Public License
+# along with VoltDB.  If not, see <http://www.gnu.org/licenses/>.
 
 __author__ = 'scooper'
 
@@ -32,6 +21,7 @@ from voltdbclient import *
 from voltcli import cli
 from voltcli import environment
 from voltcli import utility
+from voltcli import checkconfig
 
 #===============================================================================
 class BaseVerb(object):
@@ -343,9 +333,10 @@ class VerbSpace(object):
     """
     Manages a collection of Verb objects that support a particular CLI interface.
     """
-    def __init__(self, name, version, description, VOLT, scan_dirs, verbs):
+    def __init__(self, name, version, description, VOLT, scan_dirs, verbs, pro_version):
         self.name        = name
         self.version     = version
+        self.pro_version       = pro_version
         self.description = description.strip()
         self.VOLT        = VOLT
         self.scan_dirs   = scan_dirs
@@ -375,6 +366,7 @@ class JavaBundle(object):
            cli.StringOption(None, '--internalinterface', 'internalinterface', 'specify the network interface to use for internal communication, such as the internal and zookeeper ports'),
            cli.StringOption(None, '--externalinterface', 'externalinterface', 'specify the network interface to use for external ports, such as the admin and client ports'),
            cli.StringOption(None, '--publicinterface', 'publicinterface', 'For hosted or cloud environments with non-public interfaces, this argument specifies a publicly-accessible alias for reaching the server. Particularly useful for remote access to the VoltDB Management Center.'))
+
 
     def start(self, verb, runner):
         pass
@@ -406,7 +398,11 @@ class ServerBundle(JavaBundle):
                  daemon_name=None,
                  daemon_description=None,
                  daemon_output=None,
-                 supports_multiple_daemons=False):
+                 supports_multiple_daemons=False,
+                 check_environment_config=False,
+                 force_voltdb_create=False,
+                 supports_paused=False,
+                 is_legacy_verb=True):
         JavaBundle.__init__(self, 'org.voltdb.VoltDB')
         self.subcommand = subcommand
         self.needs_catalog = needs_catalog
@@ -418,18 +414,34 @@ class ServerBundle(JavaBundle):
         self.daemon_description = daemon_description
         self.daemon_output = daemon_output
         self.supports_multiple_daemons = supports_multiple_daemons
+        self.check_environment_config = check_environment_config
+        self.force_voltdb_create = force_voltdb_create
+        self.supports_paused = supports_paused
+        # this flag indicates whether or not the command is a
+        # legacy command: create, recover, rejoin, join
+        self.is_legacy_verb= is_legacy_verb
 
     def initialize(self, verb):
         JavaBundle.initialize(self, verb)
         verb.add_options(
-            cli.StringOption('-d', '--deployment', 'deployment',
-                             'specify the location of the deployment file',
+            cli.StringListOption(None, '--ignore', 'skip_requirements',
+                             '''requirements to skip when start voltdb:
+                 thp - Checking for Transparent Huge Pages (THP) has been disabled.  Use of THP can cause VoltDB to run out of memory. Do not disable this check on production systems.''',
                              default = None))
-        if self.default_host:
+        if self.is_legacy_verb:
+            verb.add_options(
+                cli.StringOption('-d', '--deployment', 'deployment',
+                                 'specify the location of the deployment file',
+                                 default = None))
+        verb.add_options(
+            cli.StringOption('-g', '--placement-group', 'placementgroup',
+                             'placement group',
+                             default = '0'))
+        if self.is_legacy_verb and self.default_host:
             verb.add_options(cli.StringOption('-H', '--host', 'host',
                 'HOST[:PORT] (default HOST=localhost, PORT=3021)',
                 default='localhost:3021'))
-        else:
+        elif self.is_legacy_verb:
             verb.add_options(cli.StringOption('-H', '--host', 'host',
                 'HOST[:PORT] host must be specified (default HOST=localhost, PORT=3021)'))
         if self.supports_live:
@@ -451,10 +463,34 @@ class ServerBundle(JavaBundle):
                     cli.IntegerOption('-I', '--instance', 'instance',
                                   #'specify an instance number for multiple servers on the same host'))
                                   None))
+        if self.supports_paused:
+            verb.add_options(
+                cli.BooleanOption('-p', '--pause', 'paused',
+                                  'Start Database in paused mode.'))
+
+        if self.force_voltdb_create:
+            verb.add_options(
+                cli.BooleanOption('-f', '--force', 'force',
+                                  'Start a new, empty database even if the VoltDB managed directories contain files from a previous session that may be overwritten.'))
 
     def go(self, verb, runner):
+        if self.check_environment_config:
+            incompatible_options = checkconfig.test_hard_requirements()
+            for k,v in  incompatible_options.items():
+                state = v[0]
+                if state == 'PASS' :
+                    pass
+                elif state == "WARN":
+                    utility.warning(v[1])
+                elif state == 'FAIL' :
+                    if k in checkconfig.skippableRequirements.keys() and runner.opts.skip_requirements and checkconfig.skippableRequirements[k] in runner.opts.skip_requirements:
+                        utility.warning(v[1])
+                    else:
+                        utility.abort(v[1])
+                else:
+                    utility.error(v[1])
         final_args = None
-        if self.subcommand in ('create', 'recover'):
+        if self.subcommand in ('create', 'recover', 'probe'):
             if runner.opts.replica:
                 final_args = [self.subcommand, 'replica']
         if self.supports_live:
@@ -475,11 +511,13 @@ class ServerBundle(JavaBundle):
             if not catalog is None:
                 final_args.extend(['catalog', catalog])
 
-        if runner.opts.deployment:
+        if self.is_legacy_verb and runner.opts.deployment:
             final_args.extend(['deployment', runner.opts.deployment])
-        if runner.opts.host:
+        if runner.opts.placementgroup:
+            final_args.extend(['placementgroup', runner.opts.placementgroup])
+        if self.is_legacy_verb and runner.opts.host:
             final_args.extend(['host', runner.opts.host])
-        else:
+        elif not self.subcommand in ('initialize', 'probe'):
             utility.abort('host is required.')
         if runner.opts.clientport:
             final_args.extend(['port', runner.opts.clientport])
@@ -501,6 +539,12 @@ class ServerBundle(JavaBundle):
             final_args.extend(['externalinterface', runner.opts.externalinterface])
         if runner.opts.publicinterface:
             final_args.extend(['publicinterface', runner.opts.publicinterface])
+        if self.subcommand in ('create', 'initialize'):
+            if runner.opts.force:
+                final_args.extend(['force'])
+        if self.subcommand in ('create', 'probe', 'recover'):
+            if runner.opts.paused:
+                final_args.extend(['paused'])
         if runner.args:
             final_args.extend(runner.args)
         kwargs = {}
@@ -542,7 +586,9 @@ class ConnectionBundle(object):
                            max_count    = self.max_count,
                            default_port = self.default_port),
             cli.StringOption('-p', '--password', 'password', "the connection password"),
-            cli.StringOption('-u', '--user', 'username', 'the connection user name'))
+            cli.StringOption('-u', '--user', 'username', 'the connection user name'),
+            cli.StringOption(None, '--ssl', 'ssl_config','''enable and config ssl''', default=None),
+            cli.BooleanOption(None, '--kerberos', 'kerberos', '''enable kerberos'''))
 
     def start(self, verb, runner):
         pass
@@ -565,7 +611,9 @@ class BaseClientBundle(ConnectionBundle):
         runner.voltdb_connect(runner.opts.host.host,
                               runner.opts.host.port,
                               username=runner.opts.username,
-                              password=runner.opts.password)
+                              password=runner.opts.password,
+                              ssl_config=runner.opts.ssl_config,
+                              kerberos=runner.opts.kerberos)
 
     def stop(self, verb, runner):
         runner.voltdb_disconnect()

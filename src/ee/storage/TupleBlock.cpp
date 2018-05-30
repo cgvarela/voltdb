@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -32,9 +32,8 @@ TupleBlock::TupleBlock(Table *table, TBBucketPtr bucket) :
         m_activeTuples(0),
         m_nextFreeTuple(0),
         m_lastCompactionOffset(0),
-        m_tuplesPerBlockDivNumBuckets(m_tuplesPerBlock / static_cast<double>(TUPLE_BLOCK_NUM_BUCKETS)),
         m_bucket(bucket),
-        m_bucketIndex(0)
+        m_bucketIndex(bucket.get() == NULL ? -1 : 0)
 {
 #ifdef USE_MMAP
     size_t tableAllocationSize = static_cast<size_t> (m_tupleLength * m_tuplesPerBlock);
@@ -71,7 +70,7 @@ std::pair<int, int> TupleBlock::merge(Table *table, TBPtr source, TupleMovementL
                 << " and active tuple count is " << source->m_activeTuples << std::endl;
     */
 
-    uint32_t m_nextTupleInSourceOffset = source->lastCompactionOffset();
+    uint32_t nextTupleInSourceOffset = source->lastCompactionOffset();
     int sourceTuplesPendingDeleteOnUndoRelease = 0;
     while (hasFreeTuples() && !source->isEmpty()) {
         TableTuple sourceTupleWithNewValues(table->schema());
@@ -79,10 +78,10 @@ std::pair<int, int> TupleBlock::merge(Table *table, TBPtr source, TupleMovementL
 
         bool foundSourceTuple = false;
         //Iterate further into the block looking for active tuples
-        //Stop when running into the unused tuple boundry
-        while (m_nextTupleInSourceOffset < source->unusedTupleBoundry()) {
-            sourceTupleWithNewValues.move(&source->address()[m_tupleLength * m_nextTupleInSourceOffset]);
-            m_nextTupleInSourceOffset++;
+        //Stop when running into the unused tuple boundary
+        while (nextTupleInSourceOffset < source->unusedTupleBoundary()) {
+            sourceTupleWithNewValues.move(&source->address()[m_tupleLength * nextTupleInSourceOffset]);
+            nextTupleInSourceOffset++;
             if (sourceTupleWithNewValues.isActive()) {
                 foundSourceTuple = true;
                 break;
@@ -118,7 +117,7 @@ std::pair<int, int> TupleBlock::merge(Table *table, TBPtr source, TupleMovementL
 
         source->freeTuple(sourceTupleWithNewValues.address());
     }
-    source->lastCompactionOffset(m_nextTupleInSourceOffset);
+    source->lastCompactionOffset(nextTupleInSourceOffset);
 
     int newBucketIndex = calculateBucketIndex();
     if (newBucketIndex != m_bucketIndex) {
@@ -129,8 +128,7 @@ std::pair<int, int> TupleBlock::merge(Table *table, TBPtr source, TupleMovementL
     } else {
         //std::cout << "Merged " << static_cast<void*> (this) << "(" << m_activeTuples << ") with " << static_cast<void*>(source.get()) << "(" << source->m_activeTuples << ")";
         //std::cout << " found " << sourceTuplesPendingDeleteOnUndoRelease << " tuples pending delete on undo release "<< std::endl;
-        return std::pair<int, int>( -1, source->calculateBucketIndex(sourceTuplesPendingDeleteOnUndoRelease));
+        return std::pair<int, int>(NO_NEW_BUCKET_INDEX, source->calculateBucketIndex(sourceTuplesPendingDeleteOnUndoRelease));
     }
 }
 }
-

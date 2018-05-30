@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,21 +17,31 @@
 
 package org.voltdb.iv2;
 
-import com.google_voltpatches.common.util.concurrent.ListenableFuture;
 import org.voltcore.logging.VoltLogger;
-import org.voltcore.utils.CoreUtils;
 import org.voltdb.SiteProcedureConnection;
 import org.voltdb.VoltDB;
+import org.voltdb.VoltTable;
+import org.voltdb.VoltTable.ColumnInfo;
+import org.voltdb.VoltType;
 import org.voltdb.dtxn.TransactionState;
+
+import com.google_voltpatches.common.util.concurrent.ListenableFuture;
 
 public abstract class TransactionTask extends SiteTasker
 {
     protected static final VoltLogger execLog = new VoltLogger("EXEC");
     protected static final VoltLogger hostLog = new VoltLogger("HOST");
 
+    protected static final byte[] m_rawDummyResult;
+
+    static {
+        VoltTable dummyResult = new VoltTable(new ColumnInfo("UNUSED", VoltType.INTEGER));
+        m_rawDummyResult = dummyResult.buildReusableDependenyResult();
+    }
+
     final protected TransactionState m_txnState;
     final protected TransactionTaskQueue m_queue;
-    protected ListenableFuture<Object> m_durabilityBackpressureFuture = CoreUtils.COMPLETED_FUTURE;
+    protected ListenableFuture<Object> m_durabilityBackpressureFuture = null;
 
     public TransactionTask(TransactionState txnState, TransactionTaskQueue queue)
     {
@@ -52,18 +62,26 @@ public abstract class TransactionTask extends SiteTasker
      * returns immediately.
      */
     protected void waitOnDurabilityBackpressureFuture() {
-        try {
-            m_durabilityBackpressureFuture.get();
-        } catch (Throwable t) {
-            VoltDB.crashLocalVoltDB("Unexpected exception waiting for durability future", true, t);
+        if (m_durabilityBackpressureFuture != null) {
+            try {
+                m_durabilityBackpressureFuture.get();
+            } catch (Throwable t) {
+                VoltDB.crashLocalVoltDB("Unexpected exception waiting for durability future", true, t);
+            }
+            durabilityTraceEnd();
         }
     }
+
+    protected void durabilityTraceEnd() {}
 
     @Override
     abstract public void run(SiteProcedureConnection siteConnection);
 
     // run from the live rejoin task log.
     abstract public void runFromTaskLog(SiteProcedureConnection siteConnection);
+
+    // MP read-write task need to be coordinated.
+    abstract public boolean needCoordination();
 
     public TransactionState getTransactionState()
     {
@@ -91,5 +109,10 @@ public abstract class TransactionTask extends SiteTasker
         if (m_queue != null) {
             m_queue.flush(getTxnId());
         }
+    }
+
+    @Override
+    public String getTaskInfo() {
+        return getClass().getSimpleName() + " TxnId:" + TxnEgo.txnIdToString(getTxnId());
     }
 }

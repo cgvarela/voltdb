@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -27,8 +27,6 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 
-import junit.framework.TestCase;
-
 import org.hsqldb_voltpatches.HSQLInterface;
 import org.json_voltpatches.JSONObject;
 import org.voltdb.compiler.VoltCompiler;
@@ -37,13 +35,15 @@ import org.voltdb.types.VoltDecimalHelper;
 import org.voltdb.utils.BuildDirectoryUtils;
 import org.voltdb.utils.InMemoryJarfile;
 
+import junit.framework.TestCase;
+
 public class TestJdbcDatabaseMetaDataGenerator extends TestCase
 {
     String testout_jar;
 
     private VoltCompiler compileForDDLTest2(String ddl) throws Exception {
         String ddlPath = getPathForSchema(ddl);
-        final VoltCompiler compiler = new VoltCompiler();
+        final VoltCompiler compiler = new VoltCompiler(false);
         boolean success = compiler.compileFromDDL(testout_jar, ddlPath);
         assertTrue("Catalog compile failed!", success);
         return compiler;
@@ -76,10 +76,8 @@ public class TestJdbcDatabaseMetaDataGenerator extends TestCase
             "create table Table2 (Column1 integer);" +
             "create view View1 (Column1, num) as select Column1, count(*) from Table1 group by Column1;" +
             "create view View2 (Column2, num) as select Column2, count(*) from Table1 group by Column2;" +
-            "create table Export1 (Column1 integer);" +
-            "export table Export1;" +
-            "create table Export2 (Column1 integer);" +
-            "export table Export2 to stream foo;" +
+            "create stream Export1 (Column1 integer);" +
+            "create stream Export2 export to target foo (Column1 integer);" +
             "create procedure sample as select * from Table1;";
         VoltCompiler c = compileForDDLTest2(schema);
         System.out.println(c.getCatalog().serialize());
@@ -275,9 +273,9 @@ public class TestJdbcDatabaseMetaDataGenerator extends TestCase
                                                  200,
                                                  1,
                                                  "YES"});
-        refcolumns.put("Column11", new Object[] {java.sql.Types.INTEGER,
-                                                 "INTEGER",
-                                                 31,
+        refcolumns.put("Column11", new Object[] {java.sql.Types.BIGINT,
+                                                 "BIGINT",
+                                                 63,
                                                  null,
                                                  2,
                                                  java.sql.DatabaseMetaData.columnNullable,
@@ -380,7 +378,7 @@ public class TestJdbcDatabaseMetaDataGenerator extends TestCase
         assertEquals((short)2, indexes.get("ORDINAL_POSITION", VoltType.SMALLINT));
         assertEquals(null, indexes.get("ASC_OR_DESC", VoltType.STRING));
         assertTrue(VoltTableTestHelpers.moveToMatchingTupleRow(indexes, "INDEX_NAME",
-                HSQLInterface.AUTO_GEN_CONSTRAINT_WRAPPER_PREFIX + "PK_TREE", "COLUMN_NAME", "Column1"));
+                HSQLInterface.AUTO_GEN_NAMED_CONSTRAINT_IDX + "PK_TREE", "COLUMN_NAME", "Column1"));
         assertEquals("TABLE1", indexes.get("TABLE_NAME", VoltType.STRING));
         assertEquals((byte)0, indexes.get("NON_UNIQUE", VoltType.TINYINT));
         assertEquals(java.sql.DatabaseMetaData.tableIndexOther,
@@ -388,7 +386,7 @@ public class TestJdbcDatabaseMetaDataGenerator extends TestCase
         assertEquals((short)1, indexes.get("ORDINAL_POSITION", VoltType.SMALLINT));
         assertEquals("A", indexes.get("ASC_OR_DESC", VoltType.STRING));
         assertTrue(VoltTableTestHelpers.moveToMatchingTupleRow(indexes, "INDEX_NAME",
-                HSQLInterface.AUTO_GEN_CONSTRAINT_WRAPPER_PREFIX + "PK_TREE", "COLUMN_NAME", "Column3"));
+                HSQLInterface.AUTO_GEN_NAMED_CONSTRAINT_IDX + "PK_TREE", "COLUMN_NAME", "Column3"));
         assertEquals("TABLE1", indexes.get("TABLE_NAME", VoltType.STRING));
         assertEquals((byte)0, indexes.get("NON_UNIQUE", VoltType.TINYINT));
         assertEquals(java.sql.DatabaseMetaData.tableIndexOther,
@@ -396,7 +394,7 @@ public class TestJdbcDatabaseMetaDataGenerator extends TestCase
         assertEquals((short)2, indexes.get("ORDINAL_POSITION", VoltType.SMALLINT));
         assertEquals("A", indexes.get("ASC_OR_DESC", VoltType.STRING));
         assertTrue(VoltTableTestHelpers.moveToMatchingTupleRow(indexes, "INDEX_NAME",
-                HSQLInterface.AUTO_GEN_CONSTRAINT_PREFIX+"TABLE1_COLUMN1", "COLUMN_NAME", "Column1"));
+                HSQLInterface.AUTO_GEN_UNIQUE_IDX_PREFIX + "TABLE1_COLUMN1", "COLUMN_NAME", "Column1"));
         assertEquals("TABLE1", indexes.get("TABLE_NAME", VoltType.STRING));
         assertEquals((byte)0, indexes.get("NON_UNIQUE", VoltType.TINYINT));
         assertEquals(java.sql.DatabaseMetaData.tableIndexOther,
@@ -515,13 +513,17 @@ public class TestJdbcDatabaseMetaDataGenerator extends TestCase
             "partition table Table1 on column Column1;" +
             "create procedure proc1 as select * from Table1 where Column1=?;" +
             "partition procedure proc1 on table Table1 column Column1;" +
-            "create procedure proc2 as select * from Table1 where Column2=?;" +
-            "import class org.voltdb_testprocs.fullddlfeatures.*;" +
-            "create procedure from class org.voltdb_testprocs.fullddlfeatures.testImportProc;";
+            "create procedure proc2 as select * from Table1 where Column2=?;";
 
         VoltCompiler c = compileForDDLTest2(schema);
+        InMemoryJarfile jar = new InMemoryJarfile(testout_jar);
+        c.addClassToJar(jar, org.voltdb_testprocs.fullddlfeatures.testImportProc.class);
+        c.addClassToJar(jar, org.voltdb_testprocs.fullddlfeatures.testCreateProcFromClassProc.class);
+        c.addClassToJar(jar, org.voltdb_testprocs.fullddlfeatures.NoMeaningClass.class);
+        c.compileInMemoryJarfileWithNewDDL(jar, "create procedure from class org.voltdb_testprocs.fullddlfeatures.testImportProc;", c.getCatalog());
+
         JdbcDatabaseMetaDataGenerator dut =
-            new JdbcDatabaseMetaDataGenerator(c.getCatalog(), null, new InMemoryJarfile(testout_jar));
+            new JdbcDatabaseMetaDataGenerator(c.getCatalog(), null, jar);
         VoltTable classes = dut.getMetaData("classes");
         System.out.println(classes);
         assertTrue(VoltTableTestHelpers.moveToMatchingRow(classes, "CLASS_NAME", "org.voltdb_testprocs.fullddlfeatures.testImportProc"));

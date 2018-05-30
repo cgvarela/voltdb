@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -24,9 +24,11 @@
 package org.voltdb.regressionsuites;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import junit.framework.Test;
 
 import org.voltdb.BackendTarget;
 import org.voltdb.TheHashinator;
@@ -40,7 +42,14 @@ import org.voltdb.client.ClientUtils;
 import org.voltdb.client.ProcedureCallback;
 import org.voltdb.client.SyncCallback;
 import org.voltdb.common.Constants;
+import org.voltdb.compiler.VoltProjectBuilder;
+import org.voltdb.compiler.VoltProjectBuilder.RoleInfo;
+import org.voltdb.compiler.VoltProjectBuilder.UserInfo;
+import org.voltdb.export.ExportDataProcessor;
 import org.voltdb.utils.MiscUtils;
+
+import junit.framework.Test;
+
 
 /**
  * Tests a mix of multi-partition and single partition procedures on a
@@ -54,11 +63,25 @@ public class TestUpdateDeployment extends RegressionSuite {
     static final int HOSTS = 2;
     static final int K = MiscUtils.isPro() ? 1 : 0;
 
-    // procedures used by these tests
-    static Class<?>[] BASEPROCS = { org.voltdb.benchmark.tpcc.procedures.InsertNewOrder.class,
-                                    org.voltdb.benchmark.tpcc.procedures.SelectAll.class,
-                                    org.voltdb.benchmark.tpcc.procedures.delivery.class };
+    // users used by these test
+    static final RoleInfo GROUPS[] = new RoleInfo[] {
+        new RoleInfo("export", false, false, false, false, false, false),
+        new RoleInfo("proc", true, false, true, true, false, false),
+        new RoleInfo("admin", true, false, true, true, false, false)
+    };
 
+    static final UserInfo[] USERS = new UserInfo[] {
+        new UserInfo("fancy pants", "export", new String[]{"export"}),
+        new UserInfo("default", "password", new String[]{"proc"}),
+        new UserInfo("admin", "admin", new String[]{"proc", "admin"})
+    };
+
+    static final UserInfo[] USERS_BAD_PASSWORD = new UserInfo[] {
+            new UserInfo("user1", "E7FA8F38396EF1332A60B629BA69257C462CBF3B95C81F3C556DDB79BD2226BEBCF2086983707FF5CFA72BE03B8B763199BBFFD3", new String[]{"admin"}, false),
+            new UserInfo("user2", "password", new String[]{"admin", "proc"}, false)
+    };
+
+    static final int DEAD_HOST_TIMEOUT = 6;
     /**
      * Constructor needed for JUnit. Should just pass on parameters to superclass.
      * @param name The name of the method to test. This is just passed to the superclass.
@@ -243,16 +266,24 @@ public class TestUpdateDeployment extends RegressionSuite {
         assertTrue(callbackSuccess);
 
         String newCatalogURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-addtable.jar");
+        // 6 seconds heart beat timeout deployment change
         String deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-addtable.xml");
         // Asynchronously attempt consecutive catalog update and deployment update
-        client.updateApplicationCatalog(new CatTestCallback(ClientResponse.SUCCESS),
+        SyncCallback cb1 = new SyncCallback();
+        client.updateApplicationCatalog(cb1,
                 new File(newCatalogURL), null);
         // Then, update the users in the deployment
         SyncCallback cb2 = new SyncCallback();
         client.updateApplicationCatalog(cb2, null, new File(deploymentURL));
+        cb1.waitForResponse();
         cb2.waitForResponse();
-        assertEquals(ClientResponse.USER_ABORT, cb2.getResponse().getStatus());
-        assertTrue(cb2.getResponse().getStatusString().contains("Invalid catalog update"));
+
+         System.out.println("cb1: " + Byte.toString(cb1.getResponse().getStatus()) + " " + cb1.getResponse().getStatusString());
+         System.out.println("cb2: " + Byte.toString(cb2.getResponse().getStatus()) + " " + cb2.getResponse().getStatusString());
+
+        // At least one should fail, it could lead to both failures
+        assertTrue(ClientResponse.SUCCESS != cb2.getResponse().getStatus()
+                || ClientResponse.SUCCESS != cb1.getResponse().getStatus());
 
         // Verify the heartbeat timeout change didn't take
         Client client3 = getClient();
@@ -266,11 +297,21 @@ public class TestUpdateDeployment extends RegressionSuite {
             }
         }
         assertTrue(found);
-        assertEquals(org.voltcore.common.Constants.DEFAULT_HEARTBEAT_TIMEOUT_SECONDS, timeout);
 
-        // Verify that table A exists
-        ClientResponse response = client3.callProcedure("@AdHoc", "insert into NEWTABLE values (100);");
-        assertEquals(ClientResponse.SUCCESS, response.getStatus());
+        if (cb1.getResponse().getStatus() == ClientResponse.SUCCESS) {
+            assertEquals(org.voltcore.common.Constants.DEFAULT_HEARTBEAT_TIMEOUT_SECONDS, timeout);
+
+            // Verify that table A exists
+            ClientResponse response = client3.callProcedure("@AdHoc", "insert into NEWTABLE values (100);");
+            assertEquals(ClientResponse.SUCCESS, response.getStatus());
+        } else if (cb2.getResponse().getStatus() == ClientResponse.SUCCESS) {
+            // cb2 success, heart beat time out set to 6 seconds
+            assertEquals(DEAD_HOST_TIMEOUT, timeout);
+        } else {
+            // both failed
+            assertTrue(cb1.getResponse().getStatusString().contains("catalog update is active") ||
+                    cb2.getResponse().getStatusString().contains("catalog update is active"));
+        }
     }
 
     public void testUpdateSchemaModificationIsBlacklisted() throws Exception
@@ -309,6 +350,91 @@ public class TestUpdateDeployment extends RegressionSuite {
         assertTrue(cb.getResponse().getStatusString().contains("Unable to update"));
     }
 
+    public void testUpdateBadExport() throws Exception
+    {
+        System.out.println("\n\n-----\n testUpdateBadExport \n-----\n\n");
+        System.setProperty(ExportDataProcessor.EXPORT_TO_TYPE, "org.voltdb.export.ExportTestClient");
+        Map<String, String> additionalEnv = new HashMap<>();
+        additionalEnv.put(ExportDataProcessor.EXPORT_TO_TYPE, "org.voltdb.export.ExportTestClient");
+        LocalCluster config = new LocalCluster("catalogupdate-bad-export.jar", SITES_PER_HOST, HOSTS, K,
+                BackendTarget.NATIVE_EE_JNI, LocalCluster.FailureState.ALL_RUNNING, true, false, additionalEnv);
+        TPCCProjectBuilder project = new TPCCProjectBuilder();
+        project.addDefaultSchema();
+        project.addDefaultPartitioning();
+        addBaseProcedures(project);
+        Properties props = buildProperties(
+                "type", "csv",
+                "batched", "false",
+                "with-schema", "true",
+                "complain", "true",
+                "outdir", "/tmp/" + System.getProperty("user.name"));
+        project.addExport(true /* enabled */, "custom", props);
+        // build the jarfile
+        boolean compile = config.compile(project);
+        assertTrue(compile);
+
+        Client client = getClient();
+        loadSomeData(client, 0, 10);
+        client.drain();
+        assertTrue(callbackSuccess);
+
+        // Try to change the schem setting
+        SyncCallback cb = new SyncCallback();
+        client.updateApplicationCatalog(cb, null, new File(project.getPathToDeployment()));
+        cb.waitForResponse();
+        assertEquals(ClientResponse.GRACEFUL_FAILURE, cb.getResponse().getStatus());
+        System.out.println(cb.getResponse().getStatusString());
+        assertTrue(cb.getResponse().getStatusString().contains("Unable to update"));
+    }
+
+    public void testUpdateSecurityBadUsername() throws Exception
+    {
+        System.out.println("\n\n-----\n testUpdateSecurityBadUsername \n-----\n\n");
+        Client client = getClient();
+        loadSomeData(client, 0, 10);
+        client.drain();
+        assertTrue(callbackSuccess);
+
+        String deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-bad-username.xml");
+        // Try to change the schem setting
+        SyncCallback cb = new SyncCallback();
+        client.updateApplicationCatalog(cb, null, new File(deploymentURL));
+        cb.waitForResponse();
+        assertEquals(ClientResponse.GRACEFUL_FAILURE, cb.getResponse().getStatus());
+        System.out.println(cb.getResponse().getStatusString());
+        assertTrue(cb.getResponse().getStatusString().contains("Unable to update"));
+    }
+
+    public void testBadMaskPassword() throws Exception {
+        System.out.println("\n\n-----\n testBadMaskPassword \n-----\n\n");
+        Client client = getClient();
+        loadSomeData(client, 0, 10);
+        client.drain();
+        assertTrue(callbackSuccess);
+
+        String deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-bad-masked-password.xml");
+        // Try to change schema setting
+        SyncCallback cb = new SyncCallback();
+        client.updateApplicationCatalog(cb, null, new File(deploymentURL));
+        cb.waitForResponse();
+        assertEquals(ClientResponse.GRACEFUL_FAILURE, cb.getResponse().getStatus());
+        assertTrue(cb.getResponse().getStatusString().contains("Unable to update deployment configuration"));
+    }
+
+    public void testUpdateSitesPerHost() throws IOException, InterruptedException {
+        System.out.println("\n\n-----\n testUpdateSitesPerHost \n-----\n\n");
+        Client client = getClient();
+        assertTrue(callbackSuccess);
+
+        String deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-change-sitesperhost.xml");
+        // Try to change schema setting
+        SyncCallback cb = new SyncCallback();
+        client.updateApplicationCatalog(cb, null, new File(deploymentURL));
+        cb.waitForResponse();
+        assertEquals(ClientResponse.GRACEFUL_FAILURE, cb.getResponse().getStatus());
+        assertTrue(cb.getResponse().getStatusString().contains("Unable to update deployment configuration"));
+    }
+
     private void deleteDirectory(File dir) {
         if (!dir.exists() || !dir.isDirectory()) {
             return;
@@ -318,6 +444,14 @@ public class TestUpdateDeployment extends RegressionSuite {
             assertTrue(f.delete());
         }
         assertTrue(dir.delete());
+    }
+
+    static private void addBaseProcedures(VoltProjectBuilder project) {
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.InsertNewOrder.class,
+                "NEW_ORDER.NO_W_ID: 2");
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.SelectAll.class);
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.delivery.class,
+                "WAREHOUSE.W_ID: 0");
     }
 
     /**
@@ -350,14 +484,14 @@ public class TestUpdateDeployment extends RegressionSuite {
         TPCCProjectBuilder project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addBaseProcedures(project);
         // build the jarfile
         boolean basecompile = config.compile(project);
         assertTrue(basecompile);
         MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-base.xml"));
 
         // add this config to the set of tests to run
-        builder.addServerConfig(config);
+        builder.addServerConfig(config, false);
 
         /////////////////////////////////////////////////////////////
         // DELTA CATALOGS FOR TESTING
@@ -369,7 +503,7 @@ public class TestUpdateDeployment extends RegressionSuite {
         project.addDefaultSchema();
         project.addDefaultPartitioning();
         project.addLiteralSchema("CREATE TABLE NEWTABLE (A1 INTEGER, PRIMARY KEY (A1));");
-        project.setDeadHostTimeout(6);
+        project.setDeadHostTimeout(DEAD_HOST_TIMEOUT);
         boolean compile = config.compile(project);
         assertTrue(compile);
         MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-addtable.xml"));
@@ -379,7 +513,7 @@ public class TestUpdateDeployment extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addBaseProcedures(project);
         project.setSnapshotSettings( "1s", 3, "/tmp/snapshotdir1", "foo1");
         // build the jarfile
         compile = config.compile(project);
@@ -391,7 +525,7 @@ public class TestUpdateDeployment extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addBaseProcedures(project);
         project.setSnapshotSettings( "1s", 3, "/tmp/snapshotdir2", "foo2");
         // build the jarfile
         compile = config.compile(project);
@@ -403,7 +537,7 @@ public class TestUpdateDeployment extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addBaseProcedures(project);
         project.setSnapshotSettings( "1s", 3, "/tmp/snapshotdirasda2", "foo2");
         // build the jarfile
         compile = config.compile(project);
@@ -415,7 +549,7 @@ public class TestUpdateDeployment extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addBaseProcedures(project);
         project.setUseDDLSchema(true);
         // build the jarfile
         compile = config.compile(project);
@@ -427,12 +561,51 @@ public class TestUpdateDeployment extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addBaseProcedures(project);
         project.setSecurityEnabled(true, false);
         // build the jarfile
         compile = config.compile(project);
         assertTrue(compile);
         MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-security-no-users.xml"));
+
+        // A deployment change that changes the schema change mechanism
+        config = new LocalCluster("catalogupdate-bad-username.jar", SITES_PER_HOST, HOSTS, K, BackendTarget.NATIVE_EE_JNI);
+        project = new TPCCProjectBuilder();
+        project.addDefaultSchema();
+        project.addDefaultPartitioning();
+        addBaseProcedures(project);
+        project.setSecurityEnabled(true,true);
+        project.addRoles(GROUPS);
+        project.addUsers(USERS);
+        // build the jarfile
+        compile = config.compile(project);
+        assertTrue(compile);
+        MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-bad-username.xml"));
+
+        // A deployment change that has bad masked password
+        config = new LocalCluster("catalogupdate-bad-masked-password.jar", SITES_PER_HOST, HOSTS, K, BackendTarget.NATIVE_EE_JNI);
+        project = new TPCCProjectBuilder();
+        project.addDefaultSchema();
+        project.addDefaultPartitioning();
+        addBaseProcedures(project);
+        project.setSecurityEnabled(true,true);
+        project.addRoles(GROUPS);
+        project.addUsers(USERS_BAD_PASSWORD);
+        // build the jarfile
+        compile = config.compile(project);
+        assertTrue(compile);
+        MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-bad-masked-password.xml"));
+
+        // A deployment change that alter the sites per host setting (it's disallowed!)
+        config = new LocalCluster("catalogupdate-change-sitesperhost.jar", SITES_PER_HOST + 2, HOSTS, K, BackendTarget.NATIVE_EE_JNI);
+        project = new TPCCProjectBuilder();
+        project.addDefaultSchema();
+        project.addDefaultPartitioning();
+        addBaseProcedures(project);
+        // build the jarfile
+        compile = config.compile(project);
+        assertTrue(compile);
+        MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-change-sitesperhost.xml"));
 
         return builder;
     }

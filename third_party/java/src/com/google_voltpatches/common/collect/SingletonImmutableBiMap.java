@@ -19,7 +19,8 @@ package com.google_voltpatches.common.collect;
 import static com.google_voltpatches.common.collect.CollectPreconditions.checkEntryNotNull;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
+import com.google_voltpatches.errorprone.annotations.concurrent.LazyInit;
+import com.google_voltpatches.j2objc.annotations.RetainedWith;
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -41,18 +42,14 @@ final class SingletonImmutableBiMap<K, V> extends ImmutableBiMap<K, V> {
     this.singleValue = singleValue;
   }
 
-  private SingletonImmutableBiMap(K singleKey, V singleValue,
-      ImmutableBiMap<V, K> inverse) {
+  private SingletonImmutableBiMap(K singleKey, V singleValue, ImmutableBiMap<V, K> inverse) {
     this.singleKey = singleKey;
     this.singleValue = singleValue;
     this.inverse = inverse;
   }
 
-  SingletonImmutableBiMap(Entry<? extends K, ? extends V> entry) {
-    this(entry.getKey(), entry.getValue());
-  }
-
-  @Override public V get(@Nullable Object key) {
+  @Override
+  public V get(@Nullable Object key) {
     return singleKey.equals(key) ? singleValue : null;
   }
 
@@ -61,15 +58,18 @@ final class SingletonImmutableBiMap<K, V> extends ImmutableBiMap<K, V> {
     return 1;
   }
 
-  @Override public boolean containsKey(@Nullable Object key) {
+  @Override
+  public boolean containsKey(@Nullable Object key) {
     return singleKey.equals(key);
   }
 
-  @Override public boolean containsValue(@Nullable Object value) {
+  @Override
+  public boolean containsValue(@Nullable Object value) {
     return singleValue.equals(value);
   }
 
-  @Override boolean isPartialView() {
+  @Override
+  boolean isPartialView() {
     return false;
   }
 
@@ -83,6 +83,8 @@ final class SingletonImmutableBiMap<K, V> extends ImmutableBiMap<K, V> {
     return ImmutableSet.of(singleKey);
   }
 
+  @LazyInit
+  @RetainedWith
   transient ImmutableBiMap<V, K> inverse;
 
   @Override
@@ -90,8 +92,7 @@ final class SingletonImmutableBiMap<K, V> extends ImmutableBiMap<K, V> {
     // racy single-check idiom
     ImmutableBiMap<V, K> result = inverse;
     if (result == null) {
-      return inverse = new SingletonImmutableBiMap<V, K>(
-          singleValue, singleKey, this);
+      return inverse = new SingletonImmutableBiMap<V, K>(singleValue, singleKey, this);
     } else {
       return result;
     }

@@ -1,32 +1,22 @@
 # This file is part of VoltDB.
-
-# Copyright (C) 2008-2015 VoltDB Inc.
+# Copyright (C) 2008-2018 VoltDB Inc.
 #
-# This file contains original code and/or modifications of original code.
-# Any modifications made by VoltDB Inc. are licensed under the following
-# terms and conditions:
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
 #
-# Permission is hereby granted, free of charge, to any person obtaining
-# a copy of this software and associated documentation files (the
-# "Software"), to deal in the Software without restriction, including
-# without limitation the rights to use, copy, modify, merge, publish,
-# distribute, sublicense, and/or sell copies of the Software, and to
-# permit persons to whom the Software is furnished to do so, subject to
-# the following conditions:
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
 #
-# The above copyright notice and this permission notice shall be
-# included in all copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-# IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-# OTHER DEALINGS IN THE SOFTWARE.
+# You should have received a copy of the GNU Affero General Public License
+# along with VoltDB.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
 import urllib
+import sys
 
 @VOLT.Command(
     bundles = VOLT.AdminBundle(),
@@ -37,23 +27,69 @@ import urllib
                            default = False),
         VOLT.EnumOption('-f', '--format', 'format',
                         'snapshot format', 'native', 'csv',
-                        default = 'native')
+                        default = 'native'),
+        VOLT.StringListOption(None, '--tables', 'tables',
+                              'tables to include in the snapshot',
+                              default = None),
+        VOLT.StringListOption(None, '--skiptables', 'skip_tables',
+                              'tables to skip in the snapshot',
+                              default = None)
     ),
-    arguments = (
-        VOLT.PathArgument('directory', 'the snapshot server directory', absolute = True),
-        VOLT.StringArgument('nonce', 'the unique snapshot identifier (nonce)')
+    arguments=(
+            VOLT.PathArgument('directory', 'the snapshot server directory', absolute=True, optional=True),
+            VOLT.StringArgument('nonce', 'the unique snapshot identifier (nonce)', optional=True)
     )
 )
 def save(runner):
-    uri = 'file://%s' % urllib.quote(runner.opts.directory)
-    nonce = runner.opts.nonce.replace('"', '\\"')
+    uri = None
+    dir_specified = False
+    if runner.opts.directory is not None:
+        uri = 'file://%s' % urllib.quote(runner.opts.directory)
+        dir_specified = True
+
+    nonce = None
+    if runner.opts.nonce is not None:
+        nonce = runner.opts.nonce.replace('"', '\\"')
+    elif dir_specified:
+        runner.abort('When a DIRECTORY is given a NONCE must be specified as well.')
+    else:
+        runner.opts.format = 'native'
+        runner.opts.tables = None
+        runner.opts.skip_tables = None
+
     if runner.opts.blocking:
         blocking = 'true'
     else:
         blocking = 'false'
-    json_opts = ['{uripath:"%s",nonce:"%s",block:%s,format:"%s"}'
-                    % (uri, nonce, blocking, runner.opts.format)]
-    runner.verbose_info('@SnapshotSave "%s"' % json_opts)
+    if uri is not None:
+        if nonce is not None:
+            raw_json_opts = ['uripath:"%s"' % (uri),
+                             'nonce:"%s"' % (nonce),
+                             'block:%s' % (blocking),
+                             'format:"%s"' % (runner.opts.format)]
+        else:
+            raw_json_opts = ['uripath:"%s"' % (uri),
+                             'block:%s' % (blocking),
+                             'format:"%s"' % (runner.opts.format)]
+    else:
+        if nonce is not None:
+            raw_json_opts = ['uripath:"%s"' % (uri),
+                             'nonce:"%s"' % (nonce),
+                             'block:%s' % (blocking),
+                             'format:"%s"' % (runner.opts.format)]
+        else:
+            raw_json_opts = ['block:%s' % (blocking),
+                             'format:"%s"' % (runner.opts.format)]
+    if runner.opts.tables:
+        raw_json_opts.append('tables:%s' % (runner.opts.tables))
+    if runner.opts.skip_tables:
+        raw_json_opts.append('skiptables:%s' % (runner.opts.skip_tables))
+    runner.verbose_info('@SnapshotSave "%s"' % raw_json_opts)
     columns = [VOLT.FastSerializer.VOLTTYPE_STRING]
-    response = runner.call_proc('@SnapshotSave', columns, json_opts)
-    print response.table(0).format_table(caption = 'Snapshot Save Results')
+    response = runner.call_proc('@SnapshotSave', columns,
+                                ['{%s}' % (','.join(raw_json_opts))])
+    res_table = response.table(0)
+    has_failure = any([t[3] != 'SUCCESS' for t in res_table.tuples()])
+    print res_table.format_table(caption = 'Snapshot Save Results')
+    if has_failure:
+        sys.exit(1)

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -30,13 +30,20 @@ import org.voltdb.expressions.ParameterValueExpression;
 import org.voltdb.expressions.TupleValueExpression;
 import org.voltdb.types.PlanNodeType;
 
+/**
+ * This type of plan node wraps a subquery expression for queries like this
+ *
+ *  SELECT * FROM T WHERE (T.f, T.f) > (SELECT R.f R.g FROM R LIMIT 1);
+ *
+ */
 public class TupleScanPlanNode extends AbstractScanPlanNode {
 
     public enum Members {
         PARAM_IDX;
     }
 
-    private List<AbstractExpression> m_columnList = new ArrayList<AbstractExpression>();
+    private List<AbstractExpression> m_columnList =
+            new ArrayList<>();
 
     public TupleScanPlanNode() {
         super();
@@ -48,13 +55,14 @@ public class TupleScanPlanNode extends AbstractScanPlanNode {
      * @param
      * @param
      */
-    public TupleScanPlanNode(String subqueryName, List<AbstractExpression> columnExprs) {
+    public TupleScanPlanNode(String subqueryName,
+            List<AbstractExpression> columnExprs) {
         super(subqueryName, subqueryName);
         m_isSubQuery = true;
         m_hasSignificantOutputSchema = true;
         // copy columns
         for (AbstractExpression columnExpr : columnExprs) {
-            m_columnList.add((AbstractExpression) columnExpr.clone());
+            m_columnList.add(columnExpr.clone());
         }
     }
 
@@ -74,14 +82,13 @@ public class TupleScanPlanNode extends AbstractScanPlanNode {
                 // must produce a tuple value expression for this column.
                 String columnName = "C" + Integer.toString(columnIdx);
                 TupleValueExpression tve = new TupleValueExpression(
-                        m_targetTableName, m_targetTableAlias, columnName, columnName, columnIdx);
-
-                tve.setTypeSizeBytes(pve.getValueType(), pve.getValueSize(), pve.getInBytes());
-                m_tableSchema.addColumn(new SchemaColumn(m_targetTableName,
-                        m_targetTableAlias,
-                        columnName,
-                        columnName,
-                        tve));
+                        m_targetTableName, m_targetTableAlias,
+                        columnName, columnName,
+                        pve, columnIdx);
+                m_tableSchema.addColumn(
+                        m_targetTableName, m_targetTableAlias,
+                        columnName, columnName,
+                        tve);
                 ++columnIdx;
             }
             m_outputSchema = m_tableSchema;
@@ -92,12 +99,12 @@ public class TupleScanPlanNode extends AbstractScanPlanNode {
     @Override
     public void resolveColumnIndexes() {
         // output columns
-        for (SchemaColumn col : m_outputSchema.getColumns()) {
+        for (SchemaColumn col : m_outputSchema) {
+            AbstractExpression colExpr = col.getExpression();
             // At this point, they'd better all be TVEs.
-            assert(col.getExpression() instanceof TupleValueExpression);
-            TupleValueExpression tve = (TupleValueExpression)col.getExpression();
-            int index = tve.resolveColumnIndexesUsingSchema(m_tableSchema);
-            tve.setColumnIndex(index);
+            assert(colExpr instanceof TupleValueExpression);
+            TupleValueExpression tve = (TupleValueExpression) colExpr;
+            tve.setColumnIndexUsingSchema(m_tableSchema);
         }
         m_outputSchema.sortByTveIndex();
     }
@@ -138,7 +145,7 @@ public class TupleScanPlanNode extends AbstractScanPlanNode {
                 int paramIdx = paramIdxArray.getInt(i);
                 ParameterValueExpression pve = new ParameterValueExpression();
                 pve.setParameterIndex(paramIdx);
-                AbstractExpression expr = m_outputSchema.getColumns().get(i).getExpression();
+                AbstractExpression expr = m_outputSchema.getColumn(i).getExpression();
                 pve.setValueSize(expr.getValueSize());
                 pve.setValueType(expr.getValueType());
                 m_columnList.add(pve);

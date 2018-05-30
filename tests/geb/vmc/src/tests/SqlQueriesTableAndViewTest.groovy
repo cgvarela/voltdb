@@ -1,3 +1,26 @@
+/* This file is part of VoltDB.
+ * Copyright (C) 2008-2018 VoltDB Inc.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining
+ * a copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+ * OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 package vmcTest.tests
 
 import geb.*
@@ -17,10 +40,10 @@ class SqlQueriesTableAndViewTest extends SqlQueriesTestBase {
         when: 'click the SQL Query link (if needed)'
         openSqlQueryPage()
         then: 'should be on SQL Query page'
-        at SqlQueryPage 
+        at SqlQueryPage
     }
-    
-    def "Check created table by refreshing in SQL QUERY tab and Schema tab"() {
+
+    def checkCreatedTableByRefreshingInSqlQueryTabAndSchemaTab() {
         when: 'click the SQL Query link (if needed)'
         openSqlQueryPage()
         then: 'should be on SQL Query page'
@@ -133,8 +156,8 @@ class SqlQueriesTableAndViewTest extends SqlQueriesTestBase {
         page.refreshtableworksheet.click()
         println("refresh button clicked and created table deleted in schema page of Size and worksheet tab")
     }
-    
-    def "Check created views by refreshing in SQL QUERY tab and Schema tab"() {
+
+    def checkCreatedViewsByRefreshingInSqlQueryTabAndSchemaTab() {
         when: 'click the SQL Query link (if needed)'
         openSqlQueryPage()
         then: 'should be on SQL Query page'
@@ -254,6 +277,5 @@ class SqlQueriesTableAndViewTest extends SqlQueriesTestBase {
         waitFor(waitTime){page.refreshtableworksheet.isDisplayed()}
         page.refreshtableworksheet.click()
         println("refresh button clicked and created views deleted in schema page of Size and worksheet tab")
-
     }
 }

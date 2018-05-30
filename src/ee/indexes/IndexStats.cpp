@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,11 +18,6 @@
 #include <vector>
 #include <string>
 #include "indexes/IndexStats.h"
-#include "stats/StatsSource.h"
-#include "common/TupleSchema.h"
-#include "common/ids.h"
-#include "common/ValueFactory.hpp"
-#include "common/tabletuple.h"
 #include "storage/table.h"
 #include "storage/tablefactory.h"
 #include "indexes/tableindex.h"
@@ -43,6 +38,8 @@ vector<string> IndexStats::generateIndexStatsColumnNames() {
     return columnNames;
 }
 
+// make sure to update schema in frontend sources (like IndexStats.java) and tests when updating
+// the index-stats schema in here.
 void IndexStats::populateIndexStatsSchema(
         vector<ValueType> &types,
         vector<int32_t> &columnLengths,
@@ -87,20 +84,17 @@ void IndexStats::populateIndexStatsSchema(
     inBytes.push_back(false);
 
     // memory usage
-    types.push_back(VALUE_TYPE_INTEGER);
-    columnLengths.push_back(NValue::getTupleStorageSize(VALUE_TYPE_INTEGER));
+    types.push_back(VALUE_TYPE_BIGINT);
+    columnLengths.push_back(NValue::getTupleStorageSize(VALUE_TYPE_BIGINT));
     allowNull.push_back(false);
     inBytes.push_back(false);
 }
 
-Table*
-IndexStats::generateEmptyIndexStatsTable()
-{
+TempTable* IndexStats::generateEmptyIndexStatsTable() {
     string name = "Persistent Table aggregated index stats temp table";
     // An empty stats table isn't clearly associated with any specific
     // database ID.  Just pick something that works for now (Yes,
     // abstractplannode::databaseId(), I'm looking in your direction)
-    CatalogId databaseId = 1;
     vector<string> columnNames = IndexStats::generateIndexStatsColumnNames();
     vector<ValueType> columnTypes;
     vector<int32_t> columnLengths;
@@ -111,13 +105,10 @@ IndexStats::generateEmptyIndexStatsTable()
     TupleSchema *schema =
         TupleSchema::createTupleSchema(columnTypes, columnLengths,
                                        columnAllowNull, columnInBytes);
-
-    return
-        reinterpret_cast<Table*>(TableFactory::getTempTable(databaseId,
-                                                            name,
-                                                            schema,
-                                                            columnNames,
-                                                            NULL));
+    return TableFactory::buildTempTable(name,
+                                        schema,
+                                        columnNames,
+                                        NULL);
 }
 
 /*
@@ -133,17 +124,11 @@ IndexStats::IndexStats(TableIndex* index)
  * Configure a StatsSource superclass for a set of statistics. Since this class is only used in
  * the EE it can be assumed that it is part of an Execution Site and that there is a site Id.
  * @parameter name Name of this set of statistics
- * @parameter hostId id of the host this partition is on
- * @parameter hostname name of the host this partition is on
- * @parameter siteId this stat source is associated with
- * @parameter partitionId this stat source is associated with
- * @parameter databaseId Database this source is associated with
+ * @parameter tableName Name of the indexed table
  */
-void IndexStats::configure(
-        string name,
-        string tableName,
-        CatalogId databaseId) {
-    StatsSource::configure(name, databaseId);
+void IndexStats::configure(string name, string tableName) {
+    VOLT_TRACE("Configuring stats for index %s in table %s.", name.c_str(), tableName.c_str());
+    StatsSource::configure(name);
     m_indexName = ValueFactory::getStringValue(m_index->getName());
     m_tableName = ValueFactory::getStringValue(tableName);
     m_indexType = ValueFactory::getStringValue(m_index->getTypeName());
@@ -183,11 +168,6 @@ void IndexStats::updateStatsTuple(TableTuple *tuple) {
         m_lastMemEstimate = m_index->getMemoryEstimate();
     }
 
-    if (mem_estimate_kb > INT32_MAX)
-    {
-        mem_estimate_kb = -1;
-    }
-
     tuple->setNValue(
             StatsSource::m_columnName2Index["IS_UNIQUE"],
             ValueFactory::getTinyIntValue(m_isUnique));
@@ -198,7 +178,7 @@ void IndexStats::updateStatsTuple(TableTuple *tuple) {
             ValueFactory::getBigIntValue(count));
     tuple->setNValue(StatsSource::m_columnName2Index["MEMORY_ESTIMATE"],
                      ValueFactory::
-                     getIntegerValue(static_cast<int32_t>(mem_estimate_kb)));
+                     getBigIntValue(mem_estimate_kb));
 }
 
 /**

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -101,8 +101,42 @@ protected:
      * pick a partition to store the data
      */
     int32_t hashinate(const char *string, int32_t length) const {
-        int32_t hash = MurmurHash3_x64_128(string, length, 0);
-        return partitionForToken(hash);
+        int32_t hashCode = MurmurHash3_x64_128(string, length, 0);
+        return partitionForToken(hashCode);
+    }
+
+    int32_t partitionForToken(int32_t hashCode) const {
+        int32_t min = 0;
+        int32_t max = tokenCount - 1;
+
+        while (min <= max) {
+            assert(min >= 0);
+            assert(max >= 0);
+            uint32_t mid = (min + max) >> 1;
+            int32_t midval = tokens[mid * 2];
+
+            if (midval < hashCode) {
+                min = mid + 1;
+            } else if (midval > hashCode) {
+                max = mid - 1;
+            } else {
+                return tokens[mid * 2 + 1];
+            }
+        }
+        return tokens[(min - 1) * 2 + 1];
+    }
+
+    std::string debug() const {
+        std::ostringstream buffer;
+        buffer << "\nToken      " << "   Partition" << std::endl;
+        buffer << "==========================" << std::endl;
+        for (int i = 0; i < tokenCount; i++) {
+            buffer << std::setw(11) << tokens[i * 2]
+                   << " => "
+                   << std::setw(9) << tokens[i * 2 + 1]
+                   << std::endl;
+        }
+        return buffer.str();
     }
 
 private:
@@ -113,26 +147,6 @@ private:
     const uint32_t tokenCount;
     boost::scoped_array<int32_t> tokensOwner;
 
-    int32_t partitionForToken(int32_t hash) const {
-        int32_t min = 0;
-        int32_t max = tokenCount - 1;
-
-        while (min <= max) {
-            assert(min >= 0);
-            assert(max >= 0);
-            uint32_t mid = (min + max) >> 1;
-            int32_t midval = tokens[mid * 2];
-
-            if (midval < hash) {
-                min = mid + 1;
-            } else if (midval > hash) {
-                max = mid - 1;
-            } else {
-                return tokens[mid * 2 + 1];
-            }
-        }
-        return tokens[(min - 1) * 2 + 1];
-    }
 };
 }
 #endif /* ELASTICHASHINATOR_H_ */

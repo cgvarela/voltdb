@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -70,9 +70,13 @@ public class Constants
     public static final String QUOTED_CSV_NULL = "\"\\N\"";
 
     // default export group to use when no group name is provided
-    public static final String DEFAULT_EXPORT_CONNECTOR_NAME = "default";
+    public static final String DEFAULT_EXPORT_CONNECTOR_NAME = "__default__";
 
     // Special HTTP port values to disable or trigger auto-scan.
-    public static final int HTTP_PORT_DISABLED = -1;
+    public static final int UNDEFINED = -1;
+    public static final int HTTP_PORT_DISABLED = UNDEFINED;
     public static final int HTTP_PORT_AUTO = 0;
+
+    public static final String DBROOT = "voltdbroot";
+    public static final String CONFIG_DIR = "config";
 }

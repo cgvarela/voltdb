@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,13 +17,22 @@
 
 package org.voltdb.client;
 
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.RoundingMode;
+import java.security.Principal;
+import java.util.Iterator;
+import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
 import javax.security.auth.Subject;
 import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
 
+import org.voltcore.utils.ssl.SSLConfiguration;
+import org.voltcore.utils.ssl.SSLConfiguration.SslConfig;
 import org.voltdb.types.VoltDecimalHelper;
 
 /**
@@ -31,12 +40,14 @@ import org.voltdb.types.VoltDecimalHelper;
  */
 public class ClientConfig {
 
+    private static final String DEFAULT_SSL_PROPS_FILE = "ssl-config";
+
     static final long DEFAULT_PROCEDURE_TIMOUT_NANOS = TimeUnit.MINUTES.toNanos(2);// default timeout is 2 minutes;
     static final long DEFAULT_CONNECTION_TIMOUT_MS = 2 * 60 * 1000; // default timeout is 2 minutes;
     static final long DEFAULT_INITIAL_CONNECTION_RETRY_INTERVAL_MS = 1000; // default initial connection retry interval is 1 second
     static final long DEFAULT_MAX_CONNECTION_RETRY_INTERVAL_MS = 8000; // default max connection retry interval is 8 seconds
 
-    final ClientAuthHashScheme m_hashScheme;
+    final ClientAuthScheme m_hashScheme;
     final String m_username;
     final String m_password;
     final boolean m_cleartext;
@@ -53,18 +64,43 @@ public class ClientConfig {
     boolean m_reconnectOnConnectionLoss;
     long m_initialConnectionRetryIntervalMS = DEFAULT_INITIAL_CONNECTION_RETRY_INTERVAL_MS;
     long m_maxConnectionRetryIntervalMS = DEFAULT_MAX_CONNECTION_RETRY_INTERVAL_MS;
+    boolean m_sendReadsToReplicasBytDefaultIfCAEnabled = false;
+    SslConfig m_sslConfig;
+    boolean m_topologyChangeAware = false;
+    boolean m_enableSSL = false;
+    String m_sslPropsFile = null;
+
+    //For unit testing. This should really be in Environment class we should assemble all such there.
+    public static final boolean ENABLE_SSL_FOR_TEST = Boolean.valueOf(
+            System.getenv("ENABLE_SSL") == null ?
+                    Boolean.toString(Boolean.getBoolean("ENABLE_SSL"))
+                  : System.getenv("ENABLE_SSL"));
+
+    final static String getUserNameFromSubject(Subject subject) {
+        if (subject == null || subject.getPrincipals() == null || subject.getPrincipals().isEmpty()) {
+            throw new IllegalArgumentException("Subject is null or does not contain principals");
+        }
+        Iterator<Principal> piter = subject.getPrincipals().iterator();
+        Principal principal = piter.next();
+        String username = principal.getName();
+        while (piter.hasNext()) {
+            principal = piter.next();
+            if (principal instanceof DelegatePrincipal) {
+                username = principal.getName();
+                break;
+            }
+        }
+        return username;
+    }
 
     /**
      * <p>Configuration for a client with no authentication credentials that will
      * work with a server with security disabled. Also specifies no status listener.</p>
      */
     public ClientConfig() {
-        m_username = "";
-        m_password = "";
-        m_listener = null;
-        m_cleartext = true;
-        m_hashScheme = ClientAuthHashScheme.HASH_SHA256;
+        this("", "", true, (ClientStatusListenerExt) null, ClientAuthScheme.HASH_SHA256);
     }
+
 
     /**
      * <p>Configuration for a client that specifies authentication credentials. The username and
@@ -74,7 +110,7 @@ public class ClientConfig {
      * @param password Cleartext password.
      */
     public ClientConfig(String username, String password) {
-        this(username, password, true, (ClientStatusListenerExt) null, ClientAuthHashScheme.HASH_SHA256);
+        this(username, password, true, (ClientStatusListenerExt) null, ClientAuthScheme.HASH_SHA256);
     }
 
     /**
@@ -89,7 +125,7 @@ public class ClientConfig {
      * @param listener {@link ClientStatusListener} implementation to receive callbacks.
      */
     @Deprecated
-    public ClientConfig(String username, String password, ClientStatusListener listener, ClientAuthHashScheme scheme) {
+    public ClientConfig(String username, String password, ClientStatusListener listener, ClientAuthScheme scheme) {
         this(username, password, true, new ClientStatusListenerWrapper(listener), scheme);
     }
 
@@ -102,7 +138,7 @@ public class ClientConfig {
      * @param listener {@link ClientStatusListenerExt} implementation to receive callbacks.
      */
     public ClientConfig(String username, String password, ClientStatusListenerExt listener) {
-        this(username,password,true,listener, ClientAuthHashScheme.HASH_SHA256);
+        this(username,password,true,listener, ClientAuthScheme.HASH_SHA256);
     }
 
     /**
@@ -114,7 +150,7 @@ public class ClientConfig {
      * @param listener {@link ClientStatusListenerExt} implementation to receive callbacks.
      * @param scheme Client password hash scheme
      */
-    public ClientConfig(String username, String password, ClientStatusListenerExt listener, ClientAuthHashScheme scheme) {
+    public ClientConfig(String username, String password, ClientStatusListenerExt listener, ClientAuthScheme scheme) {
         this(username,password,true,listener, scheme);
     }
 
@@ -128,8 +164,21 @@ public class ClientConfig {
      * @param cleartext Whether the password is hashed.
      */
     public ClientConfig(String username, String password, boolean cleartext, ClientStatusListenerExt listener) {
-        this(username, password, cleartext, listener, ClientAuthHashScheme.HASH_SHA256);
+        this(username, password, cleartext, listener, ClientAuthScheme.HASH_SHA256);
     }
+
+    /**
+     * <p>Configuration for a client that specifies an already authenticated {@link Subject}.
+     * Also specifies a status listener.</p>
+     *
+     * @param subject an authenticated {@link Subject}
+     * @param listener {@link ClientStatusListenerExt} implementation to receive callbacks.
+     */
+    public ClientConfig(Subject subject, ClientStatusListenerExt listener) {
+        this(getUserNameFromSubject(subject), "", true, listener, ClientAuthScheme.HASH_SHA256);
+        m_subject = subject;
+    }
+
     /**
      * <p>Configuration for a client that specifies authentication credentials. The username and
      * password can be null or the empty string. Also specifies a status listener.</p>
@@ -140,7 +189,21 @@ public class ClientConfig {
      * @param cleartext Whether the password is hashed.
      * @param scheme Client password hash scheme
      */
-    public ClientConfig(String username, String password, boolean cleartext, ClientStatusListenerExt listener, ClientAuthHashScheme scheme) {
+    public ClientConfig(String username, String password, boolean cleartext, ClientStatusListenerExt listener, ClientAuthScheme scheme) {
+
+        if (ClientConfig.ENABLE_SSL_FOR_TEST) {
+            try (InputStream is = ClientConfig.class.getResourceAsStream(DEFAULT_SSL_PROPS_FILE)) {
+                Properties sslProperties = new Properties();
+                sslProperties.load(is);
+                String trustStorePath = sslProperties.getProperty(SSLConfiguration.TRUSTSTORE_CONFIG_PROP);
+                String trustStorePassword = sslProperties.getProperty(SSLConfiguration.TRUSTSTORE_PASSWORD_CONFIG_PROP);
+                setTrustStore(trustStorePath, trustStorePassword);
+                enableSSL();
+            } catch (IOException e) {
+                throw new IllegalArgumentException("Unable to access SSL configuration.", e);
+            }
+        }
+
         if (username == null) {
             m_username = "";
         } else {
@@ -283,10 +346,38 @@ public class ClientConfig {
      *
      * <p>If you are using persistent connections you definitely want this.</p>
      *
+     * <p>Defaults to TRUE.</p>
+     *
      * @param on Enable or disable the affinity feature.
      */
     public void setClientAffinity(boolean on) {
         m_useClientAffinity = on;
+    }
+
+    /**
+     * <p>Attempts to connect to all nodes in the cluster</p>
+     * <p>Defaults to false.</p>
+     * @param enabled Enable or disable the topology awareness feature.
+     */
+    public void setTopologyChangeAware(boolean enabled) {
+        m_topologyChangeAware = enabled;
+    }
+
+    /**
+     * <p>By default, reads are sent to the leader replica for each partition. This
+     * is usually optimal for the default read consistency value, SAFE. If you are
+     * using FAST reads, enabling this setting will load balance reads amongst
+     * partition replicas, often increasing throughput and decreasing latency.</p>
+     *
+     * <p>See section <a href="https://docs.voltdb.com/AdminGuide/HostConfigDBOpts.php">
+     * A.3.4 of the Administrators Guide</a> for info on SAFE vs. FAST.</p>
+     *
+     * <p>Defaults to FALSE. Has no effect if Client Affinity is disabled.</p>
+     *
+     * @param on Enable or disable sending reads to replicas.
+     */
+    public void setSendReadsToReplicasByDefault(boolean on) {
+        m_sendReadsToReplicasBytDefaultIfCAEnabled = on;
     }
 
     /**
@@ -332,8 +423,8 @@ public class ClientConfig {
     }
 
     /**
-     * <p>Enable Kerberos authentication with the provided subject credentials<p>
-     * @param subject
+     * <p>Enable Kerberos authentication with the provided subject credentials</p>
+     * @param subject Identity of the authenticated user.
      */
     public void enableKerberosAuthentication(final Subject subject) {
         m_subject = subject;
@@ -350,9 +441,7 @@ public class ClientConfig {
            LoginContext lc = new LoginContext(loginContextEntryKey);
            lc.login();
            m_subject = lc.getSubject();
-       } catch (SecurityException ex) {
-           throw new IllegalArgumentException("Cannot determine client consumer's credentials", ex);
-       } catch (LoginException ex) {
+       } catch (SecurityException | LoginException ex) {
            throw new IllegalArgumentException("Cannot determine client consumer's credentials", ex);
        }
     }
@@ -366,5 +455,55 @@ public class ClientConfig {
      */
     public static void setRoundingConfig(boolean isEnabled, RoundingMode mode) {
         VoltDecimalHelper.setRoundingConfig(isEnabled, mode);
+    }
+
+    /**
+     * Configure trust store
+     *
+     * @param pathToTrustStore file specification for the trust store
+     * @param trustStorePassword trust store key file password
+     */
+    public void setTrustStore(String pathToTrustStore, String trustStorePassword) {
+        File tsFD = new File(pathToTrustStore != null && !pathToTrustStore.trim().isEmpty() ? pathToTrustStore : "");
+        if (!tsFD.exists() || !tsFD.isFile() || !tsFD.canRead()) {
+            throw new IllegalArgumentException("Trust store " + pathToTrustStore + " is not a read accessible file");
+        }
+        m_sslConfig = new SSLConfiguration.SslConfig(null, null, pathToTrustStore, trustStorePassword);
+    }
+
+    /**
+     * Configure trust store
+     *
+     * @param propFN property file name containing trust store properties:
+     * <ul>
+     * <li>{@code trustStore} trust store file specification
+     * <li>{@code trustStorePassword} trust store password
+     * </ul>
+     */
+    public void setTrustStoreConfigFromPropertyFile(String propFN) {
+        File propFD = new File(propFN != null && !propFN.trim().isEmpty() ? propFN : "");
+        if (!propFD.exists() || !propFD.isFile() || !propFD.canRead()) {
+            throw new IllegalArgumentException("Properties file " + propFN + " is not a read accessible file");
+        }
+        Properties props = new Properties();
+        try (FileReader fr = new FileReader(propFD)) {
+            props.load(fr);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Failed to read properties file " + propFN, e);
+        }
+        String trustStore = props.getProperty(SSLConfiguration.TRUSTSTORE_CONFIG_PROP);
+        String trustStorePassword = props.getProperty(SSLConfiguration.TRUSTSTORE_PASSWORD_CONFIG_PROP);
+
+        m_sslConfig = new SSLConfiguration.SslConfig(null, null, trustStore, trustStorePassword);
+    }
+
+    /**
+     * Configure ssl from the provided properties file. if file is not provided we configure without keystore and truststore manager.
+     */
+    public void enableSSL() {
+        m_enableSSL = true;
+        if (m_sslConfig == null) {
+            m_sslConfig = new SSLConfiguration.SslConfig();
+        }
     }
 }

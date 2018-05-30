@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -29,6 +29,7 @@ import org.voltcore.logging.VoltLogger;
 import org.voltcore.messaging.Mailbox;
 import org.voltcore.utils.CoreUtils;
 import org.voltcore.utils.Pair;
+import org.voltdb.DRConsumerDrIdTracker.DRSiteDrIdTracker;
 import org.voltdb.SiteProcedureConnection;
 import org.voltdb.SnapshotCompletionInterest.SnapshotCompletionEvent;
 import org.voltdb.SnapshotSaveAPI;
@@ -137,7 +138,9 @@ public class RejoinProducer extends JoinProducerBase {
         super(partitionId, "Rejoin producer:" + partitionId + " ", taskQueue);
         m_currentlyRejoining = new AtomicBoolean(true);
         m_completionAction = new ReplayCompletionAction();
-        REJOINLOG.debug(m_whoami + "created.");
+        if (REJOINLOG.isDebugEnabled()) {
+            REJOINLOG.debug(m_whoami + "created.");
+        }
     }
 
     @Override
@@ -212,10 +215,14 @@ public class RejoinProducer extends JoinProducerBase {
 
         // MUST choose the leader as the source.
         long sourceSite = m_mailbox.getMasterHsId(m_partitionId);
+        // The lowest partition has a single source for all messages whereas all other partitions have a real
+        // data source and a dummy data source for replicated tables that are used to sync up replicated table changes.
+        boolean haveTwoSources = VoltDB.instance().getLowestPartitionId() != m_partitionId;
         // Provide a valid sink host id unless it is an empty database.
         long hsId = (m_rejoinSiteProcessor != null
-                        ? m_rejoinSiteProcessor.initialize(message.getSnapshotSourceCount(),
-                                                           message.getSnapshotBufferPool())
+                        ? m_rejoinSiteProcessor.initialize(haveTwoSources?2:1,
+                                                           message.getSnapshotDataBufferPool(),
+                                                           message.getSnapshotCompressedDataBufferPool())
                         : Long.MIN_VALUE);
 
         REJOINLOG.debug(m_whoami
@@ -317,16 +324,22 @@ public class RejoinProducer extends JoinProducerBase {
                 SnapshotCompletionEvent event = null;
                 Map<String, Map<Integer, Pair<Long,Long>>> exportSequenceNumbers = null;
                 Map<Integer, Long> drSequenceNumbers = null;
+                Map<Integer, Map<Integer, Map<Integer, DRSiteDrIdTracker>>> allConsumerSiteTrackers = null;
+                long clusterCreateTime = -1;
                 try {
                     event = m_snapshotCompletionMonitor.get();
                     if (!m_schemaHasNoTables) {
                         REJOINLOG.debug(m_whoami + "waiting on snapshot completion monitor.");
                         exportSequenceNumbers = event.exportSequenceNumbers;
                         m_completionAction.setSnapshotTxnId(event.multipartTxnId);
-                    }
 
-                    drSequenceNumbers = event.drSequenceNumbers;
-                    VoltDB.instance().getConsumerDRGateway().populateLastAppliedSegmentIds(event.remoteDCLastIds);
+                        drSequenceNumbers = event.drSequenceNumbers;
+                        allConsumerSiteTrackers = event.drMixedClusterSizeConsumerState;
+                        clusterCreateTime = event.clusterCreateTime;
+
+                        // Tells EE which DR version going to use
+                        siteConnection.setDRProtocolVersion(event.drVersion);
+                    }
 
                     REJOINLOG.debug(m_whoami + " monitor completed. Sending SNAPSHOT_FINISHED "
                             + "and handing off to site.");
@@ -349,7 +362,9 @@ public class RejoinProducer extends JoinProducerBase {
                         siteConnection,
                         exportSequenceNumbers,
                         drSequenceNumbers,
-                        true /* requireExistingSequenceNumbers */);
+                        allConsumerSiteTrackers,
+                        m_schemaHasNoTables == false /* requireExistingSequenceNumbers */,
+                        clusterCreateTime);
             }
         };
         try {

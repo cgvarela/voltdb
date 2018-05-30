@@ -1,5 +1,4 @@
-Voter application
-===========================
+# Voter Application
 
 This example application simulates a phone based election process. Voters (based on phone numbers generated randomly by the client application) are allowed a limited number of votes.
 
@@ -37,24 +36,36 @@ The latency numbers reported by the default benchmark settings may be higher tha
 
 The "Voter" application is specifically designed for benchmarking to give you a good feel for the type of performance VoltDB is capable of on your hardware.
 
-For more on benchmarking and tips on application tuning, make sure you visit the VoltDB blog:
- - http://voltdb.com/search/node/benchmark
- - http://voltdb.com/search/node/tuning
+For more on benchmarking and tips on application tuning please see the VoltDB Performance Guide at https://docs.voltdb.com/PerfGuide/
 
 
 Quickstart
------------
-VoltDB Examples come with a run.sh script that sets up some environment and saves some of the typing needed to work with Java clients. It should be fairly readable to show what is precisely being run to accomplish a given task.
+---------------------------
+Make sure "bin" inside the VoltDB kit is in your PATH.  Then open a shell and go to the examples/voter directory, then execute the following commands to start the database:
 
-1. Make sure "bin" inside the VoltDB kit is in your path.
-2. Type "voltdb create" to start an empty, single-node VoltDB server.
-3. Type "sqlcmd < ddl.sql" to load the schema and the jarfile of procedures into VoltDB.
-4. Type "./run.sh client" to run the client code.
+    voltdb init
+    voltdb start
+
+Wait until you see "Server completed initialization."
+Open a new shell in the same directory and run the following to load the schema:
+
+    sqlcmd < ddl.sql
+
+In the same shell, run the following script to preload some data and run the demo client application:
+
+    ./run.sh client
+
+Open up the index.html file the "web" directory to view the status dashboard.
+
+If you're running the example on a VoltDB cluster, rather than your local desktop or laptop, run `./run.sh webserver` in a new shell on one of the machines in the cluster, then connect to your dashboard from your browser at [http://servername:8081](http://servername:8081).
+
+You can stop the server, running client, or webserver at any time with `Ctrl-c` or `SIGINT`.  Of course VoltDB can also run in the background using the -B option, in which case you can stop it with the `voltadmin shutdown` command.
 
 Note that the downloaded VoltDB kits include pre-compiled stored procedures and client code as jarfiles. To run the example from a source build, it may be necessary to compile the Java source code by typing "run.sh jars" before step 3 above. Note that this step requires a full Java JDK.
 
-Other run.sh actions
------------
+Using the run.sh script
+---------------------------
+VoltDB examples come with a run.sh shell script that simplifies compiling and running the example client application and other parts of the examples.
 - *run.sh* : start the server
 - *run.sh server* : start the server
 - *run.sh init* : compile stored procedures and load the schema and stored procedures
@@ -65,5 +76,34 @@ Other run.sh actions
 - *run.sh clean* : remove compilation and runtime artifacts
 - *run.sh cleanall* : remove compilation and runtime artifacts *and* the two included jarfiles
 
+If you change the client or procedure Java code, you must recompile the jars by deleting them in the shell or using `./run.sh jars`.
 
+Client Behavior Options
+---------------------------
+You can control various characteristics of the demo by modifying the parameters passed into the java application in the "client" function of the run.sh script.
 
+**Speed & Duration:**
+
+    --displayinterval=5           (seconds between status reports)
+    --warmup=5                    (how long to warm up before measuring
+                                   benchmark performance.)
+    --duration=120                (benchmark duration in seconds)
+    --ratelimit=20000             (run up to this rate of requests/second)
+
+**Cluster Info:**
+
+    --servers=$SERVERS            (host(s) client connect to, e.g.
+                                   =localhost
+                                   =localhost:21212
+                                   =volt9a,volt9b,volt9c
+                                   =foo.example.com:21212,bar.example.com:21212)
+
+**Parameters Affecting Simulation:**
+
+    --contestants=6               (number of contestants to vote on)
+    --maxvotes=2                  (max votes per phone number)
+    --threads=100                 (number of parallel client threads [only in sync or jdbc])
+
+Customizing this Example
+---------------------------
+See the "deployment-examples" directory within the "examples" directory for ways to alter the default single-node, no authorization deployment style of the examples. There are readme files and example deployment XML files for different clustering, authorization, export, logging and persistence settings.

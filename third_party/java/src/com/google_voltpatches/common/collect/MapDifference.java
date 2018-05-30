@@ -17,16 +17,14 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
 import java.util.Map;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
  * An object representing the differences between two maps.
  *
  * @author Kevin Bourrillion
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
 public interface MapDifference<K, V> {
@@ -85,7 +83,7 @@ public interface MapDifference<K, V> {
    * {@link #leftValue} and {@link #rightValue} are not equal, and one but not
    * both of them may be null.
    *
-   * @since 2.0 (imported from Google Collections Library)
+   * @since 2.0
    */
   interface ValueDifference<V> {
     /**
@@ -102,13 +100,14 @@ public interface MapDifference<K, V> {
      * Two instances are considered equal if their {@link #leftValue()}
      * values are equal and their {@link #rightValue()} values are also equal.
      */
-    @Override boolean equals(@Nullable Object other);
+    @Override
+    boolean equals(@Nullable Object other);
 
     /**
      * The hash code equals the value
      * {@code Arrays.asList(leftValue(), rightValue()).hashCode()}.
      */
-    @Override int hashCode();
+    @Override
+    int hashCode();
   }
-
 }

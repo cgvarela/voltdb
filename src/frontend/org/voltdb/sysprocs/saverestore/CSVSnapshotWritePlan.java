@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -32,8 +32,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.json_voltpatches.JSONObject;
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.utils.CoreUtils;
-import org.voltcore.utils.Pair;
 import org.voltdb.CSVSnapshotFilter;
+import org.voltdb.ExtensibleSnapshotDigestData;
 import org.voltdb.SimpleFileSnapshotDataTarget;
 import org.voltdb.SnapshotDataFilter;
 import org.voltdb.SnapshotDataTarget;
@@ -68,13 +68,11 @@ public class CSVSnapshotWritePlan extends SnapshotWritePlan
 
     @Override
     public Callable<Boolean> createSetup(
-            String file_path, String file_nonce,
+            String file_path, String pathType, String file_nonce,
             long txnId, Map<Integer, Long> partitionTransactionIds,
-            Map<Integer, Map<Integer, Pair<Long, Long>>> remoteDCLastIds,
             JSONObject jsData, SystemProcedureExecutionContext context,
             final VoltTable result,
-            Map<String, Map<Integer, Pair<Long, Long>>> exportSequenceNumbers,
-            Map<Integer, Pair<Long, Long>> drTupleStreamInfo,
+            ExtensibleSnapshotDigestData extraSnapshotData,
             SiteTracker tracker,
             HashinatorSnapshotData hashinatorData,
             long timestamp)
@@ -94,8 +92,8 @@ public class CSVSnapshotWritePlan extends SnapshotWritePlan
             return null;
         }
 
-        final List<Table> tables = SnapshotUtil.getTablesToSave(context.getDatabase());
-        final AtomicInteger numTables = new AtomicInteger(tables.size());
+        final SnapshotRequestConfig config = new SnapshotRequestConfig(jsData, context.getDatabase());
+        final AtomicInteger numTables = new AtomicInteger(config.tables.length);
         final SnapshotRegistry.Snapshot snapshotRecord =
             SnapshotRegistry.startSnapshot(
                     txnId,
@@ -103,7 +101,7 @@ public class CSVSnapshotWritePlan extends SnapshotWritePlan
                     file_path,
                     file_nonce,
                     SnapshotFormat.CSV,
-                    tables.toArray(new Table[0]));
+                    config.tables);
 
         boolean noTargetsCreated = true;
 
@@ -111,7 +109,7 @@ public class CSVSnapshotWritePlan extends SnapshotWritePlan
             new ArrayList<SnapshotTableTask>();
         final ArrayList<SnapshotTableTask> replicatedSnapshotTasks =
             new ArrayList<SnapshotTableTask>();
-        for (final Table table : tables)
+        for (final Table table : config.tables)
         {
             /*
              * For a deduped csv snapshot, only produce the replicated tables on the "leader"
@@ -160,20 +158,19 @@ public class CSVSnapshotWritePlan extends SnapshotWritePlan
         placeReplicatedTasks(replicatedSnapshotTasks, tracker.getSitesForHost(context.getHostId()));
 
         // All IO work will be deferred and be run on the dedicated snapshot IO thread
-        return createDeferredSetup(file_path, file_nonce, txnId, partitionTransactionIds,
-                remoteDCLastIds, context,
-                exportSequenceNumbers, drTupleStreamInfo, timestamp, numTables, snapshotRecord,
+        return createDeferredSetup(file_path, pathType, file_nonce, config.tables, txnId, partitionTransactionIds,
+                context, extraSnapshotData, timestamp, numTables, snapshotRecord,
                 partitionedSnapshotTasks, replicatedSnapshotTasks);
     }
 
     private Callable<Boolean> createDeferredSetup(final String file_path,
+                                                  final String pathType,
                                                   final String file_nonce,
+                                                  final Table[] tables,
                                                   final long txnId,
                                                   final Map<Integer, Long> partitionTransactionIds,
-                                                  final Map<Integer, Map<Integer, Pair<Long, Long>>> remoteDCLastIds,
                                                   final SystemProcedureExecutionContext context,
-                                                  final Map<String, Map<Integer, Pair<Long, Long>>> exportSequenceNumbers,
-                                                  final Map<Integer, Pair<Long, Long>> drTupleStreamInfo,
+                                                  final ExtensibleSnapshotDigestData extraSnapshotData,
                                                   final long timestamp,
                                                   final AtomicInteger numTables,
                                                   final SnapshotRegistry.Snapshot snapshotRecord,
@@ -184,9 +181,9 @@ public class CSVSnapshotWritePlan extends SnapshotWritePlan
             @Override
             public Boolean call() throws Exception
             {
-                NativeSnapshotWritePlan.createFileBasedCompletionTasks(file_path, file_nonce,
-                        txnId, partitionTransactionIds, remoteDCLastIds, context, exportSequenceNumbers, drTupleStreamInfo, null, timestamp,
-                        context.getNumberOfPartitions());
+                NativeSnapshotWritePlan.createFileBasedCompletionTasks(file_path, pathType, file_nonce,
+                        txnId, partitionTransactionIds, context, extraSnapshotData, null, timestamp,
+                        context.getNumberOfPartitions(), tables, false);
 
                 for (SnapshotTableTask task : replicatedSnapshotTasks) {
                     final SnapshotDataTarget target = createDataTargetForTable(file_path, file_nonce,

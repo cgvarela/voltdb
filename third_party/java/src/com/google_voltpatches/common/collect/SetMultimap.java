@@ -17,11 +17,10 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -45,11 +44,11 @@ import javax.annotation_voltpatches.Nullable;
  * {@code SetMultimap}.
  *
  * <p>See the Guava User Guide article on <a href=
- * "http://code.google.com/p/guava-libraries/wiki/NewCollectionTypesExplained#Multimap">
+ * "https://github.com/google/guava/wiki/NewCollectionTypesExplained#multimap">
  * {@code Multimap}</a>.
  *
  * @author Jared Levy
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
 public interface SetMultimap<K, V> extends Multimap<K, V> {
@@ -70,6 +69,7 @@ public interface SetMultimap<K, V> extends Multimap<K, V> {
    * method returns a {@link Set}, instead of the {@link java.util.Collection}
    * specified in the {@link Multimap} interface.
    */
+  @CanIgnoreReturnValue
   @Override
   Set<V> removeAll(@Nullable Object key);
 
@@ -82,6 +82,7 @@ public interface SetMultimap<K, V> extends Multimap<K, V> {
    *
    * <p>Any duplicates in {@code values} will be stored in the multimap once.
    */
+  @CanIgnoreReturnValue
   @Override
   Set<V> replaceValues(K key, Iterable<? extends V> values);
 

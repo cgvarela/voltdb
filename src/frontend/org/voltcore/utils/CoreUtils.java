@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.management.ManagementFactory;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
@@ -58,8 +59,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
-import jsr166y.LinkedTransferQueue;
-
+import org.voltcore.logging.Level;
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.network.ReverseDNSCache;
 
@@ -73,6 +73,8 @@ import com.google_voltpatches.common.util.concurrent.ListenableFutureTask;
 import com.google_voltpatches.common.util.concurrent.ListeningExecutorService;
 import com.google_voltpatches.common.util.concurrent.MoreExecutors;
 import com.google_voltpatches.common.util.concurrent.SettableFuture;
+
+import jsr166y.LinkedTransferQueue;
 
 public class CoreUtils {
     public static final int SMALL_STACK_SIZE = 1024 * 256;
@@ -416,7 +418,7 @@ public class CoreUtils {
     };
 
     /**
-     * Get a single thread executor that caches it's thread meaning that the thread will terminate
+     * Get a single thread executor that caches its thread meaning that the thread will terminate
      * after keepAlive milliseconds. A new thread will be created the next time a task arrives and that will be kept
      * around for keepAlive milliseconds. On creation no thread is allocated, the first task creates a thread.
      *
@@ -849,6 +851,9 @@ public class CoreUtils {
     public static String hsIdToString(long hsId) {
         return Integer.toString((int)hsId) + ":" + Integer.toString((int)(hsId >> 32));
     }
+    public static void hsIdToString(long hsId, StringBuilder sb) {
+        sb.append((int)hsId).append(":").append((int)(hsId >> 32));
+    }
 
     public static String hsIdCollectionToString(Collection<Long> ids) {
         List<String> idstrings = new ArrayList<String>();
@@ -974,10 +979,14 @@ public class CoreUtils {
         return Math.max(1, Runtime.getRuntime().availableProcessors());
     }
 
-    public static final class RetryException extends RuntimeException {
+    public static final class RetryException extends Exception {
+        private static final long serialVersionUID = 3651804109132974056L;
         public RetryException() {};
         public RetryException(Throwable cause) {
             super(cause);
+        }
+        public RetryException(String errMsg) {
+            super(errMsg);
         }
     }
 
@@ -1147,4 +1156,128 @@ public class CoreUtils {
         return entries;
     }
 
+    /**
+     * @return the process pid if is available from the JVM's runtime bean
+     */
+    public static String getPID() {
+        String name = ManagementFactory.getRuntimeMXBean().getName();
+        int atat = name.indexOf('@');
+        if (atat == -1) {
+            return "(unavailable)";
+        }
+        return name.substring(0, atat);
+    }
+
+    /**
+     * Log (to the fatal logger) the list of ports in use.
+     * Uses "lsof -i" internally.
+     *
+     * @param log VoltLogger used to print output or warnings.
+     */
+    public static synchronized void printPortsInUse(VoltLogger log) {
+        try {
+            /*
+             * Don't do DNS resolution, don't use names for port numbers
+             */
+            ProcessBuilder pb = new ProcessBuilder("lsof", "-i", "-n", "-P");
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            java.io.InputStreamReader reader = new java.io.InputStreamReader(p.getInputStream());
+            java.io.BufferedReader br = new java.io.BufferedReader(reader);
+            String str = br.readLine();
+            log.fatal("Logging ports that are bound for listening, " +
+                      "this doesn't include ports bound by outgoing connections " +
+                      "which can also cause a failure to bind");
+            log.fatal("The PID of this process is " + getPID());
+            if (str != null) {
+                log.fatal(str);
+            }
+            while((str = br.readLine()) != null) {
+                if (str.contains("LISTEN")) {
+                    log.fatal(str);
+                }
+            }
+        }
+        catch (Exception e) {
+            log.fatal("Unable to list ports in use at this time.");
+        }
+    }
+
+    /**
+     * Print beautiful logs surrounded by stars. This function handles long lines (wrapping
+     * into multiple lines) as well. Please use only spaces and newline characters for word
+     * separation.
+     * @param vLogger   The provided VoltLogger
+     * @param msg   Message to be printed out beautifully
+     * @param level Logging level
+     */
+    public static void printAsciiArtLog(VoltLogger vLogger, String msg, Level level)
+    {
+        if (vLogger == null || msg == null || level == Level.OFF) { return; }
+
+        // 80 stars in a line
+        StringBuilder starBuilder = new StringBuilder();
+        for (int i = 0; i < 80; i++) {
+            starBuilder.append("*");
+        }
+        String stars = starBuilder.toString();
+
+        // Wrap the message with 2 lines of stars
+        switch (level) {
+            case DEBUG:
+                vLogger.debug(stars);
+                vLogger.debug("* " + msg + " *");
+                vLogger.debug(stars);
+                break;
+            case WARN:
+                vLogger.warn(stars);
+                vLogger.warn("* " + msg + " *");
+                vLogger.warn(stars);
+                break;
+            case ERROR:
+                vLogger.error(stars);
+                vLogger.error("* " + msg + " *");
+                vLogger.error(stars);
+                break;
+            case FATAL:
+                vLogger.fatal(stars);
+                vLogger.fatal("* " + msg + " *");
+                vLogger.fatal(stars);
+                break;
+            case INFO:
+                vLogger.info(stars);
+                vLogger.info("* " + msg + " *");
+                vLogger.info(stars);
+                break;
+            case TRACE:
+                vLogger.trace(stars);
+                vLogger.trace("* " + msg + " *");
+                vLogger.trace(stars);
+                break;
+            default:
+                break;
+        }
+    }
+
+    public static void logProcedureInvocation(VoltLogger log, String userName, String where, String procedure) {
+        String msg = "User " + userName + " from " + where +
+                " issued a " + procedure;
+        if ("@PrepareShutdown".equals(procedure))
+            printAsciiArtLog(log, msg, Level.INFO);
+        else
+            log.info(msg);
+    }
+
+    // Utility method to figure out if this is a test case.  Various junit targets in
+    // build.xml set a environment variable to give us a hint
+    public static boolean isJunitTest() {
+
+        //check os environment variable
+        if ("true".equalsIgnoreCase(System.getenv().get("VOLT_JUSTATEST"))){
+            return true;
+        }
+
+        //check system variable
+        return "true".equalsIgnoreCase(System.getProperty("VOLT_JUSTATEST"));
+    }
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -48,7 +48,6 @@ import org.voltdb.client.ClientStatusListenerExt;
 import org.voltdb.client.NoConnectionsException;
 import org.voltdb.client.ProcCallException;
 import org.voltdb.client.ProcedureCallback;
-import org.voltdb.compiler.AsyncCompilerAgent;
 
 /**
  * Class providing the entire benchmark implementation and command line main().
@@ -121,7 +120,7 @@ public class Benchmark {
         int warmup = 5;
 
         @Option(desc = "Maximum # of outstanding transactions (0=not throttled).")
-        int querythrottle = AsyncCompilerAgent.MAX_QUEUE_DEPTH;
+        int querythrottle = 250;
 
         @Option(desc = "Test to run.")
         String test = BenchmarkConfiguration.getDefaultTestName();

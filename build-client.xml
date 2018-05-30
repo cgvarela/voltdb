@@ -20,8 +20,9 @@
     <attribute name="includes" default=""/>
     <sequential>
         <javac
-            target="1.6"
-            source="1.6"
+            target="1.7"
+            source="1.7"
+            bootclasspath="${vendor.lib.dir}/classes-java1.7.jar:${vendor.lib.dir}/bouncy-castle-jce.jar"
             srcdir="@{srcdir}"
             destdir="@{destdir}"
             excludes="@{excludes}"
@@ -68,20 +69,33 @@
 
 <path id='project.classpath'>
     <pathelement location='${build.client.dir}' />
-    <fileset dir='${lib.dir}'>
-        <include name='commons-cli-1.2.jar' />
-    </fileset>
     <fileset dir='${vendor.lib.dir}'>
         <include name='javaee-api-6.0.jar' />
+    </fileset>
+    <fileset dir='${vendor.lib.dir}'>
+        <include name='commons-lang-2.6.jar' />
+    </fileset>
+    <fileset dir='${vendor.lib.dir}'>
+        <include name='javassist-3.20.0-GA.jar' />
+    </fileset>
+    <fileset dir='${lib.dir}'>
+        <include name='log4j-1.2.16.jar' />
+    </fileset>
+	<fileset dir='${lib.dir}'>
+        <include name='commons-logging-1.1.3.jar' />
+    </fileset>
+	<fileset dir='${lib.dir}'>
+        <include name='slf4j-api-1.6.2.jar' />
     </fileset>
     <pathelement path="${java.class.path}"/>
 </path>
 
 <fileset id="vendor.src.files" dir="${vendor.src.dir}"
         includes="com/google_voltpatches/**/*.java
+                  org/codehaus_voltpatches/mojo/**/*.java
                   javax/annotation_voltpatches/**/*.java
                   org/apache/cassandra_voltpatches/MurmurHash3.java
-                  org/apache/commons/cli_voltpatches/**/*.java
+                  org/apache/commons_voltpatches/cli/**/*.java
                   org/apache/hadoop_voltpatches/hbase/utils/DirectMemoryUtils.java
                   org/apache/hadoop_voltpatches/util/PureJavaCrc*.java
                   org/apache/jute_voltpatches/**/*.java
@@ -89,17 +103,17 @@
                   org/cliffc_voltpatches/**/*.java
                   org/HdrHistogram_voltpatches/**/*.java
                   org/json_voltpatches/**/*.java
-                  org/voltdb/importer/ImportContext.java
-                  org/voltdb/importer/ImportHandlerProxy.java
-                  org/voltdb/importer/Invocation.java
                   jsr166y/**/*.java
                   io/netty_voltpatches/NinjaKeySet.java
+                  io/netty_voltpatches/**/*.java
+                  org/jctools_voltpatches/**/*.java
                   "
 />
 
 <fileset id="client.src.files" dir="${src.gpl.dir}"
         includes="org/voltcore/logging/Level.java
                   org/voltcore/logging/VoltLogger.java
+                  org/voltcore/logging/VoltNullLogger.java
                   org/voltcore/logging/VoltUtilLoggingLogger.java
                   org/voltcore/network/*.java
 
@@ -115,21 +129,34 @@
                   org/voltcore/utils/Pair.java
                   org/voltcore/utils/RateLimitedLogger.java
                   org/voltcore/utils/Bits.java
+                  org/voltcore/utils/FlexibleSemaphore.java
                   org/voltcore/utils/LatencyWatchdog.java
                   org/voltcore/utils/CompressionStrategy.java
                   org/voltcore/utils/VoltTypeUtil.java
+                  org/voltcore/utils/ssl/MessagingChannel.java
+                  org/voltcore/utils/ssl/SSLMessagingChannel.java
+                  org/voltcore/utils/ssl/TLSMessagingChannel.java
+                  org/voltcore/utils/ssl/SSLEncryptionService.java
+                  org/voltcore/utils/ssl/SSLMessageParser.java
+                  org/voltcore/utils/ssl/SSLBufferDecrypter.java
+                  org/voltcore/utils/ssl/SSLBufferEncrypter.java
+                  org/voltcore/utils/ssl/SSLConfiguration.java
 
                   org/voltdb/CLIConfig.java
                   org/voltdb/client/**/*.java
                   org/voltdb/ClientResponseImpl.java
+                  org/voltdb/InternalConnectionContext.java
                   org/voltdb/common/Constants.java
                   org/voltdb/jdbc/**/*.java
                   org/voltdb/LatencyBucketSet.java
+                  org/voltdb/OperationMode.java
                   org/voltdb/ParameterConverter.java
                   org/voltdb/ParameterSet.java
                   org/voltdb/PrivateVoltTableFactory.java
                   org/voltdb/parser/JDBCParser.java
                   org/voltdb/parser/SQL*.java
+                  org/voltdb/types/GeographyValue.java
+                  org/voltdb/types/GeographyPointValue.java
                   org/voltdb/types/TimestampType.java
                   org/voltdb/types/VoltDecimalHelper.java
                   org/voltdb/utils/Base64.java
@@ -142,28 +169,26 @@
                   org/voltdb/utils/CSVTupleDataLoader.java
                   org/voltdb/utils/PosixAdvise.java
                   org/voltdb/utils/VoltTypeUtil.java
+                  org/voltdb/utils/SplitStmtResults.java
                   org/voltdb/VoltOverflowException.java
                   org/voltdb/VoltTable.java
                   org/voltdb/VoltTableRow.java
                   org/voltdb/VoltType.java
                   org/voltdb/VoltTypeException.java
-                  org/voltdb/importer/ImportContext.java
-                  org/voltdb/importer/ImportHandlerProxy.java
-                  org/voltdb/importer/Invocation.java
                   "
 />
+
 
 <!--
 ***************************************
 PRIMARY ENTRY POINTS
 ***************************************
 -->
-
+    
 <target name="default"
     depends="compile, voltdbclient.jar"
     description="Compile Java client classes builds the client/jdbc Jarfile."
 />
-
 <!--
 ***************************************
 DISTRIBUTION
@@ -191,6 +216,8 @@ DISTRIBUTION
             <include name="src/frontend/org/voltdb/client/Client.java" />
             <include name="src/frontend/org/voltdb/client/NoConnectionsException.java" />
             <include name="src/frontend/org/voltdb/client/ProcedureCallback.java" />
+            <include name="src/frontend/org/voltdb/client/ClientResponseWithPartitionKey.java" />
+            <include name="src/frontend/org/voltdb/client/AllPartitionProcedureCallback.java" />
             <include name="src/frontend/org/voltdb/client/ClientConfig.java" />
             <include name="src/frontend/org/voltdb/client/ClientFactory.java" />
             <include name="src/frontend/org/voltdb/client/SyncCallback.java" />
@@ -203,6 +230,8 @@ DISTRIBUTION
             <include name="src/frontend/org/voltdb/client/ClientAffinityStats.java" />
             <include name="src/frontend/org/voltdb/client/ClientStatsContext.java" />
             <include name="src/frontend/org/voltdb/types/TimestampType.java" />
+            <include name="src/frontend/org/voltdb/types/GeographyPointValue.java" />
+            <include name="src/frontend/org/voltdb/types/GeographyValue.java" />
         </fileset>
     </javadoc>
 </target>

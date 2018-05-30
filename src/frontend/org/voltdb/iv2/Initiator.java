@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -23,13 +23,12 @@ import org.apache.zookeeper_voltpatches.KeeperException;
 import org.apache.zookeeper_voltpatches.ZooKeeper;
 import org.voltdb.BackendTarget;
 import org.voltdb.CatalogContext;
-import org.voltdb.CatalogSpecificPlanner;
 import org.voltdb.CommandLog;
-import org.voltdb.ConsumerDRGateway;
 import org.voltdb.MemoryStats;
 import org.voltdb.ProducerDRGateway;
 import org.voltdb.StartAction;
 import org.voltdb.StatsAgent;
+import org.voltdb.iv2.SpScheduler.DurableUniqueIdListener;
 
 /**
  * Abstracts the top-level interface to create and configure an Iv2
@@ -41,16 +40,19 @@ public interface Initiator
     public void configure(BackendTarget backend,
                           CatalogContext catalogContext,
                           String serializedCatalog,
-                          int kfactor, CatalogSpecificPlanner csp,
                           int numberOfPartitions,
                           StartAction startAction,
                           StatsAgent agent,
                           MemoryStats memStats,
                           CommandLog cl,
-                          ProducerDRGateway nodeDRGateway,
-                          ConsumerDRGateway consumerDRGateway,
-                          boolean createMpDRGateway, String coreBindIds)
+                          String coreBindIds,
+                          boolean isLowestSiteId)
         throws KeeperException, InterruptedException, ExecutionException;
+
+    /** Create DR gateway */
+    public void initDRGateway(StartAction startAction,
+                              ProducerDRGateway nodeDRGateway,
+                              boolean createMpDRGateway);
 
     /** Shutdown an Initiator and its sub-components. */
     public void shutdown();
@@ -70,4 +72,7 @@ public interface Initiator
 
     /** Write a viable replay set to the command log */
     public void enableWritingIv2FaultLog();
+
+    /** Assign or remove a listener to/from the spScheduler for notification of CommandLogged (durable) UniqueIds */
+    public void configureDurableUniqueIdListener(DurableUniqueIdListener listener, boolean install);
 }

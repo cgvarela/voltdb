@@ -30,12 +30,11 @@ import static com.google_voltpatches.common.primitives.UnsignedBytes.toInt;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
- * See http://smhasher.googlecode.com/svn/trunk/MurmurHash3.cpp
- * MurmurHash3_x64_128
+ * See MurmurHash3_x64_128 in <a href="http://smhasher.googlecode.com/svn/trunk/MurmurHash3.cpp">the
+ * C++ implementation</a>.
  *
  * @author Austin Appleby
  * @author Dimitris Andreou
@@ -48,11 +47,13 @@ final class Murmur3_128HashFunction extends AbstractStreamingHashFunction implem
     this.seed = seed;
   }
 
-  @Override public int bits() {
+  @Override
+  public int bits() {
     return 128;
   }
 
-  @Override public Hasher newHasher() {
+  @Override
+  public Hasher newHasher() {
     return new Murmur3_128Hasher(seed);
   }
 
@@ -90,7 +91,8 @@ final class Murmur3_128HashFunction extends AbstractStreamingHashFunction implem
       this.length = 0;
     }
 
-    @Override protected void process(ByteBuffer bb) {
+    @Override
+    protected void process(ByteBuffer bb) {
       long k1 = bb.getLong();
       long k2 = bb.getLong();
       bmix64(k1, k2);
@@ -111,7 +113,8 @@ final class Murmur3_128HashFunction extends AbstractStreamingHashFunction implem
       h2 = h2 * 5 + 0x38495ab5;
     }
 
-    @Override protected void processRemaining(ByteBuffer bb) {
+    @Override
+    protected void processRemaining(ByteBuffer bb) {
       long k1 = 0;
       long k2 = 0;
       length += bb.remaining();
@@ -155,7 +158,8 @@ final class Murmur3_128HashFunction extends AbstractStreamingHashFunction implem
       h2 ^= mixK2(k2);
     }
 
-    @Override public HashCode makeHash() {
+    @Override
+    public HashCode makeHash() {
       h1 ^= length;
       h2 ^= length;
 
@@ -168,12 +172,12 @@ final class Murmur3_128HashFunction extends AbstractStreamingHashFunction implem
       h1 += h2;
       h2 += h1;
 
-      return HashCode.fromBytesNoCopy(ByteBuffer
-          .wrap(new byte[CHUNK_SIZE])
-          .order(ByteOrder.LITTLE_ENDIAN)
-          .putLong(h1)
-          .putLong(h2)
-          .array());
+      return HashCode.fromBytesNoCopy(
+          ByteBuffer.wrap(new byte[CHUNK_SIZE])
+              .order(ByteOrder.LITTLE_ENDIAN)
+              .putLong(h1)
+              .putLong(h2)
+              .array());
     }
 
     private static long fmix64(long k) {

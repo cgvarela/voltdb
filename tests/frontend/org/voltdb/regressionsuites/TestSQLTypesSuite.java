@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -38,6 +38,8 @@ import org.voltdb.client.ClientResponse;
 import org.voltdb.client.NoConnectionsException;
 import org.voltdb.client.ProcCallException;
 import org.voltdb.compiler.VoltProjectBuilder;
+import org.voltdb.types.GeographyPointValue;
+import org.voltdb.types.GeographyValue;
 import org.voltdb.types.TimestampType;
 import org.voltdb.types.VoltDecimalHelper;
 import org.voltdb.utils.Encoder;
@@ -45,6 +47,7 @@ import org.voltdb.utils.VoltTypeUtil;
 import org.voltdb_testprocs.regressionsuites.sqltypesprocs.Delete;
 import org.voltdb_testprocs.regressionsuites.sqltypesprocs.Insert;
 import org.voltdb_testprocs.regressionsuites.sqltypesprocs.InsertBase;
+import org.voltdb_testprocs.regressionsuites.sqltypesprocs.InsertBoxed;
 import org.voltdb_testprocs.regressionsuites.sqltypesprocs.InsertMulti;
 import org.voltdb_testprocs.regressionsuites.sqltypesprocs.ParamSetArrays;
 import org.voltdb_testprocs.regressionsuites.sqltypesprocs.Select;
@@ -64,9 +67,9 @@ public class TestSQLTypesSuite extends RegressionSuite {
     // 1500 character string
     private static final String ReallyLongString;
 
-    /** Procedures used by this suite */
-    static final Class<?>[] PROCEDURES = { Delete.class, Insert.class,
-            InsertBase.class, InsertMulti.class, Select.class, Update.class,
+    /** MP Procedures used by this suite */
+    static final Class<?>[] MP_PROCEDURES = {
+            InsertBase.class, InsertBoxed.class, InsertMulti.class,
             UpdateDecimal.class, ParamSetArrays.class };
 
     /** Utility to create an array of bytes with value "b" of length "length" */
@@ -79,7 +82,6 @@ public class TestSQLTypesSuite extends RegressionSuite {
     }
 
     /** Utility to compare two instances of a VoltType for equality */
-    @SuppressWarnings({ "incomplete-switch" })
     private boolean comparisonHelper(final Object lhs, final Object rhs,
             final VoltType vt) {
         switch (vt) {
@@ -158,9 +160,29 @@ public class TestSQLTypesSuite extends RegressionSuite {
                 return true;
             }
             return ((BigDecimal) lhs).equals(rhs);
-        }
+        case GEOGRAPHY_POINT: {
+            if ((lhs == VoltType.NULL_POINT || lhs == null)
+                    && (rhs == VoltType.NULL_POINT || rhs == null)) {
+                return true;
+            }
 
-        return false;
+            GeographyPointValue gpvLhs = (GeographyPointValue)lhs;
+            GeographyPointValue gpvRhs = (GeographyPointValue)rhs;
+            return gpvLhs.equals(gpvRhs);
+        }
+        case GEOGRAPHY: {
+            if ((lhs == VoltType.NULL_GEOGRAPHY || lhs == null)
+                    && (rhs == VoltType.NULL_GEOGRAPHY || rhs == null)) {
+                return true;
+            }
+
+            GeographyValue gvLhs = (GeographyValue)lhs;
+            GeographyValue gvRhs = (GeographyValue)rhs;
+            return gvLhs.equals(gvRhs);
+        }
+        default:
+            throw new IllegalArgumentException("Unknown type in comparisonHelper");
+        }
     }
 
     //
@@ -228,7 +250,7 @@ public class TestSQLTypesSuite extends RegressionSuite {
         new Column("A_FLOAT", VoltType.FLOAT, true,
                    VoltType.NULL_FLOAT,
                    5.1,
-                   Double.MIN_VALUE, // NULL is -1.7E308.
+                   Math.nextAfter(VoltType.NULL_FLOAT, 0), // NULL is -1.7E308.
                    new Double(14.5),
                    Double.MAX_VALUE),
         new Column("A_TIMESTAMP", VoltType.TIMESTAMP, false,
@@ -290,7 +312,23 @@ public class TestSQLTypesSuite extends RegressionSuite {
                        .scaleByPowerOfTen(-1 * VoltDecimalHelper.kDefaultScale),
                    new BigDecimal(new BigInteger(
                        "99999999999999999999999999999999999999"))
-                       .scaleByPowerOfTen(-1 * VoltDecimalHelper.kDefaultScale))
+                       .scaleByPowerOfTen(-1 * VoltDecimalHelper.kDefaultScale)),
+        new Column("A_GEOGRAPHY_POINT",
+                VoltType.GEOGRAPHY_POINT,
+                false, // supports math
+                VoltType.NULL_POINT, // null value
+                new GeographyPointValue(-122.0, 37.0),
+                new GeographyPointValue(-180.0, -90.0),
+                new GeographyPointValue(0.0, 0.0),
+                new GeographyPointValue(180.0, 90.0)),
+        new Column("A_GEOGRAPHY",
+                VoltType.GEOGRAPHY,
+                false, // supports math
+                VoltType.NULL_GEOGRAPHY, // null value
+                GeographyValue.fromWKT("polygon((-122 37, -122 39, -120 39, -122 37))"),
+                GeographyValue.fromWKT("polygon((-142 37, -142 39, -140 39, -142 37))"),
+                GeographyValue.fromWKT("polygon((-152 37, -152 39, -150 39, -152 37))"),
+                GeographyValue.fromWKT("polygon((-162 37, -162 39, -160 39, -162 37))"))
     };
 
     // Generate additional m_maxValue data and ReallyLongString..
@@ -340,7 +378,7 @@ public class TestSQLTypesSuite extends RegressionSuite {
         final Client client = this.getClient();
 
         client.callProcedure("PassObjectNull", 0, 0, 0, 0, 0, 0.0, null, null,
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
     }
 
     public void testPassingDateAndTimeObjectsToStatements() throws Exception {
@@ -357,35 +395,35 @@ public class TestSQLTypesSuite extends RegressionSuite {
         int lowerBound = pkey.incrementAndGet();
         // system-defined CRUD inputs
         client.callProcedure("ALLOW_NULLS.insert", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, tst,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("ALLOW_NULLS.insert", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, utild,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("ALLOW_NULLS.insert", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, sqld,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("ALLOW_NULLS.insert", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, ts,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
 
         // user-defined statement inputs
         client.callProcedure("PassObjectNull", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, tst,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("PassObjectNull", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, utild,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("PassObjectNull", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, sqld,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("PassObjectNull", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, ts,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
 
         // stored procedure inputs into queued statement
         // -- this doesn't exercise passing the java types into the stored procedure
         // -- that's covered by TestSQLFeaturesSuite's testPassAllArgTypes
         client.callProcedure("Insert", "ALLOW_NULLS", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, tst,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("Insert", "ALLOW_NULLS and use sql.Timestamp", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, tst,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("Insert", "ALLOW_NULLS and use sql.Date", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, tst,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("Insert", "ALLOW_NULLS and use util.Date", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, tst,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
 
         ClientResponse cr;
         VoltTable[] result;
@@ -423,21 +461,21 @@ public class TestSQLTypesSuite extends RegressionSuite {
         lowerBound = pkey.incrementAndGet();
         // system-defined CRUD inputs
         client.callProcedure("ALLOW_NULLS.insert", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, tst_micro,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("ALLOW_NULLS.insert", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, ts_micro,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
 
         // user-defined statement inputs
         client.callProcedure("PassObjectNull", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, tst_micro,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("PassObjectNull", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, ts_micro,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
 
         // stored procedure inputs into queued statement
         client.callProcedure("Insert", "ALLOW_NULLS", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, tst_micro,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         client.callProcedure("Insert", "ALLOW_NULLS and use sql.Timestamp", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, tst_micro,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
 
         cr = client.callProcedure("@AdHoc", "SELECT A_TIMESTAMP from ALLOW_NULLS where PKEY > " + lowerBound + ";");
         assertEquals(ClientResponse.SUCCESS, cr.getStatus());
@@ -477,8 +515,9 @@ public class TestSQLTypesSuite extends RegressionSuite {
             caught = false;
             // system-defined CRUD inputs
             cr = client.callProcedure("ALLOW_NULLS.insert", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, ts_nano,
-                    null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null);
         } catch (RuntimeException e) {
+            assertEquals("Can't serialize TIMESTAMP value with fractional microseconds", e.getMessage());
             caught = true;
         }
         assert(caught);
@@ -487,8 +526,9 @@ public class TestSQLTypesSuite extends RegressionSuite {
             caught = false;
             // user-defined statement inputs
             cr = client.callProcedure("PassObjectNull", pkey.incrementAndGet(), 0, 0, 0, 0, 0.0, ts_nano,
-                    null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null);
         } catch (RuntimeException e) {
+            assertEquals("Can't serialize TIMESTAMP value with fractional microseconds", e.getMessage());
             caught = true;
         }
         assert(caught);
@@ -523,7 +563,7 @@ public class TestSQLTypesSuite extends RegressionSuite {
 
                 client.callProcedure("Insert", "ALLOW_NULLS", 0, 0, 0, 0, 0,
                                      null, tst_micro, null,
-                                     null, null, null, null, null, null);
+                                     null, null, null, null, null, null, null, null);
 
                 VoltTable vt;
                 vt = client.callProcedure("@AdHoc", "Select A_TIMESTAMP from allow_nulls where pkey = 0").getResults()[0];
@@ -543,7 +583,7 @@ public class TestSQLTypesSuite extends RegressionSuite {
 
         client.callProcedure("Insert", "ALLOW_NULLS", 0, 0, 0, 0, 0,
                              new Float(0.0), null, null,
-                             null, null, null, null, null, null);
+                             null, null, null, null, null, null, null, null);
     }
 
     //
@@ -817,10 +857,10 @@ public class TestSQLTypesSuite extends RegressionSuite {
                 client.callProcedure("Update", params);
             } catch (final ProcCallException e) {
                 e.printStackTrace();
-                fail();
+                fail(e.getMessage());
             } catch (final NoConnectionsException e) {
                 e.printStackTrace();
-                fail();
+                fail(e.getMessage());
             }
 
             // verify that the row was updated
@@ -925,6 +965,47 @@ public class TestSQLTypesSuite extends RegressionSuite {
         }
     }
 
+    public void testInsertNullBoxed() throws IOException, ProcCallException {
+        Client client = this.getClient();
+
+        Integer p_key = pkey.incrementAndGet();
+        VoltTable[] results = client.callProcedure("InsertBoxed", p_key,
+                new Byte( (byte) -128), new Short( (short) -32768),
+                new Integer(-2147483648), new Long(-9223372036854775808L) ).getResults();
+
+        System.out.println("testInsertBoxedNulls" + results[1]);
+
+        results[1].advanceRow();
+        assertEquals(VoltType.NULL_TINYINT, results[1].get("A_TINYINT", VoltType.TINYINT));
+        assertEquals(VoltType.NULL_SMALLINT, results[1].get("A_SMALLINT", VoltType.SMALLINT));
+        assertEquals(VoltType.NULL_INTEGER, results[1].get("A_INTEGER", VoltType.INTEGER));
+        assertEquals(VoltType.NULL_BIGINT, results[1].get("A_BIGINT", VoltType.BIGINT));
+
+        results = client.callProcedure("@AdHoc", "SELECT * FROM WITH_DEFAULTS WHERE A_TINYINT IS NULL").getResults();
+        results[0].advanceRow();
+        assertEquals(p_key, results[0].get("PKEY", VoltType.INTEGER));
+    }
+
+    public void testInsertNullValues() throws IOException, ProcCallException {
+        Client client = this.getClient();
+
+        Integer p_key = pkey.incrementAndGet();
+        VoltTable[] results = client.callProcedure("InsertBoxed", p_key,
+                null, null, null, null).getResults();
+
+        System.out.println("testInsertNullValues" + results[1]);
+
+        results[1].advanceRow();
+        assertEquals(VoltType.NULL_TINYINT, results[1].get("A_TINYINT", VoltType.TINYINT));
+        assertEquals(VoltType.NULL_SMALLINT, results[1].get("A_SMALLINT", VoltType.SMALLINT));
+        assertEquals(VoltType.NULL_INTEGER, results[1].get("A_INTEGER", VoltType.INTEGER));
+        assertEquals(VoltType.NULL_BIGINT, results[1].get("A_BIGINT", VoltType.BIGINT));
+
+        results = client.callProcedure("@AdHoc", "SELECT * FROM WITH_DEFAULTS WHERE A_TINYINT IS NULL").getResults();
+        results[0].advanceRow();
+        assertEquals(p_key, results[0].get("PKEY", VoltType.INTEGER));
+    }
+
     public void testMissingAttributeInsert_With_Defaults()
             throws NoConnectionsException, ProcCallException, IOException {
         Client client = this.getClient();
@@ -953,7 +1034,14 @@ public class TestSQLTypesSuite extends RegressionSuite {
         VoltTableRow row = result[0].fetchRow(0);
         for (int i = 0; i < COLS; ++i) {
             Object obj = row.get(i + 1, m_types[i]);
-            assertTrue(comparisonHelper(obj, params[i + 2], m_types[i]));
+            if (m_types[i] == VoltType.GEOGRAPHY || m_types[i] == VoltType.GEOGRAPHY_POINT) {
+                // Default values are not supported for these types (yet?)
+                assertNull(obj);
+            }
+            else {
+                assertTrue("Expected to be equal: (" + obj + ", " + params[i + 2] + ")",
+                        comparisonHelper(obj, params[i + 2], m_types[i]));
+            }
         }
     }
 
@@ -985,7 +1073,8 @@ public class TestSQLTypesSuite extends RegressionSuite {
         VoltTableRow row = result[0].fetchRow(0);
         for (int i = 0; i < COLS; ++i) {
             Object obj = row.get(i + 1, m_types[i]);
-            assertTrue(comparisonHelper(obj, params[i + 2], m_types[i]));
+            assertTrue("Expected to be equal: (" + obj + ", " + params[i + 2] + ")",
+                    comparisonHelper(obj, params[i + 2], m_types[i]));
         }
     }
 
@@ -1136,7 +1225,7 @@ public class TestSQLTypesSuite extends RegressionSuite {
 
         Object params[] = new Object[] { "JUMBO_ROW", 0, 0, 0, 0, 0, 0.0,
                 new TimestampType(0), firstString, secondString, "", "",
-                new byte[0], new byte[0], VoltType.NULL_DECIMAL };
+                new byte[0], new byte[0], VoltType.NULL_DECIMAL, null, null };
         VoltTable results[] = client.callProcedure("Insert", params)
                 .getResults();
         params = null;
@@ -1161,7 +1250,7 @@ public class TestSQLTypesSuite extends RegressionSuite {
 
         params = new Object[] { "JUMBO_ROW", 0, 0, 0, 0, 0, 0.0,
                 new TimestampType(0), firstString, secondString, "", "",
-                new byte[0], new byte[0], VoltType.NULL_DECIMAL };
+                new byte[0], new byte[0], VoltType.NULL_DECIMAL, null, null };
 
         results = client.callProcedure("Update", params).getResults();
         params = null;
@@ -1388,10 +1477,17 @@ public class TestSQLTypesSuite extends RegressionSuite {
         project.addPartitionInfo("EXPRESSIONS_WITH_NULLS", "PKEY");
         project.addPartitionInfo("EXPRESSIONS_NO_NULLS", "PKEY");
         project.addPartitionInfo("JUMBO_ROW", "PKEY");
-        project.addProcedures(PROCEDURES);
+        project.addMultiPartitionProcedures(MP_PROCEDURES);
+
+        project.addProcedure(Delete.class, "ALLOW_NULLS.PKEY: 1");
+        project.addProcedure(Insert.class, "NO_NULLS.PKEY: 1");
+        project.addProcedure(Select.class, "NO_NULLS.PKEY: 1");
+        project.addProcedure(Update.class, "NO_NULLS.PKEY: 1");
+
+
         project.addStmtProcedure(
                 "PassObjectNull",
-                "insert into ALLOW_NULLS values ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                "insert into ALLOW_NULLS values ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
                 "NO_NULLS.PKEY: 0");
         project.addStmtProcedure("InsertDecimal", "INSERT INTO WITH_DEFAULTS (PKEY, A_DECIMAL) VALUES (?, ?);");
 

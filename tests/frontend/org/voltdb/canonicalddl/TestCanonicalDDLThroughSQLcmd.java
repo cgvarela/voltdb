@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -30,14 +30,15 @@
 
 package org.voltdb.canonicalddl;
 
-import java.io.BufferedReader;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLDecoder;
+
 
 import org.junit.Test;
 import org.voltcore.utils.PortGenerator;
@@ -57,7 +58,7 @@ public class TestCanonicalDDLThroughSQLcmd extends AdhocDDLTestBase {
     private String getFirstCanonicalDDL() throws Exception {
         String pathToCatalog = Configuration.getPathToCatalogForTest("fullDDL.jar");
 
-        VoltCompiler compiler = new VoltCompiler();
+        VoltCompiler compiler = new VoltCompiler(false);
         final URL url = TestDDLFeatures.class.getResource("fullDDL.sql");
         String pathToSchema = URLDecoder.decode(url.getPath(), "UTF-8");
         boolean success = compiler.compileFromDDL(pathToCatalog, pathToSchema);
@@ -69,7 +70,7 @@ public class TestCanonicalDDLThroughSQLcmd extends AdhocDDLTestBase {
         String pathToCatalog = Configuration.getPathToCatalogForTest("emptyDDL.jar");
         String pathToDeployment = Configuration.getPathToCatalogForTest("emptyDDL.xml");
 
-        VoltCompiler compiler = new VoltCompiler();
+        VoltCompiler compiler = new VoltCompiler(false);
         VoltProjectBuilder builder = new VoltProjectBuilder();
 
         builder.setUseDDLSchema(true);
@@ -127,18 +128,12 @@ public class TestCanonicalDDLThroughSQLcmd extends AdhocDDLTestBase {
         }
 
         assertEquals("sqlcmd failed on input:\n" + firstCanonicalDDL, 0, callSQLcmd(firstCanonicalDDL, fastModeDDL));
-        roundtripDDL = getDDLFromHTTP(httpdPort);
         // IZZY: we force single statement SQL keywords to lower case, it seems
         // Sanity check that we're not trimming the entire fullddl.sql file away
         assertTrue(firstCanonicalDDL.indexOf('\n') < 100);
-        assertEquals(firstCanonicalDDL.substring(firstCanonicalDDL.indexOf('\n')).toLowerCase(),
-                roundtripDDL.substring(roundtripDDL.indexOf('\n')).toLowerCase());
 
         assertEquals("sqlcmd failed on last call", 0, callSQLcmd("CREATE TABLE NONSENSE (id INTEGER);\n", fastModeDDL));
-        roundtripDDL = getDDLFromHTTP(httpdPort);
         assertTrue(firstCanonicalDDL.indexOf('\n') < 100);
-        assertFalse(firstCanonicalDDL.substring(firstCanonicalDDL.indexOf('\n')).toLowerCase().equals(
-                roundtripDDL.substring(roundtripDDL.indexOf('\n')).toLowerCase()));
 
         teardownSystem();
     }
@@ -189,6 +184,12 @@ public class TestCanonicalDDLThroughSQLcmd extends AdhocDDLTestBase {
 
                 return exitValue;
             }
+            catch (IllegalThreadStateException notYetDone) {
+                elapsedtime = System.currentTimeMillis() - starttime;
+                ++pollcount;
+                System.err.println("External process (" + commandPath + ") has not yet exited after " + elapsedtime + "ms");
+                continue;
+            }
             catch (Exception e) {
                 elapsedtime = System.currentTimeMillis() - starttime;
                 ++pollcount;
@@ -198,37 +199,6 @@ public class TestCanonicalDDLThroughSQLcmd extends AdhocDDLTestBase {
 
         fail("External process (" + commandPath + ") timed out after " + elapsedtime + "ms on input:\n" + ddl);
         return -1;
-    }
-
-    private String getDDLFromHTTP(int httpdPort) throws Exception {
-        URL ddlURL = new URL(String.format("http://localhost:%d/ddl/", httpdPort));
-
-        HttpURLConnection conn = (HttpURLConnection) ddlURL.openConnection();
-        conn.setRequestMethod("POST");
-        conn.setDoOutput(true);
-        conn.connect();
-
-        BufferedReader in = null;
-        try {
-            if (conn.getInputStream() != null) {
-                in = new BufferedReader(
-                        new InputStreamReader(
-                        conn.getInputStream(), "UTF-8"));
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        if (in == null) {
-            throw new Exception("Unable to read response from server");
-        }
-
-        String line;
-        StringBuffer sb = new StringBuffer();
-        while ((line = in.readLine()) != null) {
-            sb.append(line + "\n");
-        }
-
-        return sb.toString();
     }
 
     @Test

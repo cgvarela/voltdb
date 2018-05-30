@@ -18,10 +18,8 @@ package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
 import com.google_voltpatches.common.annotations.GwtIncompatible;
-
+import com.google_voltpatches.j2objc.annotations.Weak;
 import java.io.Serializable;
-import java.util.Map.Entry;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -31,8 +29,8 @@ import javax.annotation_voltpatches.Nullable;
  * @author Kevin Bourrillion
  */
 @GwtCompatible(emulated = true)
-final class ImmutableMapKeySet<K, V> extends ImmutableSet<K> {
-  private final ImmutableMap<K, V> map;
+final class ImmutableMapKeySet<K, V> extends ImmutableSet.Indexed<K> {
+  @Weak private final ImmutableMap<K, V> map;
 
   ImmutableMapKeySet(ImmutableMap<K, V> map) {
     this.map = map;
@@ -45,7 +43,7 @@ final class ImmutableMapKeySet<K, V> extends ImmutableSet<K> {
 
   @Override
   public UnmodifiableIterator<K> iterator() {
-    return asList().iterator();
+    return map.keyIterator();
   }
 
   @Override
@@ -54,21 +52,8 @@ final class ImmutableMapKeySet<K, V> extends ImmutableSet<K> {
   }
 
   @Override
-  ImmutableList<K> createAsList() {
-    final ImmutableList<Entry<K, V>> entryList = map.entrySet().asList();
-    return new ImmutableAsList<K>() {
-
-      @Override
-      public K get(int index) {
-        return entryList.get(index).getKey();
-      }
-
-      @Override
-      ImmutableCollection<K> delegateCollection() {
-        return ImmutableMapKeySet.this;
-      }
-
-    };
+  K get(int index) {
+    return map.entrySet().asList().get(index).getKey();
   }
 
   @Override
@@ -76,20 +61,24 @@ final class ImmutableMapKeySet<K, V> extends ImmutableSet<K> {
     return true;
   }
 
-  @GwtIncompatible("serialization")
-  @Override Object writeReplace() {
+  @GwtIncompatible // serialization
+  @Override
+  Object writeReplace() {
     return new KeySetSerializedForm<K>(map);
   }
 
-  @GwtIncompatible("serialization")
+  @GwtIncompatible // serialization
   private static class KeySetSerializedForm<K> implements Serializable {
     final ImmutableMap<K, ?> map;
+
     KeySetSerializedForm(ImmutableMap<K, ?> map) {
       this.map = map;
     }
+
     Object readResolve() {
       return map.keySet();
     }
+
     private static final long serialVersionUID = 0;
   }
 }

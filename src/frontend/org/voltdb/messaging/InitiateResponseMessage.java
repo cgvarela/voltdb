@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,14 +19,18 @@ package org.voltdb.messaging;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+
 import org.voltcore.messaging.Subject;
 import org.voltcore.messaging.VoltMessage;
 import org.voltcore.utils.CoreUtils;
 import org.voltcore.utils.Pair;
 import org.voltdb.ClientResponseImpl;
 import org.voltdb.StoredProcedureInvocation;
+import org.voltdb.TheHashinator;
 import org.voltdb.VoltTable;
 import org.voltdb.client.ClientResponse;
+import org.voltdb.iv2.DeterminismHash;
+import org.voltdb.iv2.TxnEgo;
 
 /**
  * Message from an execution site to initiator with the final response for
@@ -50,12 +54,41 @@ public class InitiateResponseMessage extends VoltMessage {
     private StoredProcedureInvocation m_invocation;
     private Pair<Long, byte[]> m_currentHashinatorConfig;
 
+    //The flag used for MigratePartitionLeader operation, indicating that the task was created
+    //when the site was leader partition
+    boolean m_isForOldLeader = false;
+
+    // No need to serialize it
+    public boolean m_isFromNonRestartableSysproc = false;
+
     /** Empty constructor for de-serialization */
     public InitiateResponseMessage()
     {
         m_initiatorHSId = -1;
         m_coordinatorHSId = -1;
         m_subject = Subject.DEFAULT.getId();
+    }
+
+    public static InitiateResponseMessage messageForNTProcResponse(long clientInterfaceHandle,
+                                                                   long connectionId,
+                                                                   ClientResponseImpl response)
+    {
+        InitiateResponseMessage irm = new InitiateResponseMessage();
+        irm.m_txnId = -2;
+        irm.m_spHandle = -2;
+        irm.m_initiatorHSId = -2;
+        irm.m_coordinatorHSId = -1;
+        irm.m_clientInterfaceHandle = clientInterfaceHandle;
+        irm.m_connectionId = connectionId;
+        irm.m_commit = true;
+        irm.m_recovering = false;
+        irm.m_readOnly = false;
+        irm.m_response = response;
+        irm.m_mispartitioned = false;
+        irm.m_invocation = null;
+        irm.m_currentHashinatorConfig = null;
+        irm.m_subject = Subject.DEFAULT.getId();
+        return irm;
     }
 
     /**
@@ -143,8 +176,16 @@ public class InitiateResponseMessage extends VoltMessage {
         m_recovering = recovering;
     }
 
+    public void setConnectionId(long connectionId) {
+        m_connectionId = connectionId;
+    }
+
     public boolean isMispartitioned() {
         return m_mispartitioned;
+    }
+
+    public boolean isMisrouted() {
+        return (m_response != null && m_response.getStatus() == ClientResponse.TXN_MISROUTED);
     }
 
     public StoredProcedureInvocation getInvocation() {
@@ -162,6 +203,13 @@ public class InitiateResponseMessage extends VoltMessage {
         m_currentHashinatorConfig = currentHashinatorConfig;
         m_commit = false;
         m_response = new ClientResponseImpl(ClientResponse.TXN_RESTART, new VoltTable[]{}, "Mispartitioned");
+    }
+
+    public void setMisrouted(StoredProcedureInvocation invocation) {
+        m_invocation = invocation;
+        m_currentHashinatorConfig = TheHashinator.getCurrentVersionedConfig();
+        m_commit = false;
+        m_response = new ClientResponseImpl(ClientResponse.TXN_MISROUTED, new VoltTable[]{}, "Misrouted");
     }
 
     public ClientResponseImpl getClientResponseData() {
@@ -190,9 +238,10 @@ public class InitiateResponseMessage extends VoltMessage {
             + 1 // read only
             + 1 // node recovering indication
             + 1 // mispartitioned invocation
+            + 1 // createdFromLeader
             + m_response.getSerializedSize();
 
-        if (m_mispartitioned) {
+        if (m_mispartitioned || isMisrouted()) {
             msgsize += m_invocation.getSerializedSize()
                        + 8 // current hashinator version
                        + 4 // hashinator config length
@@ -215,8 +264,9 @@ public class InitiateResponseMessage extends VoltMessage {
         buf.put((byte) (m_readOnly == true ? 1 : 0));
         buf.put((byte) (m_recovering == true ? 1 : 0));
         buf.put((byte) (m_mispartitioned == true ? 1 : 0));
+        buf.put((byte) (m_isForOldLeader == true ? 1 : 0));
         m_response.flattenToBuffer(buf);
-        if (m_mispartitioned) {
+        if (m_mispartitioned || isMisrouted()) {
             buf.putLong(m_currentHashinatorConfig.getFirst());
             buf.putInt(m_currentHashinatorConfig.getSecond().length);
             buf.put(m_currentHashinatorConfig.getSecond());
@@ -238,10 +288,11 @@ public class InitiateResponseMessage extends VoltMessage {
         m_readOnly = buf.get() == 1;
         m_recovering = buf.get() == 1;
         m_mispartitioned = buf.get() == 1;
+        m_isForOldLeader = buf.get() == 1;
         m_response = new ClientResponseImpl();
         m_response.initFromBuffer(buf);
         m_commit = (m_response.getStatus() == ClientResponseImpl.SUCCESS);
-        if (m_mispartitioned) {
+        if (m_mispartitioned || isMisrouted()) {
             long hashinatorVersion = buf.getLong();
             byte[] hashinatorBytes = new byte[buf.getInt()];
             buf.get(hashinatorBytes);
@@ -257,9 +308,8 @@ public class InitiateResponseMessage extends VoltMessage {
     public String toString() {
         StringBuilder sb = new StringBuilder();
 
-        sb.append("INITITATE_RESPONSE FOR TXN ");
-        sb.append(m_txnId);
-        sb.append("\n SP HANDLE: ").append(m_spHandle);
+        sb.append("INITITATE_RESPONSE FOR TXN ").append(TxnEgo.txnIdToString(m_txnId));
+        sb.append("\n SP HANDLE: ").append(TxnEgo.txnIdToString(m_spHandle));
         sb.append("\n INITIATOR HSID: ").append(CoreUtils.hsIdToString(m_initiatorHSId));
         sb.append("\n COORDINATOR HSID: ").append(CoreUtils.hsIdToString(m_coordinatorHSId));
         sb.append("\n CLIENT INTERFACE HANDLE: ").append(m_clientInterfaceHandle);
@@ -271,9 +321,32 @@ public class InitiateResponseMessage extends VoltMessage {
             sb.append("\n  COMMIT");
         else
             sb.append("\n  ROLLBACK/ABORT, ");
+        int[] hashes = m_response.getHashes();
+        if (hashes != null) {
+            sb.append("\n RESPONSE HASH: ").append(DeterminismHash.description(hashes));
+        }
         sb.append("\n CLIENT RESPONSE: \n");
-        sb.append(m_response.toJSONString());
+        if (m_response == null) {
+            // This is not going to happen in the real world, but only in the test cases
+            // TestSpSchedulerDedupe
+            sb.append( "NULL" );
+        } else {
+            sb.append(m_response.toStatusJSONString());
+        }
 
         return sb.toString();
+    }
+
+    public void setForOldLeader(boolean forOldLeader) {
+        m_isForOldLeader = forOldLeader;
+    }
+
+    public boolean isForOldLeader() {
+        return m_isForOldLeader;
+    }
+
+    @Override
+    public String getMessageInfo() {
+        return "InitiateResponseMessage TxnId:" + TxnEgo.txnIdToString(m_txnId);
     }
 }

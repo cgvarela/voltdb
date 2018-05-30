@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -25,16 +25,17 @@ import org.voltcore.messaging.HostMessenger;
 import org.voltcore.utils.CoreUtils;
 import org.voltdb.BackendTarget;
 import org.voltdb.CatalogContext;
-import org.voltdb.CatalogSpecificPlanner;
 import org.voltdb.CommandLog;
-import org.voltdb.PartitionDRGateway;
 import org.voltdb.LoadedProcedureSet;
 import org.voltdb.MemoryStats;
-import org.voltdb.ProcedureRunnerFactory;
+import org.voltdb.QueueDepthTracker;
 import org.voltdb.StartAction;
 import org.voltdb.StarvationTracker;
 import org.voltdb.StatsAgent;
 import org.voltdb.StatsSelector;
+import org.voltdb.VoltDB;
+import org.voltdb.iv2.SpScheduler.DurableUniqueIdListener;
+import org.voltdb.jni.ExecutionEngine;
 import org.voltdb.rejoin.TaskLog;
 
 /**
@@ -59,6 +60,8 @@ public abstract class BaseInitiator implements Initiator
     protected Site m_executionSite = null;
     protected Thread m_siteThread = null;
     protected final RepairLog m_repairLog = new RepairLog();
+
+
     public BaseInitiator(String zkMailboxNode, HostMessenger messenger, Integer partition,
             Scheduler scheduler, String whoamiPrefix, StatsAgent agent,
             StartAction startAction)
@@ -68,6 +71,7 @@ public abstract class BaseInitiator implements Initiator
         m_partitionId = partition;
         m_scheduler = scheduler;
         JoinProducerBase joinProducer;
+
 
         if (startAction == StartAction.JOIN) {
             joinProducer = new ElasticJoinProducer(m_partitionId, scheduler.m_tasks);
@@ -106,6 +110,10 @@ public abstract class BaseInitiator implements Initiator
         agent.registerStatsSource(StatsSelector.STARVATION,
                                   getInitiatorHSId(),
                                   st);
+        QueueDepthTracker qdt = m_scheduler.setupQueueDepthTracker(getInitiatorHSId());
+        agent.registerStatsSource(StatsSelector.QUEUE,
+                                  getInitiatorHSId(),
+                                  qdt);
 
         String partitionString = " ";
         if (m_partitionId != -1) {
@@ -118,15 +126,13 @@ public abstract class BaseInitiator implements Initiator
     protected void configureCommon(BackendTarget backend,
                           CatalogContext catalogContext,
                           String serializedCatalog,
-                          CatalogSpecificPlanner csp,
                           int numberOfPartitions,
                           StartAction startAction,
                           StatsAgent agent,
                           MemoryStats memStats,
                           CommandLog cl,
                           String coreBindIds,
-                          PartitionDRGateway drGateway,
-                          PartitionDRGateway mpDrGateway)
+                          boolean isLowestSiteId)
         throws KeeperException, ExecutionException, InterruptedException
     {
             int snapshotPriority = 6;
@@ -142,7 +148,7 @@ public abstract class BaseInitiator implements Initiator
 
             TaskLog taskLog = null;
             if (m_initiatorMailbox.getJoinProducer() != null) {
-                taskLog = m_initiatorMailbox.getJoinProducer().constructTaskLog(catalogContext.cluster.getVoltroot());
+                taskLog = m_initiatorMailbox.getJoinProducer().constructTaskLog(VoltDB.instance().getVoltDBRootPath());
             }
 
             m_executionSite = new Site(m_scheduler.getQueue(),
@@ -158,18 +164,11 @@ public abstract class BaseInitiator implements Initiator
                                        memStats,
                                        coreBindIds,
                                        taskLog,
-                                       drGateway,
-                                       mpDrGateway);
-            ProcedureRunnerFactory prf = new ProcedureRunnerFactory();
-            prf.configure(m_executionSite, m_executionSite.m_sysprocContext);
-
-            LoadedProcedureSet procSet = new LoadedProcedureSet(
-                    m_executionSite,
-                    prf,
-                    m_initiatorMailbox.getHSId(),
-                    0); // this has no meaning
-            procSet.loadProcedures(catalogContext, backend, csp);
+                                       isLowestSiteId);
+            LoadedProcedureSet procSet = new LoadedProcedureSet(m_executionSite);
+            procSet.loadProcedures(catalogContext);
             m_executionSite.setLoadedProcedures(procSet);
+            m_scheduler.setProcedureSet(procSet);
             m_scheduler.setCommandLog(cl);
 
             m_siteThread = new Thread(m_executionSite);
@@ -202,6 +201,9 @@ public abstract class BaseInitiator implements Initiator
 
         if (m_siteThread != null) {
             try {
+                if (m_executionSite != null) {
+                    m_executionSite.m_scheduler.offer(Scheduler.m_nullTask);
+                }
                 m_siteThread.join();
             } catch (InterruptedException e) {
                 tmLog.info("Interrupted during shutdown", e);
@@ -221,5 +223,21 @@ public abstract class BaseInitiator implements Initiator
         return m_initiatorMailbox.getHSId();
     }
 
+    @Override
+    public void configureDurableUniqueIdListener(DurableUniqueIdListener listener, boolean install)
+    {
+        // Durability Listeners should never be assigned to the MP Scheduler
+        assert false;
+    }
+
     abstract protected void acceptPromotion() throws Exception;
+
+    public ExecutionEngine debugGetSpiedEE() {
+        if (m_executionSite.m_backend == BackendTarget.NATIVE_EE_SPY_JNI) {
+            return m_executionSite.m_ee;
+        }
+        else {
+            return null;
+        }
+    }
 }

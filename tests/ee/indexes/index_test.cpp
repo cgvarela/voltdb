@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -58,6 +58,7 @@
 #include "common/ValueFactory.hpp"
 #include "common/debuglog.h"
 #include "common/SerializableEEException.h"
+#include "common/SynchronizedThreadLock.h"
 #include "common/tabletuple.h"
 #include "storage/table.h"
 #include "storage/temptable.h"
@@ -87,12 +88,14 @@ using namespace voltdb;
 
 class IndexTest : public Test {
 public:
-    IndexTest() : table(NULL) {}
+    IndexTest() : table(NULL)
+    {}
     ~IndexTest()
     {
         delete table;
         delete[] m_exceptionBuffer;
         delete m_engine;
+        voltdb::globalDestroyOncePerProcess();
     }
 
     void initWideTable(string name)
@@ -175,10 +178,11 @@ public:
 
         m_engine = new VoltDBEngine();
         m_exceptionBuffer = new char[4096];
-        m_engine->setBuffers( NULL, 0, NULL, 0, m_exceptionBuffer, 4096);
+        m_engine->setBuffers(NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, m_exceptionBuffer, 4096);
         int partitionCount = 1;
-        m_engine->initialize(0, 0, 0, 0, "", false, DEFAULT_TEMP_TABLE_MEMORY);
-        m_engine->updateHashinator(HASHINATOR_LEGACY, (char*)&partitionCount, NULL, 0);
+        m_engine->initialize(0, 0, 0, partitionCount, 0, "", 0, 1024, DEFAULT_TEMP_TABLE_MEMORY, true);
+        partitionCount = htonl(partitionCount);
+        m_engine->updateHashinator((char*)&partitionCount, NULL, 0);
         table = dynamic_cast<PersistentTable*>(
             TableFactory::getPersistentTable(database_id, "test_wide_table",
                                              schema, columnNames, signature));
@@ -311,10 +315,11 @@ public:
         indexes.push_back(index);
         m_engine = new VoltDBEngine();
         m_exceptionBuffer = new char[4096];
-        m_engine->setBuffers( NULL, 0, NULL, 0, m_exceptionBuffer, 4096);
+        m_engine->setBuffers(NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, m_exceptionBuffer, 4096);
         int partitionCount = 1;
-        m_engine->initialize(0, 0, 0, 0, "", false, DEFAULT_TEMP_TABLE_MEMORY);
-        m_engine->updateHashinator(HASHINATOR_LEGACY, (char*)&partitionCount, NULL, 0);
+        m_engine->initialize(0, 0, 0, partitionCount, 0, "", 0, 1024, DEFAULT_TEMP_TABLE_MEMORY, true);
+        partitionCount = htonl(partitionCount);
+        m_engine->updateHashinator((char*)&partitionCount, NULL, 0);
         table = dynamic_cast<PersistentTable*>(TableFactory::getPersistentTable(database_id, (const string)"test_table", schema, columnNames, signature));
 
         TableIndex *pkeyIndex = TableIndexFactory::TableIndexFactory::getInstance(pkeyScheme);
@@ -388,7 +393,6 @@ protected:
     PersistentTable* table;
     char* m_exceptionBuffer;
     VoltDBEngine* m_engine;
-    ThreadLocalPool m_pool;
     char signature[20];
 };
 
@@ -404,9 +408,9 @@ TEST_F(IndexTest, IntUnique) {
          iu_column_types,
          true);
     TableIndex* index = table->index("iu");
-    EXPECT_EQ(true, index != NULL);
+    EXPECT_TRUE(index != NULL);
 
-    //EXPECT_EQ( 38528, index->getMemoryEstimate());
+    //EXPECT_EQ(38528, index->getMemoryEstimate());
 
     // TODO
 }
@@ -422,9 +426,9 @@ TEST_F(IndexTest, IntMulti) {
          im_column_types,
          false);
     TableIndex* index = table->index("im");
-    EXPECT_EQ(true, index != NULL);
+    EXPECT_TRUE(index != NULL);
 
-    //EXPECT_EQ( 44000, index->getMemoryEstimate());
+    //EXPECT_EQ(44000, index->getMemoryEstimate());
     // TODO
 }
 
@@ -442,11 +446,11 @@ TEST_F(IndexTest, IntsUnique) {
          true);
 
     TableIndex* index = table->index("ixu");
-    EXPECT_EQ(true, index != NULL);
+    EXPECT_TRUE(index != NULL);
 
     IndexCursor indexCursor(index->getTupleSchema());
 
-    //EXPECT_EQ( 62520, index->getMemoryEstimate());
+    //EXPECT_EQ(62520, index->getMemoryEstimate());
 
     TableTuple tuple(table->schema());
     vector<ValueType> keyColumnTypes(2, VALUE_TYPE_BIGINT);
@@ -567,7 +571,7 @@ TEST_F(IndexTest, IntsUnique) {
         setNValue(3, ValueFactory::getBigIntValue(static_cast<int64_t>(-200)));
     tmptuple.
         setNValue(4, ValueFactory::getBigIntValue(static_cast<int64_t>(550)));
-    EXPECT_EQ(true, table->insertTuple(tmptuple));
+    EXPECT_TRUE(table->insertTuple(tmptuple));
     tmptuple.
         setNValue(0, ValueFactory::getBigIntValue(static_cast<int16_t>(1235)));
     tmptuple.
@@ -606,10 +610,10 @@ TEST_F(IndexTest, IntsMulti) {
          false);
 
     TableIndex* index = table->index("ixm2");
-    EXPECT_EQ(true, index != NULL);
+    EXPECT_TRUE(index != NULL);
     IndexCursor indexCursor(index->getTupleSchema());
 
-    //EXPECT_EQ( 52000, index->getMemoryEstimate());
+    //EXPECT_EQ(52000, index->getMemoryEstimate());
 
     TableTuple tuple(table->schema());
     vector<ValueType> keyColumnTypes(2, VALUE_TYPE_BIGINT);
@@ -731,7 +735,7 @@ TEST_F(IndexTest, IntsMulti) {
         setNValue(3, ValueFactory::getBigIntValue(static_cast<int64_t>(-200)));
     tmptuple.
         setNValue(4, ValueFactory::getBigIntValue(static_cast<int64_t>(550)));
-    EXPECT_EQ(true, table->insertTuple(tmptuple));
+    EXPECT_TRUE(table->insertTuple(tmptuple));
     tmptuple.
         setNValue(0, ValueFactory::getBigIntValue(static_cast<int64_t>(12345)));
     tmptuple.
@@ -742,7 +746,7 @@ TEST_F(IndexTest, IntsMulti) {
         setNValue(3, ValueFactory::getBigIntValue(static_cast<int64_t>(-200)));
     tmptuple.
         setNValue(4, ValueFactory::getBigIntValue(static_cast<int64_t>(550)));
-    EXPECT_EQ(true, table->insertTuple(tmptuple));
+    EXPECT_TRUE(table->insertTuple(tmptuple));
     TupleSchema::freeTupleSchema(keySchema);
     delete[] searchkey.address();
 }
@@ -762,11 +766,11 @@ TEST_F(IndexTest, TupleKeyUnique) {
     // TEST that factory returns an index.
     initWideTable("ixu_wide");
     TableIndex* index = table->index("ixu_wide");
-    EXPECT_EQ(true, index != NULL);
+    EXPECT_TRUE(index != NULL);
 
     IndexCursor indexCursor(index->getTupleSchema());
 
-    //EXPECT_EQ( 280, index->getMemoryEstimate());
+    //EXPECT_EQ(280, index->getMemoryEstimate());
 
     // make a tuple with the table's schema
     TableTuple tuple(table->schema());
@@ -798,8 +802,7 @@ TEST_F(IndexTest, TupleKeyUnique) {
     setWideIndexToRow(searchkey, 2);  // DELETE row 2.
     EXPECT_TRUE(index->moveToKey(&searchkey, indexCursor));
     tuple = index->nextValueAtKey(indexCursor);
-    bool deleted = table->deleteTuple(tuple, true);
-    EXPECT_TRUE(deleted);
+    table->deleteTuple(tuple, true);
 
     // and now that tuple is gone
     EXPECT_FALSE(index->moveToKey(&searchkey, indexCursor));
@@ -839,7 +842,7 @@ TEST_F(IndexTest, ReentrantTreeUnique) {
             true);
 
     TableIndex* index = table->index("ixu");
-    EXPECT_EQ(true, index != NULL);
+    EXPECT_TRUE(index != NULL);
 
     IndexCursor indexCursor(index->getTupleSchema());
 
@@ -929,7 +932,7 @@ TEST_F(IndexTest, ReentrantTreeMultiple) {
          false);
 
     TableIndex* index = table->index("ixm2");
-    EXPECT_EQ(true, index != NULL);
+    EXPECT_TRUE(index != NULL);
     IndexCursor indexCursor(index->getTupleSchema());
 
     TableTuple tuple(table->schema());
@@ -1015,7 +1018,7 @@ TEST_F(IndexTest, ReentrantHashUnique) {
          true);
 
     TableIndex* index = table->index("ixh1");
-    EXPECT_EQ(true, index != NULL);
+    EXPECT_TRUE(index != NULL);
     IndexCursor indexCursor(index->getTupleSchema());
 
     TableTuple tuple(table->schema());
@@ -1071,7 +1074,7 @@ TEST_F(IndexTest, ReentrantHashMultiple) {
          false);
 
     TableIndex* index = table->index("ixh2");
-    EXPECT_EQ(true, index != NULL);
+    EXPECT_TRUE(index != NULL);
     IndexCursor indexCursor(index->getTupleSchema());
 
     TableTuple tuple(table->schema());

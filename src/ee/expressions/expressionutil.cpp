@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -45,16 +45,8 @@
 
 #include "expressionutil.h"
 
-#include "common/debuglog.h"
 #include "common/ValueFactory.hpp"
-#include "common/FatalException.hpp"
-#include "expressions/abstractexpression.h"
 #include "expressions/expressions.h"
-
-#include <cassert>
-#include <sstream>
-#include <cstdlib>
-#include <stdexcept>
 
 namespace voltdb {
 
@@ -142,6 +134,8 @@ subqueryComparisonFactory(PlannerDomValue obj,
             return new VectorComparisonExpression<CmpLte, TupleExtractor, TupleExtractor>(c, l, r, quantifier);
         case (EXPRESSION_TYPE_COMPARE_GREATERTHANOREQUALTO):
             return new VectorComparisonExpression<CmpGte, TupleExtractor, TupleExtractor>(c, l, r, quantifier);
+        case (EXPRESSION_TYPE_COMPARE_NOTDISTINCT):
+            return new VectorComparisonExpression<CmpNotDistinct, TupleExtractor, TupleExtractor>(c, l, r, quantifier);
         default:
             char message[256];
             snprintf(message, 256, "Invalid ExpressionType '%s' called"
@@ -163,6 +157,8 @@ subqueryComparisonFactory(PlannerDomValue obj,
             return new VectorComparisonExpression<CmpLte, TupleExtractor, NValueExtractor>(c, l, r, quantifier);
         case (EXPRESSION_TYPE_COMPARE_GREATERTHANOREQUALTO):
             return new VectorComparisonExpression<CmpGte, TupleExtractor, NValueExtractor>(c, l, r, quantifier);
+        case (EXPRESSION_TYPE_COMPARE_NOTDISTINCT):
+            return new VectorComparisonExpression<CmpNotDistinct, TupleExtractor, NValueExtractor>(c, l, r, quantifier);
         default:
             char message[256];
             snprintf(message, 256, "Invalid ExpressionType '%s' called"
@@ -185,6 +181,8 @@ subqueryComparisonFactory(PlannerDomValue obj,
             return new VectorComparisonExpression<CmpLte, NValueExtractor, TupleExtractor>(c, l, r, quantifier);
         case (EXPRESSION_TYPE_COMPARE_GREATERTHANOREQUALTO):
             return new VectorComparisonExpression<CmpGte, NValueExtractor, TupleExtractor>(c, l, r, quantifier);
+        case (EXPRESSION_TYPE_COMPARE_NOTDISTINCT):
+                return new VectorComparisonExpression<CmpNotDistinct, NValueExtractor, TupleExtractor>(c, l, r, quantifier);
         default:
             char message[256];
             snprintf(message, 256, "Invalid ExpressionType '%s' called"
@@ -219,6 +217,8 @@ getGeneral(ExpressionType c,
         return new ComparisonExpression<CmpLike>(c, l, r);
     case (EXPRESSION_TYPE_COMPARE_IN):
         return new ComparisonExpression<CmpIn>(c, l, r);
+    case (EXPRESSION_TYPE_COMPARE_NOTDISTINCT):
+        return new ComparisonExpression<CmpNotDistinct>(c, l, r);
     default:
         char message[256];
         snprintf(message, 256, "Invalid ExpressionType '%s' called"
@@ -252,6 +252,8 @@ getMoreSpecialized(ExpressionType c, L* l, R* r)
         return new InlinedComparisonExpression<CmpLike, L, R>(c, l, r);
     case (EXPRESSION_TYPE_COMPARE_IN):
         return new InlinedComparisonExpression<CmpIn, L, R>(c, l, r);
+    case (EXPRESSION_TYPE_COMPARE_NOTDISTINCT):
+        return new InlinedComparisonExpression<CmpNotDistinct, L, R>(c, l, r);
     default:
         char message[256];
         snprintf(message, 256, "Invalid ExpressionType '%s' called for"
@@ -340,6 +342,10 @@ operatorFactory(ExpressionType et,
 
      case (EXPRESSION_TYPE_OPERATOR_EXISTS):
          ret = new OperatorExistsExpression(lc);
+         break;
+
+     case (EXPRESSION_TYPE_OPERATOR_UNARY_MINUS):
+         ret = new OperatorUnaryMinusExpression(lc);
          break;
 
      case (EXPRESSION_TYPE_OPERATOR_MOD):
@@ -546,6 +552,7 @@ ExpressionUtil::expressionFactory(PlannerDomValue obj,
     case (EXPRESSION_TYPE_OPERATOR_NOT):
     case (EXPRESSION_TYPE_OPERATOR_IS_NULL):
     case (EXPRESSION_TYPE_OPERATOR_EXISTS):
+    case (EXPRESSION_TYPE_OPERATOR_UNARY_MINUS):
         ret = operatorFactory(et, lc, rc);
     break;
 
@@ -558,6 +565,7 @@ ExpressionUtil::expressionFactory(PlannerDomValue obj,
     case (EXPRESSION_TYPE_COMPARE_GREATERTHANOREQUALTO):
     case (EXPRESSION_TYPE_COMPARE_LIKE):
     case (EXPRESSION_TYPE_COMPARE_IN):
+    case (EXPRESSION_TYPE_COMPARE_NOTDISTINCT):
         ret = comparisonFactory(obj, et, lc, rc);
     break;
 

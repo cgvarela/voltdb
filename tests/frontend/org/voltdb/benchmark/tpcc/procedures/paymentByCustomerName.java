@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -49,10 +49,8 @@
  */
 package org.voltdb.benchmark.tpcc.procedures;
 
-import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
 
-import org.voltdb.ProcInfo;
 import org.voltdb.SQLStmt;
 import org.voltdb.VoltProcedure;
 import org.voltdb.VoltTable;
@@ -66,10 +64,6 @@ import org.voltdb.types.TimestampType;
 //return VoltTable[] has N element(s):
 //1) var_name, represented as a NxN table representing typeFOOBAR.
 
-@ProcInfo (
-    //partitionInfo = "WAREHOUSE.W_ID: 0",
-    singlePartition = false
-)
 public class paymentByCustomerName extends VoltProcedure {
 
     final int misc_expected_string_len = 32 + 2 + 32 + 32 + 32 + 32 + 2 + 9 + 32 + 2 + 500;
@@ -219,15 +213,12 @@ public class paymentByCustomerName extends VoltProcedure {
         return new VoltTable[]{warehouse, district, misc};
     }
 
-    public VoltTable[] run(short w_id, byte d_id, double h_amount, short c_w_id, byte c_d_id, byte[] c_last, TimestampType timestamp) throws VoltAbortException {
+    public VoltTable[] run(short w_id, byte d_id, double h_amount, short c_w_id, byte c_d_id, String c_last, TimestampType timestamp) throws VoltAbortException {
         voltQueueSQL(getCustomersByLastName, c_last, c_d_id, c_w_id);
         final VoltTable customers = voltExecuteSQL()[0];
         final int namecnt = customers.getRowCount();
         if (namecnt == 0) {
-            String c_last_str = "";
-            try { c_last_str = new String(c_last, "UTF-8"); }
-            catch (UnsupportedEncodingException e) {}
-            throw new VoltAbortException("no customers with last name: " + c_last_str + " in warehouse: "
+            throw new VoltAbortException("no customers with last name: " + c_last + " in warehouse: "
                     + c_w_id + " and in district " + c_d_id);
         }
 

@@ -17,13 +17,12 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedSet;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -41,11 +40,11 @@ import javax.annotation_voltpatches.Nullable;
  * values.
  * 
  * <p>See the Guava User Guide article on <a href=
- * "http://code.google.com/p/guava-libraries/wiki/NewCollectionTypesExplained#Multimap">
+ * "https://github.com/google/guava/wiki/NewCollectionTypesExplained#multimap">
  * {@code Multimap}</a>.
  *
  * @author Jared Levy
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
 public interface SortedSetMultimap<K, V> extends SetMultimap<K, V> {
@@ -73,6 +72,7 @@ public interface SortedSetMultimap<K, V> extends SetMultimap<K, V> {
    * key, this method returns a {@link SortedSet}, instead of the
    * {@link java.util.Collection} specified in the {@link Multimap} interface.
    */
+  @CanIgnoreReturnValue
   @Override
   SortedSet<V> removeAll(@Nullable Object key);
 
@@ -86,6 +86,7 @@ public interface SortedSetMultimap<K, V> extends SetMultimap<K, V> {
    *
    * <p>Any duplicates in {@code values} will be stored in the multimap once.
    */
+  @CanIgnoreReturnValue
   @Override
   SortedSet<V> replaceValues(K key, Iterable<? extends V> values);
 
@@ -105,7 +106,8 @@ public interface SortedSetMultimap<K, V> extends SetMultimap<K, V> {
    * {@code Map<K, SortedSet<V>>}, call
    * {@link Multimaps#asMap(SortedSetMultimap)} instead.
    */
-  @Override Map<K, Collection<V>> asMap();
+  @Override
+  Map<K, Collection<V>> asMap();
 
   /**
    * Returns the comparator that orders the multimap values, with {@code null}

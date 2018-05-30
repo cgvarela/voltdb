@@ -114,8 +114,10 @@
 						    $('body').css("height", $(window).height());
 							$('body').css("overflow", "hidden");
 							$('body').css("position", "fixed");
-							//$('body').css("overflow-y", "scroll");
-							$('body').css("width", "100%");
+						    if (navigator.userAgent.indexOf('MSIE') == -1) {
+						        $('body').css("overflow-y", "scroll");
+						    }
+						    $('body').css("width", "100%");
 							//$('body').bind('touchmove', function(e){e.preventDefault()});//mobile
 							// Call the open callback
 							plugin.o.afterOpen.call(plugin);
@@ -402,7 +404,7 @@
 
                 
 			    // If modal isn't specified, bind click event
-				if (!p.o.modal && p.ele.id != "loginLink" && p.ele.id != "conPopup" && p.ele.id != "serUnavailablePopup") {
+				if (!p.o.modal && p.ele.id != "loginLink" && p.ele.id != "conPopup" && p.ele.id != "btnPrepareShutdown" && p.ele.id != "serUnavailablePopup") {
 
 					$back.one('click.popup', function(){
 						p.close();
@@ -665,8 +667,8 @@
 		 *
 		 * @return {Object}
 		 */
-		p.close = function(){
-			p.o.beforeClose.call(p);
+		p.close = function() {
+		    p.o.beforeClose.call(p);
 
 			// If we got some inline content, cache it
 			// so we can put it back

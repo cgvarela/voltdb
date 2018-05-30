@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,6 +17,7 @@
 
 package org.voltdb.expressions;
 
+import org.hsqldb_voltpatches.FunctionForVoltDB;
 import org.json_voltpatches.JSONException;
 import org.json_voltpatches.JSONObject;
 import org.json_voltpatches.JSONStringer;
@@ -52,7 +53,7 @@ public class FunctionExpression extends AbstractExpression {
 
     /// An optional implied keyword argument, always upper case,
     /// normally null -- except for functions that had an initial keyword
-    /// argumment which got optimized out of its argument list prior to export
+    /// argument which got optimized out of its argument list prior to export
     /// from the HSQL front-end.
     /// For example:
     /// SQL invocation  |  m_impliedArgument
@@ -124,7 +125,8 @@ public class FunctionExpression extends AbstractExpression {
         if (value_type != param_type) {
             if (value_type == null) {
                 value_type = param_type;
-            } else if (value_type == VoltType.NUMERIC) {
+            }
+            else if (value_type == VoltType.NUMERIC) {
                 if (param_type != null) {
                     value_type = param_type;
                 }
@@ -141,7 +143,10 @@ public class FunctionExpression extends AbstractExpression {
         }
         if (value_type != null) {
             setValueType(value_type);
-            setValueSize(value_type.getMaxLengthInBytes());
+            if (value_type != VoltType.INVALID && value_type != VoltType.NUMERIC) {
+                int size = value_type.getMaxLengthInBytes();
+                setValueSize(size);
+            }
         }
     }
 
@@ -177,16 +182,6 @@ public class FunctionExpression extends AbstractExpression {
     }
 
     @Override
-    public Object clone() {
-        FunctionExpression clone = (FunctionExpression)super.clone();
-        clone.m_name = m_name;
-        clone.m_impliedArgument = m_impliedArgument;
-        clone.m_functionId = m_functionId;
-        clone.m_resultTypeParameterIndex = m_resultTypeParameterIndex;
-        return clone;
-    }
-
-    @Override
     public boolean hasEqualAttributes(AbstractExpression obj) {
         if (obj instanceof FunctionExpression == false) {
             return false;
@@ -209,13 +204,13 @@ public class FunctionExpression extends AbstractExpression {
     public void toJSONString(JSONStringer stringer) throws JSONException {
         super.toJSONString(stringer);
         assert(m_name != null);
-        stringer.key(Members.NAME.name()).value(m_name);
-        stringer.key(Members.FUNCTION_ID.name()).value(m_functionId);
+        stringer.keySymbolValuePair(Members.NAME.name(), m_name);
+        stringer.keySymbolValuePair(Members.FUNCTION_ID.name(), m_functionId);
         if (m_impliedArgument != null) {
-            stringer.key(Members.IMPLIED_ARGUMENT.name()).value(m_impliedArgument);
+            stringer.keySymbolValuePair(Members.IMPLIED_ARGUMENT.name(), m_impliedArgument);
         }
         if (m_resultTypeParameterIndex != NOT_PARAMETERIZED) {
-            stringer.key(Members.RESULT_TYPE_PARAM_IDX.name()).value(m_resultTypeParameterIndex);
+            stringer.keySymbolValuePair(Members.RESULT_TYPE_PARAM_IDX.name(), m_resultTypeParameterIndex);
         }
     }
 
@@ -355,8 +350,42 @@ public class FunctionExpression extends AbstractExpression {
                 connector = ", ";
             }
             result += ")";
+        } else {
+            // The two functions MIN_VALID_TIMESTAMP and MAX_VALID_TIMESTAMP
+            // are nullary.  Others may be in the future.
+            result += "()";
         }
         return result;
     }
 
+    @Override
+    public boolean isValueTypeIndexable(StringBuffer msg) {
+        StringBuffer dummyMsg = new StringBuffer();
+        if (!super.isValueTypeIndexable(dummyMsg)) {
+            msg.append("a " + m_valueType.getName() + " valued function '"+ m_name.toUpperCase() + "'");
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    public void findUnsafeOperatorsForDDL(UnsafeOperatorsForDDL ops) {
+        ops.add(explain("Be Explicit"));
+    }
+
+    /**
+     * @return True iff this function is user defined.
+     */
+    public boolean isUserDefined() {
+        return FunctionForVoltDB.isUserDefinedFunctionId(m_functionId);
+    }
+
+    /**
+     * Return the name of this function.
+     *
+     * @return The name of the function in lower case.
+     */
+    public String getFunctionName() {
+        return m_name.toLowerCase();
+    }
 }

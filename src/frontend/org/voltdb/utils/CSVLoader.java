@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,8 +19,8 @@ package org.voltdb.utils;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -33,6 +33,7 @@ import org.supercsv.prefs.CsvPreference;
 import org.supercsv_voltpatches.tokenizer.Tokenizer;
 import org.voltcore.logging.VoltLogger;
 import org.voltdb.CLIConfig;
+import org.voltdb.client.AutoReconnectListener;
 import org.voltdb.client.Client;
 import org.voltdb.client.ClientConfig;
 import org.voltdb.client.ClientFactory;
@@ -104,7 +105,18 @@ public class CSVLoader implements BulkLoaderErrorHandler {
      * Size limit for each column.
      */
     public static final long DEFAULT_COLUMN_LIMIT_SIZE = 16777216;
-
+    /**
+     * Using upsert instead of insert
+     */
+    public static final boolean DEFAULT_UPSERT_MODE = false;
+    /**
+     * First line is column name?
+     */
+    public static final boolean DEFAULT_HEADER = false;
+    /**
+     * Stop when all connections are lost?
+     */
+    public static final boolean DEFAULT_STOP_ON_DISCONNECT = false;
     /**
      * Used for testing only.
      */
@@ -132,8 +144,9 @@ public class CSVLoader implements BulkLoaderErrorHandler {
                     ErrorInfoItem currItem;
                     currItem = m_errorInfo.take();
 
-                    if (currItem.lineNumber == -1)
+                    if (currItem.lineNumber == -1) {
                         return;
+                    }
 
                     if (currItem.errorInfo.length != 2) {
                         System.out.println("internal error, information is not enough");
@@ -172,14 +185,15 @@ public class CSVLoader implements BulkLoaderErrorHandler {
             m_errorInfo.put(emptyErrorInfo);
         }
 
-        if (m_errorinfoProcessor != null)
+        if (m_errorinfoProcessor != null) {
             m_errorinfoProcessor.join();
+        }
     }
 
     @Override
     public boolean handleError(RowWithMetaData metaData, ClientResponse response, String error) {
         synchronized (m_errorInfo) {
-            //Dont collect more than we want to report.
+            //Don't collect more than we want to report.
             if (m_errorCount + m_errorInfo.size() >= config.maxerrors) {
                 return true;
             }
@@ -283,11 +297,28 @@ public class CSVLoader implements BulkLoaderErrorHandler {
         @Option(shortOpt = "n", desc = "Custom null string, overrides all other Null pattern matching")
         String customNullString = "";
 
+        // add a charset flag as "c"
+        @Option(shortOpt = "c", desc = "character set , default system character set")
+        String charset = "utf-8";
+
+        @Option(desc = "Disables the quote character. All characters between delimiters, including quote characters, are included in the input.",
+                hasArg = false)
+        boolean noquotechar = false;
+
+        @Option(desc = "Enable SSL, Optionally provide configuration file.")
+        String ssl = "";
+
+        @Option(desc = "Enable Kerberos and use provided JAAS login configuration entry key.")
+        String kerberos = "";
+
         /**
          * Batch size for processing batched operations.
          */
         @Option(desc = "Batch Size for processing.")
         public int batch = 200;
+
+        @Option(desc = "First line of csv file is column name.", hasArg = false)
+        boolean header = DEFAULT_HEADER;
 
         /**
          * Table name to insert CSV data into.
@@ -297,11 +328,19 @@ public class CSVLoader implements BulkLoaderErrorHandler {
         // This is set to true when -p option us used.
         boolean useSuppliedProcedure = false;
 
+        @Option(desc = "Use upsert instead of insert", hasArg = false)
+        boolean update = DEFAULT_UPSERT_MODE;
+
+        @Option(desc = "Stop when all connections are lost", hasArg = false)
+        boolean stopondisconnect = DEFAULT_STOP_ON_DISCONNECT;
         /**
          * Validate command line options.
          */
         @Override
         public void validate() {
+            if (header && !procedure.equals("")) {
+                exitWithMessageAndUsage("--header and --procedure options are mutually exclusive.");
+            }
             if (maxerrors < 0) {
                 exitWithMessageAndUsage("abortfailurecount must be >=0");
             }
@@ -330,6 +369,10 @@ public class CSVLoader implements BulkLoaderErrorHandler {
             }
             if ((procedure != null) && (procedure.trim().length() > 0)) {
                 useSuppliedProcedure = true;
+            }
+            if ((useSuppliedProcedure) && (update)){
+                update = false;
+                exitWithMessageAndUsage("update is not applicable when stored procedure specified");
             }
             if(!timezone.equals("")){
                 boolean isValidTimezone = false;
@@ -372,25 +415,35 @@ public class CSVLoader implements BulkLoaderErrorHandler {
         start = System.currentTimeMillis();
         long insertTimeStart = start;
         long insertTimeEnd;
-
         final CSVConfig cfg = new CSVConfig();
         cfg.parse(CSVLoader.class.getName(), args);
         config = cfg;
+        if (config.noquotechar) {
+            config.quotechar = '\u0000';
+        }
 
         configuration();
+
         final Tokenizer tokenizer;
         ICsvListReader listReader = null;
         try {
             if (CSVLoader.standin) {
                 tokenizer = new Tokenizer(new BufferedReader(new InputStreamReader(System.in)), csvPreference,
                         config.strictquotes, config.escape, config.columnsizelimit,
-                        config.skip);
+                        config.skip, config.header);
                 listReader = new CsvListReader(tokenizer, csvPreference);
             } else {
-                tokenizer = new Tokenizer(new FileReader(config.file), csvPreference,
-                        config.strictquotes, config.escape, config.columnsizelimit,
-                        config.skip);
-                listReader = new CsvListReader(tokenizer, csvPreference);
+                FileInputStream fis = new FileInputStream(config.file);
+                InputStreamReader isr = new InputStreamReader(fis, config.charset);
+                tokenizer = new Tokenizer(isr,
+                          csvPreference,
+                          config.strictquotes,
+                          config.escape,
+                          config.columnsizelimit,
+                          config.skip,
+                          config.header);
+
+                   listReader = new CsvListReader(tokenizer, csvPreference);
             }
         } catch (FileNotFoundException e) {
             m_log.error("CSV file '" + config.file + "' could not be found.");
@@ -399,8 +452,26 @@ public class CSVLoader implements BulkLoaderErrorHandler {
         // Split server list
         final String[] serverlist = config.servers.split(",");
 
+        // If we need to prompt the user for a password, do so.
+        config.password = CLIConfig.readPasswordIfNeeded(config.user, config.password, "Enter password: ");
+
         // Create connection
-        final ClientConfig c_config = new ClientConfig(config.user, config.password);
+        final ClientConfig c_config;
+        AutoReconnectListener listener = new AutoReconnectListener();
+        if (config.stopondisconnect) {
+            c_config = new ClientConfig(config.user, config.password, null);
+            c_config.setReconnectOnConnectionLoss(false);
+        } else {
+            c_config = new ClientConfig(config.user, config.password, listener);
+            c_config.setReconnectOnConnectionLoss(true);
+        }
+        if (config.ssl != null && !config.ssl.trim().isEmpty()) {
+            c_config.setTrustStoreConfigFromPropertyFile(config.ssl);
+            c_config.enableSSL();
+        }
+        if (!config.kerberos.trim().isEmpty()) {
+            c_config.enableKerberosAuthentication(config.kerberos);
+        }
         c_config.setProcedureCallTimeout(0); // Set procedure all to infinite
         Client csvClient = null;
         try {
@@ -422,16 +493,19 @@ public class CSVLoader implements BulkLoaderErrorHandler {
 
             errHandler.launchErrorFlushProcessor();
 
-
             if (config.useSuppliedProcedure) {
                 dataLoader = new CSVTupleDataLoader((ClientImpl) csvClient, config.procedure, errHandler);
             } else {
-                dataLoader = new CSVBulkDataLoader((ClientImpl) csvClient, config.table, config.batch, errHandler);
+                dataLoader = new CSVBulkDataLoader((ClientImpl) csvClient, config.table, config.batch, config.update, errHandler);
+            }
+            if (!config.stopondisconnect) {
+                listener.setLoader(dataLoader);
             }
 
             CSVFileReader.initializeReader(cfg, csvClient, listReader);
 
             CSVFileReader csvReader = new CSVFileReader(dataLoader, errHandler);
+
             Thread readerThread = new Thread(csvReader);
             readerThread.setName("CSVFileReader");
             readerThread.setDaemon(true);
@@ -535,10 +609,20 @@ public class CSVLoader implements BulkLoaderErrorHandler {
      */
     public static Client getClient(ClientConfig config, String[] servers,
             int port) throws Exception {
+        config.setTopologyChangeAware(true); // Set client to be topology-aware
         final Client client = ClientFactory.createClient(config);
-
         for (String server : servers) {
-            client.createConnection(server.trim(), port);
+            // Try connecting servers one by one until we have a success
+            try {
+                client.createConnection(server.trim(), port);
+                break;
+            } catch(IOException e) {
+                // Only swallow the exceptions from Java network or connection problems
+                // Unresolved hostname exceptions will be thrown
+            }
+        }
+        if (client.getConnectedHostList().isEmpty()) {
+            throw new Exception("Unable to connect to any servers.");
         }
         return client;
     }
@@ -601,7 +685,6 @@ public class CSVLoader implements BulkLoaderErrorHandler {
         } catch (Exception x) {
             m_log.error(x.getMessage());
         }
-
     }
 
     private static void close_cleanup() throws IOException,

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -72,9 +72,12 @@ class CompactingHashUniqueIndex : public TableIndex
         return *reinterpret_cast<MapIterator*> (cursor.m_keyIter);
     }
 
-    bool addEntryDo(const TableTuple *tuple) {
+    void addEntryDo(const TableTuple *tuple, TableTuple *conflictTuple) {
         ++m_inserts;
-        return m_entries.insert(setKeyFromTuple(tuple), tuple->address());
+        const void* const* conflictEntry = m_entries.insert(setKeyFromTuple(tuple), tuple->address());
+        if (conflictEntry != NULL && conflictTuple != NULL) {
+            conflictTuple->move(const_cast<void*>(*conflictEntry));
+        }
     }
 
     bool deleteEntryDo(const TableTuple *tuple) {
@@ -94,7 +97,9 @@ class CompactingHashUniqueIndex : public TableIndex
             if ( ! CompactingHashUniqueIndex::deleteEntry(&originalTuple)) {
                 return false;
             }
-            return CompactingHashUniqueIndex::addEntry(&destinationTuple);
+            TableTuple conflict(destinationTuple.getSchema());
+            CompactingHashUniqueIndex::addEntry(&destinationTuple, &conflict);
+            return conflict.isNullTuple();
         }
 
         MapIterator mapiter = findTuple(originalTuple);
@@ -120,6 +125,20 @@ class CompactingHashUniqueIndex : public TableIndex
     bool moveToKey(const TableTuple *searchKey, IndexCursor& cursor) const {
         MapIterator &mapIter = castToIter(cursor);
         mapIter = findKey(searchKey);
+
+        if (mapIter.isEnd()) {
+            cursor.m_match.move(NULL);
+            return false;
+        }
+        cursor.m_match.move(const_cast<void*>(mapIter.value()));
+
+        return true;
+    }
+
+    bool moveToKeyByTuple(const TableTuple *persistentTuple, IndexCursor &cursor) const
+    {
+        MapIterator &mapIter = castToIter(cursor);
+        mapIter = findTuple(*persistentTuple);
 
         if (mapIter.isEnd()) {
             cursor.m_match.move(NULL);

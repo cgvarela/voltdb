@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,36 +17,41 @@
 #ifndef PERSISTENTTABLEUNDOTRUNCATETABLEACTION_H_
 #define PERSISTENTTABLEUNDOTRUNCATETABLEACTION_H_
 
-#include "common/UndoAction.h"
+#include "common/UndoReleaseAction.h"
 #include "storage/persistenttable.h"
 
 namespace voltdb {
 
-class PersistentTableUndoTruncateTableAction: public UndoAction {
+class PersistentTableUndoTruncateTableAction: public UndoReleaseAction {
 public:
-    inline PersistentTableUndoTruncateTableAction(VoltDBEngine * engine, TableCatalogDelegate * tcd,
-            PersistentTable *originalTable, PersistentTable *emptyTable,
-            PersistentTableSurgeon *emptyTableSurgeon, size_t drMark)
-    :  m_engine(engine), m_tcd(tcd), m_originalTable(originalTable), m_emptyTable(emptyTable),
-       m_emptyTableSurgeon(emptyTableSurgeon), m_drMark(drMark)
+    PersistentTableUndoTruncateTableAction(TableCatalogDelegate * tcd,
+            PersistentTable *originalTable,
+            PersistentTable *emptyTable,
+            bool replicatedTableAction)
+        : m_tcd(tcd)
+        , m_originalTable(originalTable)
+        , m_emptyTable(emptyTable)
+        , m_replicatedTableAction(replicatedTableAction)
     {}
 
 private:
     virtual ~PersistentTableUndoTruncateTableAction() {}
 
     /*
-     * Undo whatever this undo action was created to undo. In this case delete the newly constructed table,
-     * and assign the table delegate with the original table.
+     * Undo the original action.
+     * In this case, delete the newly constructed empty table,
+     * and re-associate the table delegate with the original table.
      *
      */
     virtual void undo() {
-        m_emptyTableSurgeon->DRRollback(m_drMark);
-        m_emptyTable->truncateTableForUndo(m_engine, m_tcd, m_originalTable);
+        m_emptyTable->truncateTableUndo(m_tcd, m_originalTable, m_replicatedTableAction);
     }
 
     /*
-     * Release any resources held by the undo action. It will not need to be undone in the future.
-     * In this case delete all tuples from indexes, views and free the strings associated with each
+     * Release any resources held by the undo action,
+     * because the action will not need to be undone.
+     * In this case, delete all tuples from indexes and views
+     * and free the strings associated with each
      * tuple in the original table.
      */
     virtual void release() {
@@ -59,14 +64,12 @@ private:
     }
 
 private:
-    VoltDBEngine * m_engine;
-    TableCatalogDelegate * m_tcd;
-    PersistentTable *m_originalTable;
-    PersistentTable *m_emptyTable;
-    PersistentTableSurgeon *m_emptyTableSurgeon;
-    size_t m_drMark;
+    TableCatalogDelegate* m_tcd;
+    PersistentTable* m_originalTable;
+    PersistentTable* m_emptyTable;
+    bool             m_replicatedTableAction;
 };
 
-}
+}// namespace voltdb
 
 #endif /* PERSISTENTTABLEUNDOTRUNCATETABLEACTION_H_ */

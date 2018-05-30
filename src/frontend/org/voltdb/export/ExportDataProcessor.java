@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -45,7 +45,6 @@ public interface ExportDataProcessor  {
     void addLogger(VoltLogger logger);
 
     void setExportGeneration(ExportGeneration generation);
-    public ExportGeneration getExportGeneration();
 
     /**
      * Inform the processor that initialization is complete; commence work.
@@ -53,9 +52,9 @@ public interface ExportDataProcessor  {
     public void readyForData();
 
     /**
-     * Queue a work message to the processor's mailbox.
+     * Allows processor to initiate polling
      */
-    public void queueWork(Runnable r);
+    public void startPolling();
 
     /**
      * The system is terminating. Cleanup and exit the processor.

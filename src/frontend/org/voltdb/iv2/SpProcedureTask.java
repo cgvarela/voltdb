@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -27,11 +27,14 @@ import org.voltdb.ClientResponseImpl;
 import org.voltdb.PartitionDRGateway;
 import org.voltdb.SiteProcedureConnection;
 import org.voltdb.VoltTable;
+import org.voltdb.client.BatchTimeoutOverrideType;
 import org.voltdb.client.ClientResponse;
 import org.voltdb.messaging.InitiateResponseMessage;
 import org.voltdb.messaging.Iv2InitiateTaskMessage;
 import org.voltdb.rejoin.TaskLog;
 import org.voltdb.utils.LogKeys;
+import org.voltdb.utils.MiscUtils;
+import org.voltdb.utils.VoltTrace;
 
 /**
  * Implements the single partition procedure ProcedureTask.
@@ -39,8 +42,6 @@ import org.voltdb.utils.LogKeys;
  */
 public class SpProcedureTask extends ProcedureTask
 {
-    final private PartitionDRGateway m_drGateway;
-
     private static final boolean EXEC_TRACE_ENABLED;
     private static final boolean HOST_DEBUG_ENABLED;
     private static final boolean HOST_TRACE_ENABLED;
@@ -50,12 +51,19 @@ public class SpProcedureTask extends ProcedureTask
         HOST_TRACE_ENABLED = hostLog.isTraceEnabled();
     }
 
-    SpProcedureTask(Mailbox initiator, String procName, TransactionTaskQueue queue,
-                  Iv2InitiateTaskMessage msg,
-                  PartitionDRGateway drGateway)
+    public SpProcedureTask(Mailbox initiator, String procName, TransactionTaskQueue queue,
+                  Iv2InitiateTaskMessage msg)
     {
        super(initiator, procName, new SpTransactionState(msg), queue);
-       m_drGateway = drGateway;
+    }
+
+    @Override
+    protected void durabilityTraceEnd() {
+        final VoltTrace.TraceEventBatch traceLog = VoltTrace.log(VoltTrace.Category.SPI);
+        if (traceLog != null) {
+            traceLog.add(() -> VoltTrace.endAsync("durability",
+                                                  MiscUtils.hsIdTxnIdToString(m_initiator.getHSId(), getSpHandle())));
+        }
     }
 
     /** Run is invoked by a run-loop to execute this transaction. */
@@ -68,18 +76,44 @@ public class SpProcedureTask extends ProcedureTask
         if (HOST_DEBUG_ENABLED) {
             hostLog.debug("STARTING: " + this);
         }
+        final VoltTrace.TraceEventBatch traceLog = VoltTrace.log(VoltTrace.Category.SPI);
+        if (traceLog != null) {
+            traceLog.add(() -> VoltTrace.beginDuration("runsptask",
+                                                       "txnId", TxnEgo.txnIdToString(getTxnId()),
+                                                       "partition", Integer.toString(siteConnection.getCorrespondingPartitionId())));
+        }
+
         if (!m_txnState.isReadOnly()) {
             m_txnState.setBeginUndoToken(siteConnection.getLatestUndoToken());
         }
 
         // cast up here .. ugly.
         SpTransactionState txnState = (SpTransactionState)m_txnState;
-        final InitiateResponseMessage response = processInitiateTask(txnState.m_initiationMsg, siteConnection);
+
+        InitiateResponseMessage response;
+        int originalTimeout = siteConnection.getBatchTimeout();
+        int individualTimeout = m_txnState.getInvocation().getBatchTimeout();
+        try {
+            // run the procedure with a specific individual timeout
+            if (BatchTimeoutOverrideType.isUserSetTimeout(individualTimeout) ) {
+                siteConnection.setBatchTimeout(individualTimeout);
+            }
+            response = processInitiateTask(txnState.m_initiationMsg, siteConnection);
+        } finally {
+            // reset the deployment timeout value back to its original value
+            if (BatchTimeoutOverrideType.isUserSetTimeout(individualTimeout) ) {
+                siteConnection.setBatchTimeout(originalTimeout);
+            }
+        }
+
         if (!response.shouldCommit()) {
-            m_txnState.setNeedsRollback();
+            m_txnState.setNeedsRollback(true);
         }
         completeInitiateTask(siteConnection);
         response.m_sourceHSId = m_initiator.getHSId();
+        if (txnState.m_initiationMsg != null && !(txnState.m_initiationMsg.isForReplica())) {
+            response.setForOldLeader(true);
+        }
         m_initiator.deliver(response);
         if (EXEC_TRACE_ENABLED) {
             execLog.l7dlog( Level.TRACE, LogKeys.org_voltdb_ExecutionSite_SendingCompletedWUToDtxn.name(), null);
@@ -87,8 +121,11 @@ public class SpProcedureTask extends ProcedureTask
         if (HOST_DEBUG_ENABLED) {
             hostLog.debug("COMPLETE: " + this);
         }
+        if (traceLog != null) {
+            traceLog.add(VoltTrace::endDuration);
+        }
 
-        logToDR(txnState, response);
+        logToDR(siteConnection.getDRGateway(), txnState);
     }
 
     @Override
@@ -124,7 +161,7 @@ public class SpProcedureTask extends ProcedureTask
     {
         LatencyWatchdog.pet();
 
-        if (HOST_TRACE_ENABLED) {
+        if (HOST_DEBUG_ENABLED) {
             hostLog.trace("START replaying txn: " + this);
         }
         if (!m_txnState.isReadOnly()) {
@@ -135,7 +172,7 @@ public class SpProcedureTask extends ProcedureTask
         SpTransactionState txnState = (SpTransactionState)m_txnState;
         final InitiateResponseMessage response = processInitiateTask(txnState.m_initiationMsg, siteConnection);
         if (!response.shouldCommit()) {
-            m_txnState.setNeedsRollback();
+            m_txnState.setNeedsRollback(true);
         }
         if (!m_txnState.isReadOnly()) {
             assert(siteConnection.getLatestUndoToken() != Site.kInvalidUndoToken) :
@@ -158,19 +195,18 @@ public class SpProcedureTask extends ProcedureTask
         if (EXEC_TRACE_ENABLED) {
             execLog.l7dlog( Level.TRACE, LogKeys.org_voltdb_ExecutionSite_SendingCompletedWUToDtxn.name(), null);
         }
-        if (HOST_TRACE_ENABLED) {
+        if (HOST_DEBUG_ENABLED) {
             hostLog.trace("COMPLETE replaying txn: " + this);
         }
 
-        logToDR(txnState, response);
+        logToDR(siteConnection.getDRGateway(), txnState);
     }
 
-    private void logToDR(SpTransactionState txnState, InitiateResponseMessage response)
+    private void logToDR(PartitionDRGateway drGateway, SpTransactionState txnState)
     {
         // Log invocation to DR
-        if (m_drGateway != null && !txnState.isReadOnly() && !txnState.needsRollback()) {
-            m_drGateway.onSuccessfulProcedureCall(txnState.txnId, txnState.uniqueId, txnState.getHash(),
-                    txnState.getInvocation(), response.getClientResponseData());
+        if (drGateway != null && !txnState.isReadOnly() && !txnState.needsRollback()) {
+            drGateway.onSuccessfulProcedureCall(txnState.getInvocation());
         }
     }
 
@@ -206,5 +242,9 @@ public class SpProcedureTask extends ProcedureTask
         sb.append("  SP HANDLE ID: ").append(TxnEgo.txnIdToString(getSpHandle()));
         sb.append("  ON HSID: ").append(CoreUtils.hsIdToString(m_initiator.getHSId()));
         return sb.toString();
+    }
+
+    public boolean needCoordination() {
+        return false;
     }
 }

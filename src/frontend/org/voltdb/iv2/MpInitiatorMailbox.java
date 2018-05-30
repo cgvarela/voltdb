@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -46,6 +46,7 @@ public class MpInitiatorMailbox extends InitiatorMailbox
     @SuppressWarnings("serial")
     private static class TerminateThreadException extends RuntimeException {};
     private long m_taskThreadId = 0;
+    private final MpRestartSequenceGenerator m_restartSeqGenerator;
     private final Thread m_taskThread = new Thread(null,
                     new Runnable() {
                         @Override
@@ -84,12 +85,17 @@ public class MpInitiatorMailbox extends InitiatorMailbox
 
     @Override
     public RepairAlgo constructRepairAlgo(final Supplier<List<Long>> survivors, final String whoami) {
+        return constructRepairAlgo(survivors, whoami , false);
+    }
+
+    public RepairAlgo constructRepairAlgo(final Supplier<List<Long>> survivors, final String whoami, boolean balanceSPI) {
         RepairAlgo ra = null;
         if (Thread.currentThread().getId() != m_taskThreadId) {
-            FutureTask<RepairAlgo> ft = new FutureTask(new Callable<RepairAlgo>() {
+            FutureTask<RepairAlgo> ft = new FutureTask<RepairAlgo>(new Callable<RepairAlgo>() {
                 @Override
                 public RepairAlgo call() throws Exception {
-                    RepairAlgo ra = new MpPromoteAlgo( survivors.get(), MpInitiatorMailbox.this, whoami);
+                    RepairAlgo ra = new MpPromoteAlgo(survivors.get(), MpInitiatorMailbox.this,
+                            m_restartSeqGenerator, whoami, balanceSPI);
                     setRepairAlgoInternal(ra);
                     return ra;
                 }
@@ -101,7 +107,7 @@ public class MpInitiatorMailbox extends InitiatorMailbox
                 Throwables.propagate(e);
             }
         } else {
-            ra = new MpPromoteAlgo( survivors.get(), this, whoami);
+            ra = new MpPromoteAlgo(survivors.get(), this, m_restartSeqGenerator, whoami, balanceSPI);
             setRepairAlgoInternal(ra);
         }
         return ra;
@@ -196,6 +202,8 @@ public class MpInitiatorMailbox extends InitiatorMailbox
             JoinProducerBase rejoinProducer)
     {
         super(partitionId, scheduler, messenger, repairLog, rejoinProducer);
+        m_restartSeqGenerator = new MpRestartSequenceGenerator(
+                ((MpScheduler)m_scheduler).getLeaderNodeId(), false);
         m_taskThread.start();
         m_sendThread.start();
     }
@@ -230,11 +238,29 @@ public class MpInitiatorMailbox extends InitiatorMailbox
 
 
     @Override
-    public void updateReplicas(final List<Long> replicas, final Map<Integer, Long> partitionMasters) {
+    public long[] updateReplicas(final List<Long> replicas, final Map<Integer, Long> partitionMasters, long snapshotSaveTxnId) {
         m_taskQueue.offer(new Runnable() {
             @Override
             public void run() {
-                updateReplicasInternal(replicas, partitionMasters);
+                updateReplicasInternal(replicas, partitionMasters, snapshotSaveTxnId);
+            }
+        });
+        return new long[0];
+    }
+
+    public void updateReplicas(final List<Long> replicas, final Map<Integer, Long> partitionMasters,
+            boolean balanceSPI) {
+        m_taskQueue.offer(new Runnable() {
+            @Override
+            public void run() {
+                assert(lockingVows());
+                Iv2Trace.logTopology(getHSId(), replicas, m_partitionId);
+                // If a replica set has been configured and it changed during
+                // promotion, must cancel the term
+                if (m_algo != null) {
+                    m_algo.cancel();
+                }
+                ((MpScheduler)m_scheduler).updateReplicas(replicas, partitionMasters, balanceSPI);
             }
         });
     }
@@ -282,10 +308,11 @@ public class MpInitiatorMailbox extends InitiatorMailbox
         if (repairWork instanceof Iv2InitiateTaskMessage) {
             Iv2InitiateTaskMessage m = (Iv2InitiateTaskMessage)repairWork;
             Iv2InitiateTaskMessage work = new Iv2InitiateTaskMessage(m.getInitiatorHSId(), getHSId(), m);
-            m_scheduler.updateLastSeenTxnIds(work);
+            m_scheduler.updateLastSeenUniqueIds(work);
             m_scheduler.handleMessageRepair(needsRepair, work);
         }
         else if (repairWork instanceof CompleteTransactionMessage) {
+            ((CompleteTransactionMessage) repairWork).setForReplica(false);
             send(com.google_voltpatches.common.primitives.Longs.toArray(needsRepair), repairWork);
         }
         else {

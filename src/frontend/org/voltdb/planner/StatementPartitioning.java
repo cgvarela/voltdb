@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -31,6 +31,7 @@ import org.voltdb.expressions.ParameterValueExpression;
 import org.voltdb.expressions.TupleValueExpression;
 import org.voltdb.planner.parseinfo.StmtSubqueryScan;
 import org.voltdb.planner.parseinfo.StmtTableScan;
+import org.voltdb.plannodes.AbstractReceivePlanNode;
 import org.voltdb.plannodes.SchemaColumn;
 
 /**
@@ -114,7 +115,7 @@ public class StatementPartitioning implements Cloneable{
     /*
      * Any constant/parameter-based expressions found to be equality-filtering partitioning columns.
      */
-    private final Set<AbstractExpression> m_inferredExpression = new HashSet<AbstractExpression>();
+    private final Set<AbstractExpression> m_inferredExpression = new HashSet<>();
     /*
      * The actual number of partitioned table scans in the query (when supported, self-joins should count as multiple).
      */
@@ -141,6 +142,10 @@ public class StatementPartitioning implements Cloneable{
 
     private boolean m_joinValid = true;
 
+    // If m_joinValid is set to false, we also set
+    // this string to a hint telling why it is false.
+    private String m_recentInvalidReason = null;
+
     /** Most of the time DML on a replicated table for a plan that is executed
      * as single-partition is a bad idea, and the planner will refuse to do it.
      * However, sometimes we want to bypass this rule; for example, when planning
@@ -158,6 +163,7 @@ public class StatementPartitioning implements Cloneable{
     private StatementPartitioning(boolean inferPartitioning, boolean forceSP) {
         m_inferPartitioning = inferPartitioning;
         m_forceSP = forceSP;
+        //* enable to debug */ System.out.println("DEBUG: StatementPartitioning(" + m_inferPartitioning + ", " + m_forceSP + ")");
     }
 
     public static StatementPartitioning forceSP() {
@@ -223,6 +229,7 @@ public class StatementPartitioning implements Cloneable{
      */
     public void addPartitioningExpression(String fullColumnName, AbstractExpression constExpr,
             VoltType valueType) {
+        //* enable to debug */ System.out.println("DEBUG: addPartitioningExpression(" + fullColumnName + ", " + constExpr + ")");
         if (m_fullColumnName == null) {
             m_fullColumnName = fullColumnName;
         }
@@ -379,21 +386,22 @@ public class StatementPartitioning implements Cloneable{
      *         -- partitioned tables that aren't joined or filtered by the same value.
      *         The caller can raise an alarm if there is more than one.
      */
-    public void analyzeForMultiPartitionAccess(Collection<StmtTableScan> collection,
-            HashMap<AbstractExpression, Set<AbstractExpression>> valueEquivalence)
-    {
+    public void analyzeForMultiPartitionAccess(Collection<StmtTableScan> scans,
+            HashMap<AbstractExpression, Set<AbstractExpression>> valueEquivalence) {
+        //* enable to debug */ System.out.println("DEBUG: analyze4MPAccess w/ scans:" + scans.size() + " filters:" + valueEquivalence.size());
         TupleValueExpression tokenPartitionKey = null;
-        Set< Set<AbstractExpression> > eqSets = new HashSet< Set<AbstractExpression> >();
+        Set< Set<AbstractExpression> > eqSets = new HashSet< >();
         int unfilteredPartitionKeyCount = 0;
 
         // reset this flag to forget the last result of the multiple partition access path.
         // AdHoc with parameters will call this function at least two times
         // By default this flag should be true.
-        m_joinValid = true;
+        setJoinValid(true);
+        setJoinInvalidReason(null);
         boolean subqueryHasReceiveNode = false;
         boolean hasPartitionedTableJoin = false;
         // Iterate over the tables to collect partition columns.
-        for (StmtTableScan tableScan : collection) {
+        for (StmtTableScan tableScan : scans) {
             // Replicated tables don't need filter coverage.
             if (tableScan.getIsReplicated()) {
                 continue;
@@ -410,13 +418,16 @@ public class StatementPartitioning implements Cloneable{
             if (tableScan instanceof StmtSubqueryScan) {
                 StmtSubqueryScan subScan = (StmtSubqueryScan) tableScan;
                 subScan.promoteSinglePartitionInfo(valueEquivalence, eqSets);
-
-                if (subScan.hasReceiveNode()) {
+                CompiledPlan subqueryPlan = subScan.getBestCostPlan();
+                if (( ! subScan.canRunInOneFragment()) ||
+                        ((subqueryPlan != null) &&
+                         subqueryPlan.rootPlanGraph.hasAnyNodeOfClass(AbstractReceivePlanNode.class))) {
                     if (subqueryHasReceiveNode) {
                         // Has found another subquery with receive node on the same level
                         // Not going to support this kind of subquery join with 2 fragment plan.
-                        m_joinValid = false;
-
+                        setJoinValid(false);
+                        setJoinInvalidReason("This multipartition query is not plannable.  "
+                                             + "It has a subquery which cannot be single partition.");
                         // Still needs to count the independent partition tables
                         break;
                     }
@@ -461,14 +472,18 @@ public class StatementPartitioning implements Cloneable{
         } // end for each table StmtTableScan in the collection
 
         m_countOfIndependentlyPartitionedTables = eqSets.size() + unfilteredPartitionKeyCount;
+        //* enable to debug */ System.out.println("DEBUG: analyze4MPAccess found: " + m_countOfIndependentlyPartitionedTables + " = " + eqSets.size() + " + " + unfilteredPartitionKeyCount);
         if (m_countOfIndependentlyPartitionedTables > 1) {
-            m_joinValid = false;
+            setJoinValid(false);
+            setJoinInvalidReason("This query is not plannable.  "
+                                 + "The planner cannot guarantee that all rows would be in a single partition.");
         }
 
         // This is the case that subquery with receive node join with another partition table
         // on outer level. Not going to support this kind of join.
         if (subqueryHasReceiveNode && hasPartitionedTableJoin) {
-            m_joinValid = false;
+            setJoinValid(false);
+            setJoinInvalidReason("This query is not plannable.  It has a subquery which needs cross-partition access.");
         }
 
         if ((unfilteredPartitionKeyCount == 0) && (eqSets.size() == 1)) {
@@ -489,6 +504,18 @@ public class StatementPartitioning implements Cloneable{
 
     public boolean isJoinValid() {
         return m_joinValid;
+    }
+
+    public String getJoinInvalidReason() {
+        return m_recentInvalidReason;
+    }
+
+    public void setJoinValid(boolean isValid) {
+        m_joinValid = isValid;
+    }
+
+    public void setJoinInvalidReason(String why) {
+        m_recentInvalidReason = why;
     }
 
     private static boolean canCoverPartitioningColumn(TupleValueExpression candidatePartitionKey,
@@ -517,6 +544,9 @@ public class StatementPartitioning implements Cloneable{
     }
 
     /**
+     * This simple analysis counts the number of partitioned tables in the join tree
+     * of a query, and initializes a guess for the count of independently partitioned tables.
+     *
      * @param tableCacheList
      * @throws PlanningErrorException
      */
@@ -555,7 +585,8 @@ public class StatementPartitioning implements Cloneable{
         m_inferredParameterIndex = -1;
         m_inferredValue = null;
         m_isDML = false;
-        m_joinValid = true;
+        setJoinValid(true);
+        setJoinInvalidReason(null);
         m_partitionColForDML = null;
     }
 

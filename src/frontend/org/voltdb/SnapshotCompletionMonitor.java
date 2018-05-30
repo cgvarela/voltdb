@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -37,9 +37,12 @@ import org.json_voltpatches.JSONObject;
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.utils.CoreUtils;
 import org.voltcore.utils.Pair;
+import org.voltdb.DRConsumerDrIdTracker.DRSiteDrIdTracker;
 import org.voltdb.SnapshotCompletionInterest.SnapshotCompletionEvent;
 
 import com.google_voltpatches.common.collect.ImmutableMap;
+import org.voltdb.sysprocs.saverestore.SnapshotUtil;
+import org.voltdb.sysprocs.saverestore.SnapshotPathType;
 
 public class SnapshotCompletionMonitor {
     private static final VoltLogger SNAP_LOG = new VoltLogger("SNAPSHOT");
@@ -158,8 +161,9 @@ public class SnapshotCompletionMonitor {
         JSONObject jsonObj = new JSONObject(new String(data, "UTF-8"));
         long txnId = jsonObj.getLong("txnId");
         int hostCount = jsonObj.getInt("hostCount");
-        String path = jsonObj.getString("path");
-        String nonce = jsonObj.getString("nonce");
+        String path = jsonObj.getString(SnapshotUtil.JSON_PATH);
+        SnapshotPathType stype = SnapshotPathType.valueOf(jsonObj.getString(SnapshotUtil.JSON_PATH_TYPE));
+        String nonce = jsonObj.getString(SnapshotUtil.JSON_NONCE);
         boolean truncation = jsonObj.getBoolean("isTruncation");
         boolean didSucceed = jsonObj.getBoolean("didSucceed");
         // A truncation request ID is not always provided. It's used for
@@ -196,12 +200,15 @@ public class SnapshotCompletionMonitor {
             }
             exportSequenceNumbers = builder.build();
 
+            long clusterCreateTime = jsonObj.optLong("clusterCreateTime", -1);
             Map<Integer, Long> drSequenceNumbers = new HashMap<>();
             JSONObject drTupleStreamJSON = jsonObj.getJSONObject("drTupleStreamStateInfo");
             Iterator<String> partitionKeys = drTupleStreamJSON.keys();
+            int drVersion = 0;
             while (partitionKeys.hasNext()) {
                 String partitionIdString = partitionKeys.next();
                 JSONObject stateInfo = drTupleStreamJSON.getJSONObject(partitionIdString);
+                drVersion = (int)stateInfo.getLong("drVersion");
                 drSequenceNumbers.put(Integer.valueOf(partitionIdString), stateInfo.getLong("sequenceNumber"));
             }
 
@@ -218,25 +225,14 @@ public class SnapshotCompletionMonitor {
              * be used by live rejoin to initialize a starting state for applying DR
              * data
              */
-            Map<Integer, Map<Integer, Pair<Long, Long>>> remoteDCLastIds = new HashMap<>();
-            final JSONObject remoteDCLastIdsObj = jsonObj.getJSONObject("remoteDCLastIds");
-            final Iterator<String> dcIdIter = remoteDCLastIdsObj.keys();
-            while (dcIdIter.hasNext()) {
-                final String dcIdKey = dcIdIter.next();
-
-                final JSONObject dataCenterIds = remoteDCLastIdsObj.getJSONObject(dcIdKey);
-
-                final HashMap<Integer, Pair<Long, Long>> lastSeenIds = new HashMap<>();
-
-                final Iterator<String> partitionKeyIter = dataCenterIds.keys();
-                while (partitionKeyIter.hasNext()) {
-                    final String partitionIdString = partitionKeyIter.next();
-                    JSONObject ids = dataCenterIds.getJSONObject(partitionIdString);
-                    long drId = ids.getLong("drId");
-                    long uniqueId = ids.getLong("uniqueId");
-                    lastSeenIds.put(Integer.valueOf(partitionIdString), Pair.of(drId, uniqueId));
-                }
-                remoteDCLastIds.put(Integer.valueOf(dcIdKey), Collections.unmodifiableMap(lastSeenIds));
+            Map<Integer, Map<Integer, Map<Integer, DRSiteDrIdTracker>>> drMixedClusterSizeConsumerState = new HashMap<>();
+            JSONObject consumerPartitions = jsonObj.getJSONObject("drMixedClusterSizeConsumerState");
+            Iterator<String> cpKeys = consumerPartitions.keys();
+            while (cpKeys.hasNext()) {
+                final String consumerPartitionIdStr = cpKeys.next();
+                final Integer consumerPartitionId = Integer.valueOf(consumerPartitionIdStr);
+                JSONObject siteInfo = consumerPartitions.getJSONObject(consumerPartitionIdStr);
+                drMixedClusterSizeConsumerState.put(consumerPartitionId, ExtensibleSnapshotDigestData.buildConsumerSiteDrIdTrackersFromJSON(siteInfo, false));
             }
 
             Iterator<SnapshotCompletionInterest> iter = m_interests.iterator();
@@ -246,6 +242,7 @@ public class SnapshotCompletionMonitor {
                     interest.snapshotCompleted(
                             new SnapshotCompletionEvent(
                                 path,
+                                stype,
                                 nonce,
                                 txnId,
                                 partitionTxnIdsMap,
@@ -254,7 +251,9 @@ public class SnapshotCompletionMonitor {
                                 truncReqId,
                                 exportSequenceNumbers,
                                 Collections.unmodifiableMap(drSequenceNumbers),
-                                Collections.unmodifiableMap(remoteDCLastIds)));
+                                Collections.unmodifiableMap(drMixedClusterSizeConsumerState),
+                                drVersion,
+                                clusterCreateTime));
                 } catch (Exception e) {
                     SNAP_LOG.warn("Exception while executing snapshot completion interest", e);
                 }

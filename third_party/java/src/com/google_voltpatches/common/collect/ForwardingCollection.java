@@ -18,10 +18,9 @@ package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
 import com.google_voltpatches.common.base.Objects;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Collection;
 import java.util.Iterator;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -37,22 +36,26 @@ import javax.annotation_voltpatches.Nullable;
  * override {@code addAll} as well, either providing your own implementation, or
  * delegating to the provided {@code standardAddAll} method.
  *
+ * <p><b>{@code default} method warning:</b> This class does <i>not</i> forward calls to {@code
+ * default} methods. Instead, it inherits their default implementations. When those implementations
+ * invoke methods, they invoke methods on the {@code ForwardingCollection}.
+ *
  * <p>The {@code standard} methods are not guaranteed to be thread-safe, even
  * when all of the methods that they depend on are thread-safe.
  *
  * @author Kevin Bourrillion
  * @author Louis Wasserman
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
-public abstract class ForwardingCollection<E> extends ForwardingObject
-    implements Collection<E> {
-  // TODO(user): identify places where thread safety is actually lost
+public abstract class ForwardingCollection<E> extends ForwardingObject implements Collection<E> {
+  // TODO(lowasser): identify places where thread safety is actually lost
 
   /** Constructor for use by subclasses. */
   protected ForwardingCollection() {}
 
-  @Override protected abstract Collection<E> delegate();
+  @Override
+  protected abstract Collection<E> delegate();
 
   @Override
   public Iterator<E> iterator() {
@@ -64,6 +67,7 @@ public abstract class ForwardingCollection<E> extends ForwardingObject
     return delegate().size();
   }
 
+  @CanIgnoreReturnValue
   @Override
   public boolean removeAll(Collection<?> collection) {
     return delegate().removeAll(collection);
@@ -79,11 +83,13 @@ public abstract class ForwardingCollection<E> extends ForwardingObject
     return delegate().contains(object);
   }
 
+  @CanIgnoreReturnValue
   @Override
   public boolean add(E element) {
     return delegate().add(element);
   }
 
+  @CanIgnoreReturnValue
   @Override
   public boolean remove(Object object) {
     return delegate().remove(object);
@@ -94,11 +100,13 @@ public abstract class ForwardingCollection<E> extends ForwardingObject
     return delegate().containsAll(collection);
   }
 
+  @CanIgnoreReturnValue
   @Override
   public boolean addAll(Collection<? extends E> collection) {
     return delegate().addAll(collection);
   }
 
+  @CanIgnoreReturnValue
   @Override
   public boolean retainAll(Collection<?> collection) {
     return delegate().retainAll(collection);
@@ -114,6 +122,7 @@ public abstract class ForwardingCollection<E> extends ForwardingObject
     return delegate().toArray();
   }
 
+  @CanIgnoreReturnValue
   @Override
   public <T> T[] toArray(T[] array) {
     return delegate().toArray(array);

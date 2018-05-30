@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -29,7 +29,6 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.utils.CoreUtils;
-
 import org.voltdb.ClientResponseImpl;
 import org.voltdb.VoltTable;
 import org.voltdb.VoltType;
@@ -37,11 +36,13 @@ import org.voltdb.VoltTypeException;
 import org.voltdb.client.ClientImpl;
 import org.voltdb.client.ClientResponse;
 
+import com.google_voltpatches.common.collect.ImmutableSortedMap;
+
 /**
  * VoltBulkLoader is meant to run for long periods of time. Multiple threads can
  * operate on a single instance of the VoltBulkLoader to feed and bulk load a
  * single table. It is also possible for multiple instances of the
- * VoltBulkLoader to operate concurrently no the same table or different tables
+ * VoltBulkLoader to operate concurrently on the same table or different tables
  * as long as they share the same Client instance.
  *
  * All instances of VoltBulkLoader using a common Client share a pool of threads
@@ -63,6 +64,8 @@ public class VoltBulkLoader {
     final ClientImpl m_clientImpl;
     // Batch size requested for this instance of VoltBulkLoader
     final int m_maxBatchSize;
+    // Flag to indicate to use upsert instead of insert
+    final boolean m_upsert;
     // Callback used to notify users of failed row inserts
     final BulkLoaderFailureCallBack m_notificationCallBack;
     //Array of PerPartitionTables from which this VoltBulkLoader chooses to put a row in
@@ -107,10 +110,20 @@ public class VoltBulkLoader {
 
     // Constructor allocated through the Client to ensure consistency of VoltBulkLoaderGlobals
     public VoltBulkLoader(BulkLoaderState vblGlobals, String tableName, int maxBatchSize,
-                BulkLoaderFailureCallBack blfcb) throws Exception {
+            BulkLoaderFailureCallBack blfcb) throws Exception {
+        this(vblGlobals,tableName,maxBatchSize,false,blfcb);
+    }
+
+    public VoltBulkLoader(BulkLoaderState vblGlobals, String tableName, int maxBatchSize, boolean upsertMode,
+            BulkLoaderFailureCallBack failureCallback) throws Exception {
+        this(vblGlobals, tableName, maxBatchSize, upsertMode, failureCallback, null);
+    }
+    public VoltBulkLoader(BulkLoaderState vblGlobals, String tableName, int maxBatchSize, boolean upsertMode,
+                BulkLoaderFailureCallBack failureCallback, BulkLoaderSuccessCallback successCallback) throws Exception {
         this.m_clientImpl = vblGlobals.m_clientImpl;
         this.m_maxBatchSize = maxBatchSize;
-        this.m_notificationCallBack = blfcb;
+        this.m_notificationCallBack = failureCallback;
+        this.m_upsert = upsertMode;
 
         m_vblGlobals = vblGlobals;
 
@@ -126,6 +139,13 @@ public class VoltBulkLoader {
         m_partitionedColumnIndex = -1;
         m_partitionColumnType = VoltType.NULL;
 
+        // Check the primary key if upsert is enabled
+        VoltTable pkeyInfo = null;
+        if (m_upsert) {
+            pkeyInfo = m_clientImpl.callProcedure("@SystemCatalog",
+                "PRIMARYKEYS").getResults()[0];
+        }
+
         int sleptTimes = 0;
         while (!m_clientImpl.isHashinatorInitialized() && sleptTimes < 120) {
             try {
@@ -136,6 +156,23 @@ public class VoltBulkLoader {
 
         if (sleptTimes >= 120) {
             throw new IllegalStateException("VoltBulkLoader unable to start due to uninitialized Client.");
+        }
+
+        if (m_upsert) {
+            boolean hasPkey = false;
+            while (pkeyInfo.advanceRow()) {
+                String table = pkeyInfo.getString("TABLE_NAME");
+                if (tableName.equalsIgnoreCase(table)) {
+                    hasPkey = true;
+                    break;
+                }
+            }
+            if (!hasPkey) {
+                //VoltBulkLoader will exit.
+                throw new IllegalArgumentException(String.format("The --update argument cannot be used because the table %s does not have a primary key. "
+                        + "Either remove the --update argument or add a primary key to the table.",
+                        tableName));
+            }
         }
 
         while (procInfo.advanceRow()) {
@@ -168,6 +205,7 @@ public class VoltBulkLoader {
             VoltTable.ColumnInfo ci = new VoltTable.ColumnInfo(cname, type);
             m_colInfo[i] = ci;
         }
+
 
         int sitesPerHost = 1;
         int kfactor = 0;
@@ -209,7 +247,7 @@ public class VoltBulkLoader {
             // Set up the BulkLoaderPerPartitionTables
             for(int i=m_firstPartitionTable; i<=m_lastPartitionTable; i++) {
                 m_partitionTable[i] = new PerPartitionTable(m_clientImpl, m_tableName,
-                        i, i == m_maxPartitionProcessors-1, this, maxBatchSize);
+                        i, i == m_maxPartitionProcessors-1, this, maxBatchSize, successCallback);
             }
             loaderList = new ArrayList<VoltBulkLoader>();
             loaderList.add(this);
@@ -361,29 +399,40 @@ public class VoltBulkLoader {
 
         // Remove this VoltBulkLoader from the active set.
         synchronized (m_vblGlobals) {
+            drain();
+
             List<VoltBulkLoader> loaderList = m_vblGlobals.m_TableNameToLoader.get(m_tableName);
             if (loaderList.size() == 1) {
                 m_vblGlobals.m_TableNameToLoader.remove(m_tableName);
-            }
-            else
-                loaderList.remove(this);
 
-            // First flush the tables
-            // keep one PerPartitionTable around so we can use it as the poisoned
-            // table for the PartitionProcessors
-            drain();
-            for (PerPartitionTable ppt : m_partitionTable) {
-                if (ppt != null) {
-                    try {
-                        ppt.shutdown();
-                    } catch (Exception e) {
-                        loaderLog.error("Failed to close processor for partition " + ppt.m_partitionId, e);
+                // We are the last loader for this table,
+                // shutdown the PerPartitionTable instances
+                for (PerPartitionTable ppt : m_partitionTable) {
+                    if (ppt != null) {
+                        try {
+                            ppt.shutdown();
+                        } catch (Exception e) {
+                            loaderLog.error("Failed to close processor for partition " + ppt.m_partitionId, e);
+                        }
                     }
                 }
+            } else {
+                loaderList.remove(this);
             }
         }
 
         assert m_outstandingRowCount.get() == 0;
+    }
+
+    // Let all partition table continue their pending works
+    public void resumeLoading() {
+        for (PerPartitionTable ppt : m_partitionTable) {
+            if (ppt != null) {
+                synchronized (ppt) {
+                    ppt.notifyAll();
+                }
+            }
+        }
     }
 
     /**
@@ -414,7 +463,10 @@ public class VoltBulkLoader {
     }
 
     public VoltType[] getColumnTypes() {
-        return (VoltType[])m_mappedColumnTypes.values().toArray(new VoltType[m_mappedColumnTypes.size()]);
+        return m_mappedColumnTypes.values().toArray(new VoltType[m_mappedColumnTypes.size()]);
     }
 
+    public Map<Integer, String> getColumnNames() {
+        return ImmutableSortedMap.copyOf(m_colNames);
+    }
 }

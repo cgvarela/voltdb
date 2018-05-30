@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -28,6 +28,7 @@ import org.voltdb.expressions.AbstractExpression;
 import org.voltdb.expressions.ComparisonExpression;
 import org.voltdb.expressions.ExpressionUtil;
 import org.voltdb.expressions.TupleValueExpression;
+import org.voltdb.planner.AbstractParsedStmt;
 import org.voltdb.planner.parseinfo.StmtTableScan;
 import org.voltdb.plannodes.AbstractPlanNode;
 import org.voltdb.plannodes.AbstractScanPlanNode;
@@ -44,22 +45,22 @@ import org.voltdb.utils.CatalogUtil;
 public class ReplaceWithIndexLimit extends MicroOptimization {
 
     // for debug purpose only, this might not be called
-    int indent = 0;
-    protected void recursivelyPrint(AbstractPlanNode node, StringBuilder sb)
-    {
+    protected void recursivelyPrint(AbstractPlanNode node, StringBuilder sb) {
+        recursivelyPrint(node, sb, 0);
+    }
+
+    private void recursivelyPrint(AbstractPlanNode node, StringBuilder sb, int indent) {
         for (int i = 0; i < indent; i++) {
             sb.append("\t");
         }
         sb.append(node.toJSONString() + "\n");
-        indent++;
         if (node.getChildCount() > 0) {
-            recursivelyPrint(node.getChild(0), sb);
+            recursivelyPrint(node.getChild(0), sb, indent++);
         }
     }
 
     @Override
-    protected AbstractPlanNode recursivelyApply(AbstractPlanNode plan)
-    {
+    protected AbstractPlanNode recursivelyApply(AbstractPlanNode plan, AbstractParsedStmt parsedStmt) {
         assert(plan != null);
 
         // depth first:
@@ -77,7 +78,7 @@ public class ReplaceWithIndexLimit extends MicroOptimization {
 
         for (AbstractPlanNode child : children) {
             // TODO this will break when children feed multiple parents
-            AbstractPlanNode newChild = recursivelyApply(child);
+            AbstractPlanNode newChild = recursivelyApply(child, parsedStmt);
             // Do a graft into the (parent) plan only if a replacement for a child was found.
             if (newChild == child) {
                 continue;
@@ -125,13 +126,13 @@ public class ReplaceWithIndexLimit extends MicroOptimization {
                 return plan;
             }
 
-            if (((AbstractScanPlanNode)child).isSubQuery()) {
+            if (! ((AbstractScanPlanNode)child).isPersistentTableScan()) {
                 return plan;
             }
 
             // create an empty bindingExprs list, used for store (possible) bindings for adHoc query
             ArrayList<AbstractExpression> bindings = new ArrayList<AbstractExpression>();
-            Index ret = findQualifiedIndex(((SeqScanPlanNode)child), aggExpr, bindings);
+            Index ret = findQualifiedIndex(((SeqScanPlanNode)child), aggExpr, bindings, parsedStmt);
 
             if (ret == null) {
                 return plan;
@@ -191,7 +192,7 @@ public class ReplaceWithIndexLimit extends MicroOptimization {
         // there are extra startCondition / endCondition, some filters are not equality
         // 2. Handle equality filters and one other comparison operator (<, <=, >, >=), see comments below
         if (ispn.getLookupType() != IndexLookupType.EQ &&
-                Math.abs(ispn.getSearchKeyExpressions().size() - ExpressionUtil.uncombine(ispn.getEndExpression()).size()) > 1) {
+                Math.abs(ispn.getSearchKeyExpressions().size() - ExpressionUtil.uncombinePredicate(ispn.getEndExpression()).size()) > 1) {
             return plan;
         }
 
@@ -201,41 +202,96 @@ public class ReplaceWithIndexLimit extends MicroOptimization {
         List<AbstractExpression> exprs;
         int numOfSearchKeys = ispn.getSearchKeyExpressions().size();
         if (ispn.getLookupType() == IndexLookupType.LT || ispn.getLookupType() == IndexLookupType.LTE) {
-            exprs = ExpressionUtil.uncombine(ispn.getInitialExpression());
+            exprs = ExpressionUtil.uncombinePredicate(ispn.getInitialExpression());
             numOfSearchKeys -= 1;
         } else {
-            exprs = ExpressionUtil.uncombine(ispn.getEndExpression());
+            exprs = ExpressionUtil.uncombinePredicate(ispn.getEndExpression());
         }
         int numberOfExprs = exprs.size();
 
-        // If there is only 1 difference between searchkeyExprs and endExprs,
-        // 1. trivial filters can be discarded, 2 possibilities:
-        //      a. SELECT MIN(X) FROM T WHERE [other prefix filters] X < / <= ?
-        //         <=> SELECT MIN(X) FROM T WHERE [other prefix filters] && the X < / <= ? filter
-        //      b. SELECT MAX(X) FROM T WHERE X > / >= ?
-        //         <=> SELECT MAX(X) FROM T with post-filter
-        // 2. filter should act as equality filter, 2 possibilities
-        //      SELECT MIN(X) FROM T WHERE [other prefix filters] X > / >= ?
-        //      SELECT MAX(X) FROM T WHERE [other prefix filters] X < / <= ?
-
-        // check if there is other filters for SELECT MAX(X) FROM T WHERE [other prefix filter AND ] X > / >= ?
-        // but we should allow SELECT MAX(X) FROM T WHERE X = ?
-        if (sortDirection == SortDirectionType.DESC && ispn.getSortDirection() == SortDirectionType.INVALID) {
-            if (numberOfExprs > 1 ||
-                    (numberOfExprs == 1 && aggExpr.bindingToIndexedExpression(exprs.get(0).getLeft()) == null)) {
+        /* Retrieve the index expressions from the target index. (ENG-8819, Ethan)
+         * This is because we found that for the following two queries:
+         *     #1: explain select max(c2/2) from t where c1=1 and c2/2<=3;
+         *     #2: explain select max(c2/2) from t where c1=1 and c2/2<=?;
+         * We can get an inline limit 1 for #2 but not for #1. This is because all constants in #1 got parameterized.
+         * The result is that the query cannot pass the bindingToIndexedExpression() tests below
+         * because we lost all the constant value expressions (cannot attempt to bind a pve to a pve!).
+         * Those constant values expressions can only be accessed from the idnex.
+         * We will not add those bindings to the ispn.getBindings() here because they will be added anyway in checkIndex().
+         * PS: For this case (i.e. index on expressions), checkIndex() will call checkExpressionIndex(),
+         * where bindings will be added.
+         */
+        Index indexToUse = ispn.getCatalogIndex();
+        String tableAlias = ispn.getTargetTableAlias();
+        List<AbstractExpression> indexedExprs = null;
+        if ( ! indexToUse.getExpressionsjson().isEmpty() ) {
+            StmtTableScan tableScan = parsedStmt.getStmtTableScanByAlias(tableAlias);
+            try {
+                indexedExprs = AbstractExpression.fromJSONArrayString(indexToUse.getExpressionsjson(), tableScan);
+            } catch (JSONException e) {
+                e.printStackTrace();
+                assert(false);
                 return plan;
+            }
+        }
+
+        /* If there is only 1 difference between searchkeyExprs and endExprs,
+         * 1. trivial filters can be discarded, 2 possibilities:
+         *      a. SELECT MIN(X) FROM T WHERE [other prefix filters] X < / <= ?
+         *         <=> SELECT MIN(X) FROM T WHERE [other prefix filters] && the X < / <= ? filter
+         *      b. SELECT MAX(X) FROM T WHERE X > / >= ?
+         *         <=> SELECT MAX(X) FROM T with post-filter
+         * 2. filter should act as equality filter, 2 possibilities
+         *      SELECT MIN(X) FROM T WHERE [other prefix filters] X > / >= ?
+         *      SELECT MAX(X) FROM T WHERE [other prefix filters] X < / <= ?
+
+         * check if there is other filters for SELECT MAX(X) FROM T WHERE [other prefix filter AND ] X > / >= ?
+         * but we should allow SELECT MAX(X) FROM T WHERE X = ?
+
+         * This is for queries having MAX() but no ORDER BY. (ENG-8819, Ethan)
+         * sortDirection == DESC if max, ASC if min. ispn.getSortDirection() == INVALID if no ORDER BY. */
+        if (sortDirection == SortDirectionType.DESC && ispn.getSortDirection() == SortDirectionType.INVALID) {
+            /* numberOfExprs = exprs.size(), exprs are initial expressions for reversed index scans (lookupType LT, LTE),
+             * are end expressions for forward index scans (lookupType GT, GTE, EQ).
+             * Note, lookupType doesn't decide the scan direction for sure. MIN(X) where X < ? is still a forward scan.
+             * X < ? will be a post filter for the scan rather than an initial expression. */
+            if (numberOfExprs == 1) {
+                // e.g.: explain select max(c2/2) from t where c2/2<=3;
+                // In this case, as long as the where condition (exprs.get(0)) matches the aggregation argument, continue.
+                AbstractExpression exprToBind = indexedExprs == null ? exprs.get(0).getLeft() : indexedExprs.get(0);
+                if ( aggExpr.bindingToIndexedExpression(exprToBind) == null ) {
+                    return plan;
+                }
+            }
+            else if (numberOfExprs > 1) {
+                // ENG-4016: Optimization for query SELECT MAX(X) FROM T WHERE [other prefix filters] X < / <= ?
+                // Just keep trying, don't return early.
+                boolean earlyReturn = true;
+                for (int i=0; i<numberOfExprs; ++i) {
+                    AbstractExpression expr = exprs.get(i);
+                    AbstractExpression indexedExpr = indexedExprs == null ? expr.getLeft() : indexedExprs.get(i);
+                    if ( aggExpr.bindingToIndexedExpression(indexedExpr) != null &&
+                            (expr.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO ||
+                             expr.getExpressionType() == ExpressionType.COMPARE_LESSTHAN ||
+                             expr.getExpressionType() == ExpressionType.COMPARE_EQUAL) ) {
+                        earlyReturn = false;
+                        break;
+                    }
+                }
+                if (earlyReturn) { return plan; }
             }
         }
 
         // have an upper bound: # of endingExpr is more than # of searchExpr
         if (numberOfExprs > numOfSearchKeys) {
+            AbstractExpression lastEndExpr = exprs.get(numberOfExprs - 1);
             // check last ending condition, see whether it is
             //      SELECT MIN(X) FROM T WHERE [other prefix filters] X < / <= ? or
             // other filters will be checked later
-            AbstractExpression lastEndExpr = exprs.get(numberOfExprs - 1);
+            AbstractExpression exprToBind = indexedExprs == null ? lastEndExpr.getLeft() : indexedExprs.get(numberOfExprs - 1);
             if ((lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHAN ||
                  lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO)
-                    && lastEndExpr.getLeft().equals(aggExpr)) {
+                    && aggExpr.bindingToIndexedExpression(exprToBind) != null) {
                 exprs.remove(lastEndExpr);
             }
         }
@@ -243,9 +299,7 @@ public class ReplaceWithIndexLimit extends MicroOptimization {
         // do not aggressively evaluate all indexes, just examine the index currently in use;
         // because for all qualified indexes, one access plan must have been generated already,
         // and we can take advantage of that
-        if (!checkIndex(ispn.getCatalogIndex(), aggExpr, exprs, ispn.getBindings(), ispn.getTargetTableAlias())) {
-            return plan;
-        } else {
+        if (checkIndex(ispn.getCatalogIndex(), aggExpr, exprs, ispn.getBindings(), tableAlias, parsedStmt)) {
             // we know which end we want to fetch, set the sort direction
             ispn.setSortDirection(sortDirection);
 
@@ -263,7 +317,8 @@ public class ReplaceWithIndexLimit extends MicroOptimization {
                     (ispn.getLookupType() == IndexLookupType.LT || ispn.getLookupType() == IndexLookupType.LTE)){
                 ispn.setLookupType(IndexLookupType.GTE);
                 ispn.removeLastSearchKey();
-                ispn.addEndExpression(ExpressionUtil.uncombine(ispn.getInitialExpression()).get(numberOfExprs - 1));
+                ispn.addEndExpression(ExpressionUtil.uncombinePredicate(ispn.getInitialExpression()).get(numberOfExprs - 1));
+                ispn.setSkipNullPredicate(numOfSearchKeys);
                 ispn.resetPredicate();
             }
             // add an inline LIMIT plan node to this index scan plan node
@@ -273,20 +328,14 @@ public class ReplaceWithIndexLimit extends MicroOptimization {
             ispn.addInlinePlanNode(lpn);
 
             // ENG-1565: For SELECT MAX(X) FROM T WHERE X > / >= ?, turn the pre-filter to post filter.
-            // There are two choices:
-            // AggregatePlanNode                AggregatePlanNode
-            //  |__ IndexScanPlanNode       =>      |__FilterPlanNode
-            //                                              |__IndexScanPlanNode with no filter
-            //                                                      |__LimitPlanNode
-            //                          OR
+            // The current approach is:
             // AggregatePlanNode                AggregatePlanNode with filter
             //  |__ IndexScanPlanNode       =>      |__IndexScanPlanNode with no filter
             //                                              |__LimitPlanNode
-            // For now, we take the second approach.
             if (sortDirection == SortDirectionType.DESC &&
                     !ispn.getSearchKeyExpressions().isEmpty() &&
                     exprs.isEmpty() &&
-                    ExpressionUtil.uncombine(ispn.getInitialExpression()).isEmpty()) {
+                    ExpressionUtil.uncombinePredicate(ispn.getInitialExpression()).isEmpty()) {
                 AbstractExpression newPredicate = new ComparisonExpression();
                 if (ispn.getLookupType() == IndexLookupType.GT)
                     newPredicate.setExpressionType(ExpressionType.COMPARE_GREATERTHAN);
@@ -298,19 +347,22 @@ public class ReplaceWithIndexLimit extends MicroOptimization {
                 ispn.clearSearchKeyExpression();
                 aggplan.setPrePredicate(newPredicate);
             }
-
-            return plan;
         }
+        return plan;
     }
 
-    private Index findQualifiedIndex(SeqScanPlanNode seqScan, AbstractExpression aggExpr, List<AbstractExpression> bindingExprs) {
+    private Index findQualifiedIndex(SeqScanPlanNode seqScan,
+                                     AbstractExpression aggExpr,
+                                     List<AbstractExpression> bindingExprs,
+                                     AbstractParsedStmt parsedStmt) {
         String tableName = seqScan.getTargetTableName();
-        CatalogMap<Index> allIndexes = m_parsedStmt.m_db.getTables().get(tableName).getIndexes();
+        CatalogMap<Index> allIndexes = parsedStmt.m_db.getTables().get(tableName).getIndexes();
 
         String fromTableAlias = seqScan.getTargetTableAlias();
 
         for (Index index : allIndexes) {
-            if (checkIndex(index, aggExpr, new ArrayList<AbstractExpression>(), bindingExprs, fromTableAlias)) {
+            if (checkIndex(index, aggExpr, new ArrayList<AbstractExpression>(),
+                           bindingExprs, fromTableAlias, parsedStmt)) {
                 return index;
             }
         }
@@ -318,7 +370,10 @@ public class ReplaceWithIndexLimit extends MicroOptimization {
     }
 
     private boolean checkIndex(Index index, AbstractExpression aggExpr,
-            List<AbstractExpression> filterExprs, List<AbstractExpression> bindingExprs, String fromTableAlias) {
+                               List<AbstractExpression> filterExprs,
+                               List<AbstractExpression> bindingExprs,
+                               String fromTableAlias,
+                               AbstractParsedStmt parsedStmt) {
 
         if (!IndexType.isScannable(index.getType())) {
             return false;
@@ -342,8 +397,7 @@ public class ReplaceWithIndexLimit extends MicroOptimization {
         } else {
             // either pure expression index or mix of expressions and simple columns
             List<AbstractExpression> indexedExprs = null;
-            StmtTableScan tableScan = m_parsedStmt.m_tableAliasMap.get(fromTableAlias);
-
+            StmtTableScan tableScan = parsedStmt.getStmtTableScanByAlias(fromTableAlias);
             try {
                 indexedExprs = AbstractExpression.fromJSONArrayString(exprsjson, tableScan);
             } catch (JSONException e) {

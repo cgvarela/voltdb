@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -118,6 +118,9 @@ public class AsyncBenchmark {
         @Option(desc = "Whether to preload a specified number of keys and values.")
         boolean preload = true;
 
+        @Option(desc = "Fraction of ops that are to STORE (vs STORER).")
+        double partrepratio = 1.00;
+
         @Option(desc = "Fraction of ops that are gets (vs puts).")
         double getputratio = 0.90;
 
@@ -144,6 +147,12 @@ public class AsyncBenchmark {
 
         @Option(desc = "Filename to write raw summary statistics to.")
         String statsfile = "";
+
+        @Option(desc = "Enable topology awareness")
+        boolean topologyaware = false;
+
+        @Option(desc = "Enable SSL, Optionally provide configuration file.")
+        String sslfile = "";
 
         @Override
         public void validate() {
@@ -189,7 +198,15 @@ public class AsyncBenchmark {
         this.config = config;
 
         ClientConfig clientConfig = new ClientConfig("", "", new StatusListener());
+        if (config.sslfile.trim().length() > 0) {
+            clientConfig.setTrustStoreConfigFromPropertyFile(config.sslfile);
+            clientConfig.enableSSL();
+        }
         clientConfig.setMaxTransactionsPerSecond(config.ratelimit);
+
+        if (config.topologyaware) {
+            clientConfig.setTopologyChangeAware(true);
+        }
 
         client = ClientFactory.createClient(clientConfig);
 
@@ -243,20 +260,24 @@ public class AsyncBenchmark {
         System.out.println("Connecting to VoltDB...");
 
         String[] serverArray = servers.split(",");
-        final CountDownLatch connections = new CountDownLatch(serverArray.length);
+        if (config.topologyaware) {
+            connectToOneServerWithRetry(serverArray[0]);
+        } else {
+            final CountDownLatch connections = new CountDownLatch(serverArray.length);
 
-        // use a new thread to connect to each server
-        for (final String server : serverArray) {
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    connectToOneServerWithRetry(server);
-                    connections.countDown();
-                }
-            }).start();
+            // use a new thread to connect to each server
+            for (final String server : serverArray) {
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        connectToOneServerWithRetry(server);
+                        connections.countDown();
+                    }
+                }).start();
+            }
+            // block until all have connected
+            connections.await();
         }
-        // block until all have connected
-        connections.await();
     }
 
     /**
@@ -443,10 +464,18 @@ public class AsyncBenchmark {
         if (config.preload) {
             System.out.println("Preloading data store...");
             for(int i=0; i < config.poolsize; i++) {
+                String keyStr = String.format(processor.KeyFormat, i);
+                byte[] valArr = processor.generateForStore().getStoreValue();
+                if (config.partrepratio != 1.00) {
+                    client.callProcedure(new NullCallback(),
+                                         "STORER.upsert",
+                                         keyStr,
+                                         valArr);
+                }
                 client.callProcedure(new NullCallback(),
                                      "STORE.upsert",
-                                     String.format(processor.KeyFormat, i),
-                                     processor.generateForStore().getStoreValue());
+                                     keyStr,
+                                     valArr);
             }
             client.drain();
             System.out.println("Preloading complete.\n");
@@ -464,12 +493,18 @@ public class AsyncBenchmark {
             // Decide whether to perform a GET or PUT operation
             if (rand.nextDouble() < config.getputratio) {
                 // Get a key/value pair using inbuilt select procedure, asynchronously
-                client.callProcedure(new NullCallback(), "STORE.select", processor.generateRandomKeyForRetrieval());
+                if (rand.nextDouble() < config.partrepratio) {
+                    client.callProcedure(new NullCallback(), "STORE.select", processor.generateRandomKeyForRetrieval());
+                }
+                else {
+                    client.callProcedure(new NullCallback(), "selectR", processor.generateRandomKeyForRetrieval());
+                }
             }
             else {
+                String table = rand.nextDouble() < config.partrepratio ? "STORE" : "STORER";
                 // Put a key/value pair using inbuilt upsert procedure, asynchronously
                 final PayloadProcessor.Pair pair = processor.generateForStore();
-                client.callProcedure(new NullCallback(), "STORE.upsert", pair.Key, pair.getStoreValue());
+                client.callProcedure(new NullCallback(), table+".upsert", pair.Key, pair.getStoreValue());
             }
         }
 
@@ -489,12 +524,18 @@ public class AsyncBenchmark {
             // Decide whether to perform a GET or PUT operation
             if (rand.nextDouble() < config.getputratio) {
                 // Get a key/value pair using inbuilt select procedure, asynchronously
-                client.callProcedure(new GetCallback(), "STORE.select", processor.generateRandomKeyForRetrieval());
+                if (rand.nextDouble() < config.partrepratio) {
+                    client.callProcedure(new GetCallback(), "STORE.select", processor.generateRandomKeyForRetrieval());
+                }
+                else {
+                    client.callProcedure(new GetCallback(), "selectR", processor.generateRandomKeyForRetrieval());
+                }
             }
             else {
+                String table = rand.nextDouble() < config.partrepratio ? "STORE" : "STORER";
                 // Put a key/value pair using inbuilt upsert procedure, asynchronously
                 final PayloadProcessor.Pair pair = processor.generateForStore();
-                client.callProcedure(new PutCallback(pair), "STORE.upsert", pair.Key, pair.getStoreValue());
+                client.callProcedure(new PutCallback(pair), table+".upsert", pair.Key, pair.getStoreValue());
             }
         }
 

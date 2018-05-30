@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,13 +17,19 @@
 
 package org.voltcore.logging;
 
+import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+
+import org.voltcore.logging.VoltNullLogger.CoreNullLogger;
+import org.voltcore.utils.EstTime;
+import org.voltcore.utils.RateLimitedLogger;
 
 import com.google_voltpatches.common.base.Throwables;
 
@@ -62,10 +68,14 @@ public class VoltLogger {
     // The pool containing the logger thread(s) or null if asynch logging is disabled so that
     // all logging takes place synchronously on the caller's thread.
     private static ExecutorService m_asynchLoggerPool =
+            // out for no async logging
             Boolean.getBoolean("DISABLE_ASYNC_LOGGING") ?
                     null :
-                    new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(),
-                            new LoggerThreadFactory());
+                    // quick out for when we want no logging whatsoever
+                    "true".equals(System.getProperty("voltdb_no_logging")) ?
+                            null :
+                            new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(),
+                                    new LoggerThreadFactory());
 
     /// ShutdownHooks calls shutdownAsynchronousLogging when it is finished running its hooks
     /// just before executing its final action -- which is typically to shutdown Log4J logging.
@@ -86,10 +96,37 @@ public class VoltLogger {
             }
             // Any logging that falls after the official shutdown flush of the
             // asynch logger can just fall back to synchronous on the caller thread.
+            m_asynchLoggerPool.shutdown();
+            try {
+                m_asynchLoggerPool.awaitTermination(365, TimeUnit.DAYS);
+            } catch (InterruptedException e) {
+                throw new RuntimeException("Unable to shutdown VoltLogger", e);
+            }
             m_asynchLoggerPool = null;
         }
     }
 
+    public static synchronized void startAsynchronousLogging(){
+        // quick out for when we want no logging whatsoever
+        if ("true".equals(System.getProperty("voltdb_no_logging"))) {
+            return;
+        }
+
+        if (m_asynchLoggerPool == null && !Boolean.getBoolean("DISABLE_ASYNC_LOGGING")) {
+            m_asynchLoggerPool = new ThreadPoolExecutor(
+               1, 1, 0L, TimeUnit.MILLISECONDS,
+               new LinkedBlockingQueue<Runnable>(),
+               new LoggerThreadFactory());
+            try {
+                m_asynchLoggerPool.submit(new Runnable() {
+                    @Override
+                    public void run() {}
+                }).get();
+            } catch (InterruptedException | ExecutionException e) {
+                throw new RuntimeException("Unable to prime asynchronous logging", e);
+            }
+        }
+    }
 
     /**
      * Abstraction of core functionality shared between Log4j and
@@ -100,6 +137,7 @@ public class VoltLogger {
         public void log(Level level, Object message, Throwable t);
         public void l7dlog(Level level, String key, Object[] params, Throwable t);
         public long getLogLevels(VoltLogger loggers[]);
+        public void setLevel(Level level);
     }
 
     /*
@@ -303,17 +341,22 @@ public class VoltLogger {
         return m_logger.getLogLevels(loggers);
     }
 
+    public void setLevel(Level level) {
+        m_logger.setLevel(level);
+    }
+
     /**
      * Static method to change the Log4j config globally. This fails
      * if you're not using Log4j for now.
      * @param xmlConfig The text of a Log4j config file.
+     * @param voltroot The VoltDB root path
      */
-    public static void configure(String xmlConfig) {
+    public static void configure(String xmlConfig, File voltroot) {
         try {
             Class<?> loggerClz = Class.forName("org.voltcore.logging.VoltLog4jLogger");
             assert(loggerClz != null);
-            Method configureMethod = loggerClz.getMethod("configure", String.class);
-            configureMethod.invoke(null, xmlConfig);
+            Method configureMethod = loggerClz.getMethod("configure", String.class, File.class);
+            configureMethod.invoke(null, xmlConfig, voltroot);
         } catch (Exception e) {}
     }
 
@@ -323,6 +366,12 @@ public class VoltLogger {
      * @param classname The id of the logger.
      */
     public VoltLogger(String classname) {
+        // quick out for when we want no logging whatsoever
+        if ("true".equals(System.getProperty("voltdb_no_logging"))) {
+            m_logger = new CoreNullLogger();
+            return;
+        }
+
         CoreVoltLogger tempLogger = null;
         // try to load the Log4j logger without importing it
         // any exception thrown will just keep going
@@ -342,5 +391,22 @@ public class VoltLogger {
         }
         // set the final variable for the core logger
         m_logger = tempLogger;
+    }
+
+    /**
+     * Constructor used by VoltNullLogger
+     */
+    protected VoltLogger(CoreVoltLogger logger) {
+        assert(logger != null);
+        m_logger = logger;
+    }
+
+    public void rateLimitedLog(long suppressInterval, Level level, Throwable cause, String format, Object...args) {
+        RateLimitedLogger.tryLogForMessage(
+                EstTime.currentTimeMillis(),
+                suppressInterval, TimeUnit.SECONDS,
+                this, level,
+                cause, format, args
+                );
     }
 }

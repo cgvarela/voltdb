@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -43,18 +43,13 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <vector>
-#include <string>
-#include <stack>
 #include "nestloopindexexecutor.h"
-#include "common/debuglog.h"
-#include "common/tabletuple.h"
-#include "common/FatalException.hpp"
 
-#include "execution/VoltDBEngine.h"
-#include "executors/aggregateexecutor.h"
 #include "execution/ProgressMonitorProxy.h"
-#include "expressions/abstractexpression.h"
+
+#include "executors/aggregateexecutor.h"
+#include "executors/indexscanexecutor.h"
+
 #include "expressions/tuplevalueexpression.h"
 
 #include "plannodes/nestloopindexnode.h"
@@ -62,21 +57,25 @@
 #include "plannodes/limitnode.h"
 #include "plannodes/aggregatenode.h"
 
-#include "storage/table.h"
+#include "storage/tabletuplefilter.h"
 #include "storage/persistenttable.h"
 #include "storage/temptable.h"
-#include "storage/tableiterator.h"
-
-#include "indexes/tableindex.h"
 
 using namespace std;
 using namespace voltdb;
 
+const static int8_t UNMATCHED_TUPLE(TableTupleFilter::ACTIVE_TUPLE);
+const static int8_t MATCHED_TUPLE(TableTupleFilter::ACTIVE_TUPLE + 1);
+
 bool NestLoopIndexExecutor::p_init(AbstractPlanNode* abstractNode,
-                                   TempTableLimits* limits)
+                                   const ExecutorVector& executorVector)
 {
     VOLT_TRACE("init NLIJ Executor");
-    assert(limits);
+
+    // Init parent first
+    if (!AbstractJoinExecutor::p_init(abstractNode, executorVector)) {
+        return false;
+    }
 
     NestLoopIndexPlanNode* node = dynamic_cast<NestLoopIndexPlanNode*>(m_abstractNode);
     assert(node);
@@ -86,30 +85,20 @@ bool NestLoopIndexExecutor::p_init(AbstractPlanNode* abstractNode,
     VOLT_TRACE("<NestLoopIndexPlanNode> %s, <IndexScanPlanNode> %s",
                m_abstractNode->debug().c_str(), m_indexNode->debug().c_str());
 
-    m_joinType = node->getJoinType();
     m_lookupType = m_indexNode->getLookupType();
     m_sortDirection = m_indexNode->getSortDirection();
-
-    // Inline aggregation can be serial, partial or hash
-    m_aggExec = voltdb::getInlineAggregateExecutor(m_abstractNode);
 
     //
     // We need exactly one input table and a target table
     //
     assert(node->getInputTableCount() == 1);
 
-    // Create output table based on output schema from the plan
-    setTempOutputTable(limits);
-
-    // output must be a temp table
-    assert(m_tmpOutputTable);
-
     node->getOutputColumnExpressions(m_outputExpressions);
 
     //
     // Make sure that we actually have search keys
     //
-    int num_of_searchkeys = (int)m_indexNode->getSearchKeyExpressions().size();
+    int num_of_searchkeys = static_cast <int> (m_indexNode->getSearchKeyExpressions().size());
     //nshi commented this out in revision 4495 of the old repo in index scan executor
     VOLT_TRACE ("<Nested Loop Index exec, INIT...> Number of searchKeys: %d \n", num_of_searchkeys);
 
@@ -138,12 +127,8 @@ bool NestLoopIndexExecutor::p_init(AbstractPlanNode* abstractNode,
         return false;
     }
 
-    // NULL tuple for outer join
-    if (node->getJoinType() == JOIN_TYPE_LEFT) {
-        Table* inner_out_table = m_indexNode->getOutputTable();
-        assert(inner_out_table);
-        m_null_tuple.init(inner_out_table->schema());
-    }
+    // NULL tuples for left and full joins
+    p_init_null_tuples(node->getInputTable(), m_indexNode->getTargetTable());
 
     m_indexValues.init(index->getKeySchema());
     return true;
@@ -151,38 +136,31 @@ bool NestLoopIndexExecutor::p_init(AbstractPlanNode* abstractNode,
 
 bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
 {
-    NestLoopIndexPlanNode* node = dynamic_cast<NestLoopIndexPlanNode*>(m_abstractNode);
-    assert(node);
+    assert(dynamic_cast<NestLoopIndexPlanNode*>(m_abstractNode));
+    NestLoopIndexPlanNode* node = static_cast<NestLoopIndexPlanNode*>(m_abstractNode);
 
     // output table must be a temp table
     assert(m_tmpOutputTable);
-
-    PersistentTable* inner_table = dynamic_cast<PersistentTable*>(m_indexNode->getTargetTable());
-    assert(inner_table);
+    // target table is a persistent table
+    assert(dynamic_cast<PersistentTable*>(m_indexNode->getTargetTable()));
+    PersistentTable* inner_table = static_cast<PersistentTable*>(m_indexNode->getTargetTable());
 
     TableIndex* index = inner_table->index(m_indexNode->getTargetIndexName());
     assert(index);
     IndexCursor indexCursor(index->getTupleSchema());
-
-    // NULL tuple for outer join
-    if (node->getJoinType() == JOIN_TYPE_LEFT) {
-        Table* inner_out_table = m_indexNode->getOutputTable();
-        assert(inner_out_table);
-        m_null_tuple.init(inner_out_table->schema());
-    }
 
     //outer_table is the input table that have tuples to be iterated
     assert(node->getInputTableCount() == 1);
     Table* outer_table = node->getInputTable();
     assert(outer_table);
     VOLT_TRACE("executing NestLoopIndex with outer table: %s, inner table: %s",
-               outer_table->debug().c_str(), inner_table->debug().c_str());
+               outer_table->debug("").c_str(), inner_table->debug("").c_str());
 
     //
     // Substitute parameter to SEARCH KEY Note that the expressions
     // will include TupleValueExpression even after this substitution
     //
-    int num_of_searchkeys = (int)m_indexNode->getSearchKeyExpressions().size();
+    int num_of_searchkeys = static_cast <int> (m_indexNode->getSearchKeyExpressions().size());
     for (int ctr = 0; ctr < num_of_searchkeys; ctr++) {
         VOLT_TRACE("Search Key[%d]:\n%s",
                    ctr, m_indexNode->getSearchKeyExpressions()[ctr]->debug(true).c_str());
@@ -226,13 +204,13 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
     }
 
     LimitPlanNode* limit_node = dynamic_cast<LimitPlanNode*>(node->getInlinePlanNode(PLAN_NODE_TYPE_LIMIT));
-    int tuple_ctr = 0;
-    int tuple_skipped = 0;
-    int limit = -1;
-    int offset = -1;
+    int limit = CountingPostfilter::NO_LIMIT;
+    int offset = CountingPostfilter::NO_OFFSET;
     if (limit_node) {
         limit_node->getLimitAndOffsetByReference(params, limit, offset);
     }
+    // Init the postfilter
+    CountingPostfilter postfilter(m_tmpOutputTable, where_expression, limit, offset);
 
     //
     // OUTER TABLE ITERATION
@@ -241,34 +219,62 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
     TableTuple inner_tuple(inner_table->schema());
     TableIterator outer_iterator = outer_table->iteratorDeletingAsWeGo();
     int num_of_outer_cols = outer_table->columnCount();
-    assert (outer_tuple.sizeInValues() == outer_table->columnCount());
-    assert (inner_tuple.sizeInValues() == inner_table->columnCount());
-    const TableTuple &null_tuple = m_null_tuple.tuple();
-    int num_of_inner_cols = (m_joinType == JOIN_TYPE_LEFT)? null_tuple.sizeInValues() : 0;
-    ProgressMonitorProxy pmp(m_engine, this, inner_table);
+    assert (outer_tuple.columnCount() == outer_table->columnCount());
+    assert (inner_tuple.columnCount() == inner_table->columnCount());
+    const TableTuple &null_inner_tuple = m_null_inner_tuple.tuple();
+    ProgressMonitorProxy pmp(m_engine->getExecutorContext(), this);
+
+    // The table filter to keep track of inner tuples that don't match any of outer tuples for FULL joins
+    TableTupleFilter innerTableFilter;
+    if (m_joinType == JOIN_TYPE_FULL) {
+        // Prepopulate the set with all inner tuples
+        innerTableFilter.init(inner_table);
+    }
 
     TableTuple join_tuple;
+    // It's not immediately obvious here, so there's some subtlety to
+    // note with respect to the schema of the join_tuple.
+    //
+    // The inner_tuple is used to represent the values from the inner
+    // table in the case of the join predicate passing, and for left
+    // outer joins, the null_tuple is used if there is no match.  Both
+    // of these tuples include the complete schema of the table being
+    // scanned.  The inner table is being scanned via an inlined scan
+    // node, so there is no temp table corresponding to it.
+    //
+    // Predicates that are evaluated against the inner table should
+    // therefore use the complete schema of the table being scanned.
+    //
+    // The join_tuple is the tuple that contains the values that we
+    // actually want to put in the output of the join (or to aggregate
+    // if there is an inlined agg plan node).  This tuple needs to
+    // omit the unused columns from the inner table.  The inlined
+    // index scan itself has an inlined project node that defines the
+    // columns that should be output by the join, and omits those that
+    // are not needed.  So the join_tuple contains the columns we're
+    // using from the outer table, followed by the "projected" schema
+    // for the inlined scan of the inner table.
     if (m_aggExec != NULL) {
         VOLT_TRACE("Init inline aggregate...");
         const TupleSchema * aggInputSchema = node->getTupleSchemaPreAgg();
-        join_tuple = m_aggExec->p_execute_init(params, &pmp, aggInputSchema, m_tmpOutputTable);
-    } else {
+        join_tuple = m_aggExec->p_execute_init(params, &pmp, aggInputSchema, m_tmpOutputTable, &postfilter);
+    }
+    else {
         join_tuple = m_tmpOutputTable->tempTuple();
     }
 
-    bool earlyReturned = false;
-
     VOLT_TRACE("<num_of_outer_cols>: %d\n", num_of_outer_cols);
-    while ((limit == -1 || tuple_ctr < limit) && outer_iterator.next(outer_tuple)) {
+    while (postfilter.isUnderLimit() && outer_iterator.next(outer_tuple)) {
         VOLT_TRACE("outer_tuple:%s",
                    outer_tuple.debug(outer_table->name()).c_str());
         pmp.countdownProgress();
-        // Set the outer tuple columns. Must be outside the inner loop
-        // in case of the empty inner table
+
+        // Set the join tuple columns that originate solely from the outer tuple.
+        // Must be outside the inner loop in case of the empty inner table.
         join_tuple.setNValues(0, outer_tuple, 0, num_of_outer_cols);
 
         // did this loop body find at least one match for this tuple?
-        bool match = false;
+        bool outerMatch = false;
         // For outer joins if outer tuple fails pre-join predicate
         // (join expression based on the outer table only)
         // it can't match any of inner tuples
@@ -286,15 +292,18 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
             // Now use the outer table tuple to construct the search key
             // against the inner table
             //
-            const TableTuple& index_values = m_indexValues.tuple();
+            TableTuple index_values = m_indexValues.tuple();
             index_values.setAllNulls();
             for (int ctr = 0; ctr < activeNumOfSearchKeys; ctr++) {
                 // in a normal index scan, params would be substituted here,
                 // but this scan fills in params outside the loop
+
+                // When any part of the search key is NULL, the result is false when it compares to anything.
+                //   do early return optimization, our index comparator may not handle null comparison correctly.
+                // However, if the search key expression is "IS NOT DISTINCT FROM", then NULL values cannot be skipped.
+                // We will set the CompareNotDistinctFlags to true in the planner to mark this. (ENG-11096)
                 NValue candidateValue = m_indexNode->getSearchKeyExpressions()[ctr]->eval(&outer_tuple, NULL);
-                if (candidateValue.isNull()) {
-                    // when any part of the search key is NULL, the result is false when it compares to anything.
-                    // do early return optimization, our index comparator may not handle null comparison correctly.
+                if (candidateValue.isNull() && m_indexNode->getCompareNotDistinctFlags()[ctr] == false) {
                     keyException = true;
                     break;
                 }
@@ -308,7 +317,7 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
 
                     // re-throw if not an overflow or underflow
                     // currently, it's expected to always be an overflow or underflow
-                    if ((e.getInternalFlags() & (SQLException::TYPE_OVERFLOW | SQLException::TYPE_UNDERFLOW)) == 0) {
+                    if ((e.getInternalFlags() & (SQLException::TYPE_OVERFLOW | SQLException::TYPE_UNDERFLOW | SQLException::TYPE_VAR_LENGTH_MISMATCH)) == 0) {
                         throw e;
                     }
 
@@ -343,6 +352,25 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
                             else {
                                 // don't allow GTE because it breaks null handling
                                 localLookupType = INDEX_LOOKUP_TYPE_GT;
+                            }
+                        }
+                        if (e.getInternalFlags() & SQLException::TYPE_VAR_LENGTH_MISMATCH) {
+                            // shrink the search key and add the updated key to search key table tuple
+                            index_values.shrinkAndSetNValue(ctr, candidateValue);
+                            // search will be performed on shrinked key, so update lookup operation
+                            // to account for it
+                            switch (localLookupType) {
+                                case INDEX_LOOKUP_TYPE_LT:
+                                case INDEX_LOOKUP_TYPE_LTE:
+                                    localLookupType = INDEX_LOOKUP_TYPE_LTE;
+                                    break;
+                                case INDEX_LOOKUP_TYPE_GT:
+                                case INDEX_LOOKUP_TYPE_GTE:
+                                    localLookupType = INDEX_LOOKUP_TYPE_GT;
+                                    break;
+                                default:
+                                    assert(!"IndexScanExecutor::p_execute - can't index on not equals");
+                                    return false;
                             }
                         }
 
@@ -381,8 +409,7 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
                 //
                 // Essentially cut and pasted this if ladder from
                 // index scan executor
-                if (num_of_searchkeys > 0)
-                {
+                if (num_of_searchkeys > 0) {
                     if (localLookupType == INDEX_LOOKUP_TYPE_EQ) {
                         index->moveToKey(&index_values, indexCursor);
                     }
@@ -394,14 +421,16 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
                     }
                     else if (localLookupType == INDEX_LOOKUP_TYPE_LT) {
                         index->moveToLessThanKey(&index_values, indexCursor);
-                    } else if (localLookupType == INDEX_LOOKUP_TYPE_LTE) {
+                    }
+                    else if (localLookupType == INDEX_LOOKUP_TYPE_LTE) {
                         // find the entry whose key is greater than search key,
                         // do a forward scan using initialExpr to find the correct
                         // start point to do reverse scan
                         bool isEnd = index->moveToGreaterThanKey(&index_values, indexCursor);
                         if (isEnd) {
                             index->moveToEnd(false, indexCursor);
-                        } else {
+                        }
+                        else {
                             while (!(inner_tuple = index->nextValue(indexCursor)).isNullTuple()) {
                                 pmp.countdownProgress();
                                 if (initial_expression != NULL && !initial_expression->eval(&outer_tuple, &inner_tuple).isTrue()) {
@@ -415,22 +444,29 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
                             }
                         }
                     }
+                    else if (localLookupType == INDEX_LOOKUP_TYPE_GEO_CONTAINS) {
+                        index->moveToCoveringCell(&index_values, indexCursor);
+                    }
                     else {
                         return false;
                     }
-                } else {
+                }
+                else {
                     bool toStartActually = (localSortDirection != SORT_DIRECTION_TYPE_DESC);
                     index->moveToEnd(toStartActually, indexCursor);
                 }
 
                 AbstractExpression* skipNullExprIteration = skipNullExpr;
 
-                while ((limit == -1 || tuple_ctr < limit) &&
-                       ((localLookupType == INDEX_LOOKUP_TYPE_EQ &&
-                        !(inner_tuple = index->nextValueAtKey(indexCursor)).isNullTuple()) ||
-                       ((localLookupType != INDEX_LOOKUP_TYPE_EQ || num_of_searchkeys == 0) &&
-                        !(inner_tuple = index->nextValue(indexCursor)).isNullTuple())))
-                {
+                while (postfilter.isUnderLimit() &&
+                       IndexScanExecutor::getNextTuple(localLookupType,
+                                                       &inner_tuple,
+                                                       index,
+                                                       &indexCursor,
+                                                       num_of_searchkeys)) {
+                    if (inner_tuple.isPendingDelete()) {
+                        continue;
+                    }
                     VOLT_TRACE("inner_tuple:%s",
                                inner_tuple.debug(inner_table->name()).c_str());
                     pmp.countdownProgress();
@@ -442,17 +478,15 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
                         if (skipNullExprIteration->eval(&outer_tuple, &inner_tuple).isTrue()) {
                             VOLT_DEBUG("Index scan: find out null rows or columns.");
                             continue;
-                        } else {
-                            skipNullExprIteration = NULL;
                         }
+                        skipNullExprIteration = NULL;
                     }
 
                     //
                     // First check whether the end_expression is now false
                     //
                     if (end_expression != NULL &&
-                        !end_expression->eval(&outer_tuple, &inner_tuple).isTrue())
-                    {
+                        !end_expression->eval(&outer_tuple, &inner_tuple).isTrue()) {
                         VOLT_TRACE("End Expression evaluated to false, stopping scan\n");
                         break;
                     }
@@ -460,27 +494,22 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
                     // Then apply our post-predicate to do further filtering
                     //
                     if (post_expression == NULL ||
-                        post_expression->eval(&outer_tuple, &inner_tuple).isTrue())
-                    {
-                        match = true;
+                        post_expression->eval(&outer_tuple, &inner_tuple).isTrue()) {
+                        outerMatch = true;
+                        // The inner tuple passed the join conditions
+                        if (m_joinType == JOIN_TYPE_FULL) {
+                            // Mark inner tuple as matched
+                            innerTableFilter.updateTuple(inner_tuple, MATCHED_TUPLE);
+                        }
                         // Still need to pass where filtering
-                        if (where_expression == NULL || where_expression->eval(&outer_tuple, &inner_tuple).isTrue()) {
-                            // Check if we have to skip this tuple because of offset
-                            if (tuple_skipped < offset) {
-                                tuple_skipped++;
-                                continue;
-                            }
-                            ++tuple_ctr;
+                        if (postfilter.eval(&outer_tuple, &inner_tuple)) {
                             //
                             // Try to put the tuple into our output table
                             // Append the inner values to the end of our join tuple
                             //
                             for (int col_ctr = num_of_outer_cols;
-                                 col_ctr < join_tuple.sizeInValues();
-                                 ++col_ctr)
-                            {
-                                // For the sake of consistency, we don't try to do
-                                // output expressions here with columns from both tables.
+                                 col_ctr < join_tuple.columnCount();
+                                 ++col_ctr) {
                                 join_tuple.setNValue(col_ctr,
                                           m_outputExpressions[col_ctr]->eval(&outer_tuple, &inner_tuple));
                             }
@@ -488,68 +517,69 @@ bool NestLoopIndexExecutor::p_execute(const NValueArray &params)
                                        join_tuple.debug(m_tmpOutputTable->name()).c_str());
                             VOLT_TRACE("MATCH: %s",
                                    join_tuple.debug(m_tmpOutputTable->name()).c_str());
-
-                            if (m_aggExec != NULL) {
-                                if (m_aggExec->p_execute_tuple(join_tuple)) {
-                                    // Get enough rows for LIMIT
-                                    earlyReturned = true;
-                                    break;
-                                }
-                            } else {
-                                m_tmpOutputTable->insertTempTuple(join_tuple);
-                                pmp.countdownProgress();
-                            }
-
+                            outputTuple(postfilter, join_tuple, pmp);
                         }
                     }
                 } // END INNER WHILE LOOP
-
-                if (earlyReturned) {
-                    break;
-                }
             } // END IF INDEX KEY EXCEPTION CONDITION
         } // END IF PRE JOIN CONDITION
 
         //
-        // Left Outer Join
+        // Left/Full Outer Join
         //
-        if (m_joinType == JOIN_TYPE_LEFT && !match
-                && (limit == -1 || tuple_ctr < limit) )
+        if (m_joinType != JOIN_TYPE_INNER && !outerMatch && postfilter.isUnderLimit())
         {
-            if (where_expression == NULL || where_expression->eval(&outer_tuple, &null_tuple).isTrue()) {
-                // Check if we have to skip this tuple because of offset
-                if (tuple_skipped < offset) {
-                    tuple_skipped++;
-                    continue;
+            // Still needs to pass the filter
+            if (postfilter.eval(&outer_tuple, &null_inner_tuple)) {
+                // Matched! Complete the joined tuple with null inner column values.
+                for (int col_ctr = num_of_outer_cols;
+                     col_ctr < join_tuple.columnCount();
+                     ++col_ctr) {
+                    join_tuple.setNValue(col_ctr,
+                            m_outputExpressions[col_ctr]->eval(&outer_tuple, &null_inner_tuple));
                 }
-                ++tuple_ctr;
-                join_tuple.setNValues(num_of_outer_cols, m_null_tuple.tuple(), 0, num_of_inner_cols);
-
-                if (m_aggExec != NULL) {
-                    if (m_aggExec->p_execute_tuple(join_tuple)) {
-                        // Get enough rows for LIMIT
-                        earlyReturned = true;
-                        break;
-                    }
-                } else {
-                    m_tmpOutputTable->insertTempTuple(join_tuple);
-                    pmp.countdownProgress();
-                }
+                outputTuple(postfilter, join_tuple, pmp);
             }
         }
     } // END OUTER WHILE LOOP
+
+    //
+    // FULL Outer Join. Iterate over the unmatched inner tuples
+    //
+    if (m_joinType == JOIN_TYPE_FULL && postfilter.isUnderLimit()) {
+        // Preset outer columns to null
+        const TableTuple& null_outer_tuple = m_null_outer_tuple.tuple();
+        join_tuple.setNValues(0, null_outer_tuple, 0, num_of_outer_cols);
+
+        TableTupleFilter_iter<UNMATCHED_TUPLE> endItr = innerTableFilter.end<UNMATCHED_TUPLE>();
+        for (TableTupleFilter_iter<UNMATCHED_TUPLE> itr = innerTableFilter.begin<UNMATCHED_TUPLE>();
+                itr != endItr && postfilter.isUnderLimit(); ++itr) {
+            // Restore the tuple value
+            uint64_t tupleAddr = innerTableFilter.getTupleAddress(*itr);
+            inner_tuple.move((char *)tupleAddr);
+            // Still needs to pass the filter
+            assert(inner_tuple.isActive());
+            if (postfilter.eval(&null_outer_tuple, &inner_tuple)) {
+                // Passed! Complete the joined tuple with the inner column values.
+                for (int col_ctr = num_of_outer_cols;
+                     col_ctr < join_tuple.columnCount();
+                     ++col_ctr) {
+                    join_tuple.setNValue(col_ctr,
+                            m_outputExpressions[col_ctr]->eval(&null_outer_tuple, &inner_tuple));
+                }
+                outputTuple(postfilter, join_tuple, pmp);
+            }
+        }
+    }
 
     if (m_aggExec != NULL) {
         m_aggExec->p_execute_finish();
     }
 
-    VOLT_TRACE ("result table:\n %s", m_tmpOutputTable->debug().c_str());
+    VOLT_TRACE ("result table:\n %s", m_tmpOutputTable->debug("").c_str());
     VOLT_TRACE("Finished NestLoopIndex");
 
-    cleanupInputTempTable(inner_table);
-    cleanupInputTempTable(outer_table);
-
-    return (true);
+    return true;
 }
 
 NestLoopIndexExecutor::~NestLoopIndexExecutor() { }

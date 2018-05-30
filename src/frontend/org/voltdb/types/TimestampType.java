@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,6 +19,7 @@ package org.voltdb.types;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.TimeZone;
 
 import org.json_voltpatches.JSONString;
 import org.voltdb.common.Constants;
@@ -85,11 +86,14 @@ public class TimestampType implements JSONString, Comparable<TimestampType> {
     }
 
     /**
-     * Construct from a timestamp string in YYYY-MM-DD-SS.sss format.
+     * Construct from a timestamp string in a complete date or time format.
      * This is typically used for reading CSV data or data output
      * from {@link java.sql.Timestamp}'s string format.
      *
-     * @param param A string in YYYY-MM-DD-SS.sss format.
+     * @param param A string in one of these formats:
+     *        "YYYY-MM-DD", "YYYY-MM-DD HH:MM:SS",
+     *        OR "YYYY-MM-DD HH:MM:SS.sss" with sss
+     *        allowed to be from 0 up to 6 significant digits.
      */
     public TimestampType(String param) {
         this(microsFromJDBCformat(param));
@@ -140,12 +144,37 @@ public class TimestampType implements JSONString, Comparable<TimestampType> {
     }
 
     /**
-     * toString for debugging and printing VoltTables
+     * An implementation of toString for debugging and printing VoltTables.
+     * This formats the timestamp value using a standard ODBC date format,
+     * similar to ISO-8601.  The format is yyyy-MM-dd HH:mm:ss.SSSSSS.
+     * Here, unlike the Java SimpleDateFormat formatter, the SSSSSS part
+     * is the number of microseconds.  The timezone is the default
+     * timezone of the JVM.  This will be the timezone of the application,
+     * which may not match the timezone of the database server.  See the overload
+     * of this function which accepts a time zone for more control
+     * over the specification of the timezone.
      */
     @Override
     public String toString() {
+        return toString(TimeZone.getDefault());
+    }
+
+    /**
+     * An implementation of toString for debugging and printing VoltTables
+     * which allows the specification of a timezone.
+     *
+     * @param zone Desired timezone.
+     * @return A string with the time in ODBC format with the desired timezone.
+     */
+    public String toString(TimeZone zone) {
+        // This should all be replaced with Java 8's java.time
+        // facilities.
         SimpleDateFormat sdf = new SimpleDateFormat(Constants.ODBC_DATE_FORMAT_STRING);
-        Date dateToMillis = m_date;
+
+        if (zone != null) {
+            sdf.setTimeZone(zone);
+        }
+        Date dateToMillis = (Date) m_date.clone(); // deep copy as we change it later
         short usecs = m_usecs;
         if (usecs < 0) {
             // Negative usecs can occur for dates before 1970.

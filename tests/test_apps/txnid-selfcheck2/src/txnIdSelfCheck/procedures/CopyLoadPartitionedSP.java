@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -29,9 +29,12 @@ import org.voltdb.VoltTable;
 public class CopyLoadPartitionedSP extends CopyLoadPartitionedBase {
 
     private final SQLStmt selectStmt = new SQLStmt("SELECT cid,txnid,rowid from loadp WHERE cid=? ORDER BY cid LIMIT 1;");
-    private final SQLStmt insertStmt = new SQLStmt("INSERT INTO  cploadp VALUES (?, ?, ?);");
+    private final SQLStmt insertStmt = new SQLStmt("INSERT INTO  cploadp (cid, txnid, rowid) VALUES (?, ?, ?);");
+    private final SQLStmt insertIntoStmt = new SQLStmt("INSERT INTO cploadp SELECT cid,txnid,rowid FROM loadp WHERE cid=? ORDER BY cid;");
 
-    public VoltTable[] run(long cid) {
-        return doWork(selectStmt, insertStmt, cid);
+    public VoltTable[] run(long cid, int useSelect, VoltTable vtable) {
+        if (useSelect == 0)
+            return doWork(selectStmt, insertStmt, cid, vtable);
+        return doWork(selectStmt, insertIntoStmt, cid, vtable);
     }
 }

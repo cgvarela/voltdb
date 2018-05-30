@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -125,7 +125,8 @@ public class ReplicatedTableSaveFileState extends TableSaveFileState
         addPlanDependencyId(result_dependency_id);
         plan_fragment.parameters = ParameterSet.fromArrayNoCopy(
                 getTableName(),
-                result_dependency_id);
+                result_dependency_id,
+                getIsRecoverParam());
         return plan_fragment;
     }
 
@@ -191,7 +192,8 @@ public class ReplicatedTableSaveFileState extends TableSaveFileState
         addPlanDependencyId(result_dependency_id);
         plan_fragment.parameters = ParameterSet.fromArrayNoCopy(
                 getTableName(),
-                result_dependency_id);
+                result_dependency_id,
+                getIsRecoverParam());
         return plan_fragment;
     }
 
@@ -211,7 +213,8 @@ public class ReplicatedTableSaveFileState extends TableSaveFileState
         plan_fragment.parameters = ParameterSet.fromArrayNoCopy(
                 getTableName(),
                 destinationSiteId,
-                result_dependency_id);
+                result_dependency_id,
+                getIsRecoverParam());
         return plan_fragment;
     }
 
@@ -228,7 +231,8 @@ public class ReplicatedTableSaveFileState extends TableSaveFileState
         setRootDependencyId(result_dependency_id);
         plan_fragment.parameters = ParameterSet.fromArrayNoCopy(result_dependency_id,
                 (asPartitioned ? "Aggregating replicated-to-partitioned table restore results"
-                               : "Aggregating replicated table restore results"));
+                               : "Aggregating replicated table restore results"),
+                getIsRecoverParam());
         return plan_fragment;
     }
 

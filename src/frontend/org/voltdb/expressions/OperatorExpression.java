@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -33,6 +33,7 @@ import org.voltdb.utils.VoltTypeUtil;
  *   - not
  *   - cast(... as type)
  *   - case when
+ *   - - (unary minus)
  *   - alternative (unsupported?)
  */
 public class OperatorExpression extends AbstractExpression {
@@ -60,6 +61,7 @@ public class OperatorExpression extends AbstractExpression {
         case OPERATOR_IS_NULL:
         case OPERATOR_CAST:
         case OPERATOR_EXISTS:
+        case OPERATOR_UNARY_MINUS:
             return false;
         default: return true;
         }
@@ -72,7 +74,7 @@ public class OperatorExpression extends AbstractExpression {
         }
         ExpressionType type = getExpressionType();
         if (type == ExpressionType.OPERATOR_IS_NULL || type == ExpressionType.OPERATOR_NOT) {
-            m_valueType = VoltType.BIGINT;
+            m_valueType = VoltType.BOOLEAN;
             m_valueSize = m_valueType.getLengthInBytesForFixedTypes();
             return;
         }
@@ -93,6 +95,15 @@ public class OperatorExpression extends AbstractExpression {
         if (! needsRightExpression()) {
             return;
         }
+
+        if (getExpressionType() == ExpressionType.OPERATOR_CASE_WHEN) {
+            assert(m_right.getExpressionType() == ExpressionType.OPERATOR_ALTERNATIVE);
+            m_right.refineValueType(neededType, neededSize);
+            m_valueType = m_right.getValueType();
+            m_valueSize = m_right.getValueSize();
+            return;
+        }
+
         // The intent here is to allow operands to have the maximum flexibility given the
         // desired result type. The interesting cases are basically integer, decimal, and
         // float. If any of the lhs, rhs, or target result type are float, then any ambiguity
@@ -101,7 +112,7 @@ public class OperatorExpression extends AbstractExpression {
         // the broadest integer type is preferable, even if the target is of a more limited
         // integer type -- math has a way of scaling values up AND down.
         VoltType operandType = neededType;
-        if (operandType.isInteger()) {
+        if (operandType.isBackendIntegerType()) {
             operandType = VoltType.BIGINT;
         }
         VoltType leftType = m_left.getValueType();
@@ -133,7 +144,12 @@ public class OperatorExpression extends AbstractExpression {
         if (m_right == null) {
             if (type == ExpressionType.OPERATOR_IS_NULL || type == ExpressionType.OPERATOR_NOT ||
                     type == ExpressionType.OPERATOR_EXISTS) {
-                m_valueType = VoltType.BIGINT;
+                m_valueType = VoltType.BOOLEAN;
+                m_valueSize = m_valueType.getLengthInBytesForFixedTypes();
+            }
+
+            if (type == ExpressionType.OPERATOR_UNARY_MINUS) {
+                m_valueType = m_left.getValueType();
                 m_valueSize = m_valueType.getLengthInBytesForFixedTypes();
             }
             return;
@@ -179,6 +195,20 @@ public class OperatorExpression extends AbstractExpression {
         return "(" + m_left.explain(impliedTableName) +
             " " + type.symbol() + " " +
             m_right.explain(impliedTableName) + ")";
+    }
+
+    @Override
+    public boolean isValueTypeIndexable(StringBuffer msg) {
+        ExpressionType type = getExpressionType();
+        switch(type) {
+        case OPERATOR_NOT:
+        case OPERATOR_IS_NULL:
+        case OPERATOR_EXISTS:
+            msg.append("operator '" + getExpressionType().symbol() +"'");
+            return false;
+        default:
+            return true;
+        }
     }
 
 }

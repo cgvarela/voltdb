@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -49,15 +49,11 @@
  */
 package com.procedures;
 
-import org.voltdb.ProcInfo;
+import org.voltdb.DeprecatedProcedureAPIAccess;
 import org.voltdb.SQLStmt;
 import org.voltdb.VoltProcedure;
 import org.voltdb.VoltTable;
 
-@ProcInfo (
-    partitionInfo = "WAREHOUSE.W_ID: 0",
-    singlePartition = true
-)
 /**
  * Loads initial data into TPCC tables.
  */
@@ -65,17 +61,18 @@ public class LoadWarehouse extends VoltProcedure {
 
     public static final SQLStmt writeStmt = new SQLStmt("INSERT INTO WAREHOUSE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);");
 
+    @SuppressWarnings("deprecation")
     public VoltTable[] run(short w_id, VoltTable warehouses, VoltTable districts, VoltTable customers,
         VoltTable stocks, VoltTable orders, VoltTable neworders, VoltTable orderLines, VoltTable histories)
     throws VoltAbortException {
-        voltLoadTable("cluster", "database", "WAREHOUSE", warehouses, false, false);
-        voltLoadTable("cluster", "database", "DISTRICT", districts, false, false);
-        voltLoadTable("cluster", "database", "CUSTOMER", customers, false, false);
-        voltLoadTable("cluster", "database", "STOCK", stocks, false, false);
-        voltLoadTable("cluster", "database", "ORDERS", orders, false, false);
-        voltLoadTable("cluster", "database", "NEW_ORDER", neworders, false, false);
-        voltLoadTable("cluster", "database", "ORDER_LINE", orderLines, false, false);
-        voltLoadTable("cluster", "database", "HISTORY", histories, false, false);
+        DeprecatedProcedureAPIAccess.voltLoadTable(this, "cluster", "database", "WAREHOUSE", warehouses, false, false);
+        DeprecatedProcedureAPIAccess.voltLoadTable(this, "cluster", "database", "DISTRICT", districts, false, false);
+        DeprecatedProcedureAPIAccess.voltLoadTable(this, "cluster", "database", "CUSTOMER", customers, false, false);
+        DeprecatedProcedureAPIAccess.voltLoadTable(this, "cluster", "database", "STOCK", stocks, false, false);
+        DeprecatedProcedureAPIAccess.voltLoadTable(this, "cluster", "database", "ORDERS", orders, false, false);
+        DeprecatedProcedureAPIAccess.voltLoadTable(this, "cluster", "database", "NEW_ORDER", neworders, false, false);
+        DeprecatedProcedureAPIAccess.voltLoadTable(this, "cluster", "database", "ORDER_LINE", orderLines, false, false);
+        DeprecatedProcedureAPIAccess.voltLoadTable(this, "cluster", "database", "HISTORY", histories, false, false);
         return null;
     }
 }

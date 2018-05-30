@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,17 +23,21 @@
 
 package org.voltdb;
 
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 import org.voltdb.VoltDB.Configuration;
+import org.voltdb.client.BatchTimeoutOverrideType;
 import org.voltdb.client.ClientFactory;
 import org.voltdb.client.ClientImpl;
 import org.voltdb.client.ClientResponse;
 import org.voltdb.client.ProcCallException;
-import org.voltdb.compiler.AsyncCompilerAgent;
 import org.voltdb.compiler.VoltProjectBuilder;
+import org.voltdb.sysprocs.AdHocNTBase;
 import org.voltdb.utils.MiscUtils;
 
 public class TestAdhocCompilerException extends AdhocDDLTestBase
@@ -63,8 +67,9 @@ public class TestAdhocCompilerException extends AdhocDDLTestBase
             boolean threw = false;
             try {
                 // Ten seconds should be long enough to detect a hang.
-                String toxicDDL = AsyncCompilerAgent.DEBUG_EXCEPTION_DDL + ";";
-                ((ClientImpl)m_client).callProcedureWithTimeout("@AdHoc", 10, TimeUnit.SECONDS, toxicDDL);
+                String toxicDDL = AdHocNTBase.DEBUG_EXCEPTION_DDL + ";";
+                ((ClientImpl)m_client).callProcedureWithClientTimeout(
+                        BatchTimeoutOverrideType.NO_TIMEOUT, "@AdHoc", 10, TimeUnit.SECONDS, toxicDDL);
             }
             catch (ProcCallException pce) {
                 String message = pce.getLocalizedMessage();
@@ -74,9 +79,8 @@ public class TestAdhocCompilerException extends AdhocDDLTestBase
                     tryNewClientWithValidDDL();
                     fail("Timeout, server was probably hung. " + message);
                 }
-                String expectedMessage = "Unexpected async compiler exception";
-                assertTrue(String.format("Unexpected exception message: %s...", expectedMessage),
-                           message.startsWith(expectedMessage));
+                assertTrue(String.format("Unexpected exception message: %s...", message),
+                           message.contains(AdHocNTBase.DEBUG_EXCEPTION_DDL));
                 threw = true;
             }
             assertTrue("Expected exception", threw);
@@ -115,7 +119,8 @@ public class TestAdhocCompilerException extends AdhocDDLTestBase
         String tableName = String.format("FOO%d", validDDLAttempt);
         String ddl = String.format("create table %s (id smallint not null);", tableName);
         try {
-            ClientResponse resp2 = client.callProcedureWithTimeout("@AdHoc", 20, TimeUnit.SECONDS, ddl);
+            ClientResponse resp2 = client.callProcedureWithClientTimeout(
+                    BatchTimeoutOverrideType.NO_TIMEOUT, "@AdHoc", 20, TimeUnit.SECONDS, ddl);
             assertTrue(String.format("Valid DDL attempt #%d failed.", validDDLAttempt),
                        resp2.getStatus() == ClientResponse.SUCCESS);
         }

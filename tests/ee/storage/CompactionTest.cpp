@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,29 +22,32 @@
  */
 
 #include "harness.h"
-#include "common/TupleSchema.h"
-#include "common/types.h"
+
 #include "common/NValue.hpp"
-#include "common/ValueFactory.hpp"
-#include "common/ValuePeeker.hpp"
+#include "common/SynchronizedThreadLock.h"
 #include "common/TupleOutputStream.h"
 #include "common/TupleOutputStreamProcessor.h"
+#include "common/TupleSchema.h"
+#include "common/types.h"
+#include "common/ValueFactory.hpp"
+#include "common/ValuePeeker.hpp"
 #include "execution/VoltDBEngine.h"
+#include "indexes/tableindex.h"
+#include "indexes/tableindexfactory.h"
+#include "storage/DRTupleStream.h"
 #include "storage/persistenttable.h"
+#include "storage/tableiterator.h"
 #include "storage/tablefactory.h"
 #include "storage/tableutil.h"
-#include "indexes/tableindex.h"
-#include "storage/tableiterator.h"
-#include "storage/CopyOnWriteIterator.h"
-#include "storage/DRTupleStream.h"
-#include "common/DefaultTupleSerializer.h"
+
 #include "stx/btree_set.h"
 
-#include <vector>
-#include <string>
-#include <stdint.h>
 #include <boost/scoped_array.hpp>
 #include <boost/foreach.hpp>
+
+#include <stdint.h>
+#include <string>
+#include <vector>
 
 using namespace voltdb;
 
@@ -71,8 +74,9 @@ public:
         m_tuplesDeletedInLastUndo = 0;
         m_engine = new voltdb::VoltDBEngine();
         int partitionCount = 1;
-        m_engine->initialize(1,1, 0, 0, "", false, DEFAULT_TEMP_TABLE_MEMORY);
-        m_engine->updateHashinator(HASHINATOR_LEGACY, (char*)&partitionCount, NULL, 0);
+        m_engine->initialize(1, 1, 0, partitionCount, 0, "", 0, 1024, DEFAULT_TEMP_TABLE_MEMORY, true);
+        partitionCount = htonl(partitionCount);
+        m_engine->updateHashinator((char*)&partitionCount, NULL, 0);
 
         m_columnNames.push_back("1");
         m_columnNames.push_back("2");
@@ -109,6 +113,14 @@ public:
         m_tableSchemaAllowNull.push_back(false);
         m_tableSchemaAllowNull.push_back(false);
 
+        m_tableSchemaAllowNull.push_back(true);
+        m_tableSchemaAllowNull.push_back(true);
+        m_tableSchemaAllowNull.push_back(true);
+        m_tableSchemaAllowNull.push_back(true);
+        m_tableSchemaAllowNull.push_back(true);
+        m_tableSchemaAllowNull.push_back(true);
+        m_tableSchemaAllowNull.push_back(true);
+
         m_primaryKeyIndexColumns.push_back(0);
 
         m_undoToken = 0;
@@ -119,6 +131,7 @@ public:
     ~CompactionTest() {
         delete m_engine;
         delete m_table;
+        voltdb::globalDestroyOncePerProcess();
     }
 
     void initTable() {
@@ -157,7 +170,7 @@ public:
         m_table = dynamic_cast<voltdb::PersistentTable*>(
                 voltdb::TableFactory::getPersistentTable(m_tableId, "Foo", m_tableSchema, m_columnNames, signature));
 
-        TableIndex *pkeyIndex = TableIndexFactory::TableIndexFactory::getInstance(indexScheme);
+        TableIndex *pkeyIndex = TableIndexFactory::getInstance(indexScheme);
         assert(pkeyIndex);
         m_table->addIndex(pkeyIndex);
         m_table->setPrimaryKeyIndex(pkeyIndex);
@@ -203,7 +216,7 @@ public:
             }
         }
         m_engine->setUndoToken(++m_undoToken);
-        ExecutorContext::getExecutorContext()->setupForPlanFragments(m_engine->getCurrentUndoQuantum(), 0, 0, 0, 0);
+        ExecutorContext::getExecutorContext()->setupForPlanFragments(m_engine->getCurrentUndoQuantum(), 0, 0, 0, 0, false);
         m_tuplesDeletedInLastUndo = 0;
         m_tuplesInsertedInLastUndo = 0;
     }
@@ -321,7 +334,7 @@ TEST_F(CompactionTest, BasicCompaction) {
     m_table->doForcedCompaction();
 
     stx::btree_set<int32_t> pkeysFoundAfterDelete;
-    TableIterator& iter = m_table->iterator();
+    TableIterator iter = m_table->iterator();
     TableTuple tuple(m_table->schema());
     while (iter.next(tuple)) {
         int32_t pkey = ValuePeeker::peekAsInteger(tuple.getNValue(0));
@@ -364,7 +377,7 @@ TEST_F(CompactionTest, BasicCompaction) {
         m_table->deleteTuple(tuple, true);
     }
     m_table->doForcedCompaction();
-    ASSERT_EQ( m_table->m_data.size(), 0);
+    ASSERT_EQ( m_table->m_data.size(), 1);
     ASSERT_EQ( m_table->activeTupleCount(), 0);
 }
 
@@ -401,11 +414,10 @@ TEST_F(CompactionTest, CompactionWithCopyOnWrite) {
 
     stx::btree_set<int32_t> COWTuples;
     int totalInsertedCOWTuples = 0;
-    DefaultTupleSerializer serializer;
     char config[5];
     ::memset(config, 0, 5);
     ReferenceSerializeInputBE input(config, 5);
-    m_table->activateStream(serializer, TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
+    m_table->activateStream(TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
 
     for (int qq = 0; qq < 3; qq++) {
 #ifdef MEMCHECK
@@ -466,7 +478,7 @@ TEST_F(CompactionTest, CompactionWithCopyOnWrite) {
         m_table->doForcedCompaction();
 
         stx::btree_set<int32_t> pkeysFoundAfterDelete;
-        TableIterator& iter = m_table->iterator();
+        TableIterator iter = m_table->iterator();
         TableTuple tuple(m_table->schema());
         while (iter.next(tuple)) {
             int32_t pkey = ValuePeeker::peekAsInteger(tuple.getNValue(0));
@@ -507,7 +519,7 @@ TEST_F(CompactionTest, CompactionWithCopyOnWrite) {
 
     }
     m_table->doForcedCompaction();
-    ASSERT_EQ( m_table->m_data.size(), 0);
+    ASSERT_EQ( m_table->m_data.size(), 1);
     ASSERT_EQ( m_table->activeTupleCount(), 0);
     for (int ii = 0; ii < tupleCount; ii++) {
         ASSERT_TRUE(COWTuples.find(ii) != COWTuples.end());
@@ -546,12 +558,11 @@ TEST_F(CompactionTest, TestENG897) {
 
     size_t blocksNotPendingSnapshot = m_table->getBlocksNotPendingSnapshotCount();
     ASSERT_EQ(5, blocksNotPendingSnapshot);
-    DefaultTupleSerializer serializer;
     char config[5];
     ::memset(config, 0, 5);
     ReferenceSerializeInputBE input(config, 5);
 
-    m_table->activateStream(serializer, TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
+    m_table->activateStream(TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
     for (int ii = 0; ii < 16130; ii++) {
         if (ii % 2 == 0) {
             continue;
@@ -592,7 +603,7 @@ TEST_F(CompactionTest, TestENG897) {
     //std::cout << "Before idle compaction" << std::endl;
     //m_table->printBucketInfo();
     ReferenceSerializeInputBE input2(config, 5);
-    m_table->activateStream(serializer, TABLE_STREAM_SNAPSHOT, 0, m_tableId, input2);
+    m_table->activateStream(TABLE_STREAM_SNAPSHOT, 0, m_tableId, input2);
     //std::cout << "Activated COW" << std::endl;
     //m_table->printBucketInfo();
     m_table->doIdleCompaction();

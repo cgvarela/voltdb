@@ -6,12 +6,18 @@ package org.voltdb.pmsg;
 public final class DRAgent {
   private DRAgent() {}
   public static void registerAllExtensions(
-      com.google.protobuf.ExtensionRegistry registry) {
+      com.google.protobuf.ExtensionRegistryLite registry) {
   }
-  public interface UUIDOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
 
-    // required fixed64 instance = 1;
+  public static void registerAllExtensions(
+      com.google.protobuf.ExtensionRegistry registry) {
+    registerAllExtensions(
+        (com.google.protobuf.ExtensionRegistryLite) registry);
+  }
+  public interface UUIDOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.UUID)
+      com.google.protobuf.MessageOrBuilder {
+
     /**
      * <code>required fixed64 instance = 1;</code>
      */
@@ -21,7 +27,6 @@ public final class DRAgent {
      */
     long getInstance();
 
-    // required fixed64 count = 2;
     /**
      * <code>required fixed64 count = 2;</code>
      */
@@ -34,36 +39,29 @@ public final class DRAgent {
   /**
    * Protobuf type {@code pmsg.UUID}
    */
-  public static final class UUID extends
-      com.google.protobuf.GeneratedMessage
-      implements UUIDOrBuilder {
+  public  static final class UUID extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.UUID)
+      UUIDOrBuilder {
     // Use UUID.newBuilder() to construct.
-    private UUID(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    private UUID(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private UUID(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final UUID defaultInstance;
-    public static UUID getDefaultInstance() {
-      return defaultInstance;
+    private UUID() {
+      instance_ = 0L;
+      count_ = 0L;
     }
 
-    public UUID getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
     private UUID(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -98,7 +96,7 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -109,30 +107,14 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_UUID_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_UUID_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.UUID.class, org.voltdb.pmsg.DRAgent.UUID.Builder.class);
     }
 
-    public static com.google.protobuf.Parser<UUID> PARSER =
-        new com.google.protobuf.AbstractParser<UUID>() {
-      public UUID parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new UUID(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<UUID> getParserForType() {
-      return PARSER;
-    }
-
     private int bitField0_;
-    // required fixed64 instance = 1;
     public static final int INSTANCE_FIELD_NUMBER = 1;
     private long instance_;
     /**
@@ -148,7 +130,6 @@ public final class DRAgent {
       return instance_;
     }
 
-    // required fixed64 count = 2;
     public static final int COUNT_FIELD_NUMBER = 2;
     private long count_;
     /**
@@ -164,14 +145,11 @@ public final class DRAgent {
       return count_;
     }
 
-    private void initFields() {
-      instance_ = 0L;
-      count_ = 0L;
-    }
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       if (!hasInstance()) {
         memoizedIsInitialized = 0;
@@ -187,19 +165,17 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         output.writeFixed64(1, instance_);
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         output.writeFixed64(2, count_);
       }
-      getUnknownFields().writeTo(output);
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
@@ -211,16 +187,57 @@ public final class DRAgent {
         size += com.google.protobuf.CodedOutputStream
           .computeFixed64Size(2, count_);
       }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.UUID)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.UUID other = (org.voltdb.pmsg.DRAgent.UUID) obj;
+
+      boolean result = true;
+      result = result && (hasInstance() == other.hasInstance());
+      if (hasInstance()) {
+        result = result && (getInstance()
+            == other.getInstance());
+      }
+      result = result && (hasCount() == other.hasCount());
+      if (hasCount()) {
+        result = result && (getCount()
+            == other.getCount());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasInstance()) {
+        hash = (37 * hash) + INSTANCE_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getInstance());
+      }
+      if (hasCount()) {
+        hash = (37 * hash) + COUNT_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getCount());
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.UUID parseFrom(
@@ -246,46 +263,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.UUID parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.UUID parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.UUID parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.UUID parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.UUID parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.UUID parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.UUID prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.UUID prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -293,14 +321,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.UUID}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.UUIDOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.UUID)
+        org.voltdb.pmsg.DRAgent.UUIDOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_UUID_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_UUID_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -313,18 +342,15 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
         instance_ = 0L;
@@ -332,10 +358,6 @@ public final class DRAgent {
         count_ = 0L;
         bitField0_ = (bitField0_ & ~0x00000002);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -372,6 +394,32 @@ public final class DRAgent {
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.UUID) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.UUID)other);
@@ -389,17 +437,16 @@ public final class DRAgent {
         if (other.hasCount()) {
           setCount(other.getCount());
         }
-        this.mergeUnknownFields(other.getUnknownFields());
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
       public final boolean isInitialized() {
         if (!hasInstance()) {
-          
           return false;
         }
         if (!hasCount()) {
-          
           return false;
         }
         return true;
@@ -414,7 +461,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.UUID) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -424,7 +471,6 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // required fixed64 instance = 1;
       private long instance_ ;
       /**
        * <code>required fixed64 instance = 1;</code>
@@ -457,7 +503,6 @@ public final class DRAgent {
         return this;
       }
 
-      // required fixed64 count = 2;
       private long count_ ;
       /**
        * <code>required fixed64 count = 2;</code>
@@ -489,22 +534,59 @@ public final class DRAgent {
         onChanged();
         return this;
       }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
 
       // @@protoc_insertion_point(builder_scope:pmsg.UUID)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.UUID)
+    private static final org.voltdb.pmsg.DRAgent.UUID DEFAULT_INSTANCE;
     static {
-      defaultInstance = new UUID(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.UUID();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.UUID)
+    public static org.voltdb.pmsg.DRAgent.UUID getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<UUID>
+        PARSER = new com.google.protobuf.AbstractParser<UUID>() {
+      public UUID parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new UUID(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<UUID> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<UUID> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.UUID getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface AckOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface AckOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.Ack)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional int32 partitionId = 1;
     /**
      * <code>optional int32 partitionId = 1;</code>
      */
@@ -514,7 +596,6 @@ public final class DRAgent {
      */
     int getPartitionId();
 
-    // optional fixed64 timestamp = 2;
     /**
      * <code>optional fixed64 timestamp = 2;</code>
      */
@@ -523,40 +604,43 @@ public final class DRAgent {
      * <code>optional fixed64 timestamp = 2;</code>
      */
     long getTimestamp();
+
+    /**
+     * <code>optional fixed64 averageRowLatencyNanos = 3;</code>
+     */
+    boolean hasAverageRowLatencyNanos();
+    /**
+     * <code>optional fixed64 averageRowLatencyNanos = 3;</code>
+     */
+    long getAverageRowLatencyNanos();
   }
   /**
    * Protobuf type {@code pmsg.Ack}
    */
-  public static final class Ack extends
-      com.google.protobuf.GeneratedMessage
-      implements AckOrBuilder {
+  public  static final class Ack extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.Ack)
+      AckOrBuilder {
     // Use Ack.newBuilder() to construct.
-    private Ack(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    private Ack(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private Ack(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final Ack defaultInstance;
-    public static Ack getDefaultInstance() {
-      return defaultInstance;
+    private Ack() {
+      partitionId_ = 0;
+      timestamp_ = 0L;
+      averageRowLatencyNanos_ = 0L;
     }
 
-    public Ack getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
     private Ack(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -585,13 +669,18 @@ public final class DRAgent {
               timestamp_ = input.readFixed64();
               break;
             }
+            case 25: {
+              bitField0_ |= 0x00000004;
+              averageRowLatencyNanos_ = input.readFixed64();
+              break;
+            }
           }
         }
       } catch (com.google.protobuf.InvalidProtocolBufferException e) {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -602,30 +691,14 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Ack_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Ack_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.Ack.class, org.voltdb.pmsg.DRAgent.Ack.Builder.class);
     }
 
-    public static com.google.protobuf.Parser<Ack> PARSER =
-        new com.google.protobuf.AbstractParser<Ack>() {
-      public Ack parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new Ack(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<Ack> getParserForType() {
-      return PARSER;
-    }
-
     private int bitField0_;
-    // optional int32 partitionId = 1;
     public static final int PARTITIONID_FIELD_NUMBER = 1;
     private int partitionId_;
     /**
@@ -641,7 +714,6 @@ public final class DRAgent {
       return partitionId_;
     }
 
-    // optional fixed64 timestamp = 2;
     public static final int TIMESTAMP_FIELD_NUMBER = 2;
     private long timestamp_;
     /**
@@ -657,14 +729,26 @@ public final class DRAgent {
       return timestamp_;
     }
 
-    private void initFields() {
-      partitionId_ = 0;
-      timestamp_ = 0L;
+    public static final int AVERAGEROWLATENCYNANOS_FIELD_NUMBER = 3;
+    private long averageRowLatencyNanos_;
+    /**
+     * <code>optional fixed64 averageRowLatencyNanos = 3;</code>
+     */
+    public boolean hasAverageRowLatencyNanos() {
+      return ((bitField0_ & 0x00000004) == 0x00000004);
     }
+    /**
+     * <code>optional fixed64 averageRowLatencyNanos = 3;</code>
+     */
+    public long getAverageRowLatencyNanos() {
+      return averageRowLatencyNanos_;
+    }
+
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -672,19 +756,20 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         output.writeInt32(1, partitionId_);
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         output.writeFixed64(2, timestamp_);
       }
-      getUnknownFields().writeTo(output);
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        output.writeFixed64(3, averageRowLatencyNanos_);
+      }
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
@@ -696,16 +781,70 @@ public final class DRAgent {
         size += com.google.protobuf.CodedOutputStream
           .computeFixed64Size(2, timestamp_);
       }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeFixed64Size(3, averageRowLatencyNanos_);
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.Ack)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.Ack other = (org.voltdb.pmsg.DRAgent.Ack) obj;
+
+      boolean result = true;
+      result = result && (hasPartitionId() == other.hasPartitionId());
+      if (hasPartitionId()) {
+        result = result && (getPartitionId()
+            == other.getPartitionId());
+      }
+      result = result && (hasTimestamp() == other.hasTimestamp());
+      if (hasTimestamp()) {
+        result = result && (getTimestamp()
+            == other.getTimestamp());
+      }
+      result = result && (hasAverageRowLatencyNanos() == other.hasAverageRowLatencyNanos());
+      if (hasAverageRowLatencyNanos()) {
+        result = result && (getAverageRowLatencyNanos()
+            == other.getAverageRowLatencyNanos());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasPartitionId()) {
+        hash = (37 * hash) + PARTITIONID_FIELD_NUMBER;
+        hash = (53 * hash) + getPartitionId();
+      }
+      if (hasTimestamp()) {
+        hash = (37 * hash) + TIMESTAMP_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getTimestamp());
+      }
+      if (hasAverageRowLatencyNanos()) {
+        hash = (37 * hash) + AVERAGEROWLATENCYNANOS_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getAverageRowLatencyNanos());
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.Ack parseFrom(
@@ -731,46 +870,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.Ack parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Ack parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Ack parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Ack parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Ack parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Ack parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Ack prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Ack prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -778,14 +928,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.Ack}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.AckOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.Ack)
+        org.voltdb.pmsg.DRAgent.AckOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Ack_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Ack_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -798,29 +949,24 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
         partitionId_ = 0;
         bitField0_ = (bitField0_ & ~0x00000001);
         timestamp_ = 0L;
         bitField0_ = (bitField0_ & ~0x00000002);
+        averageRowLatencyNanos_ = 0L;
+        bitField0_ = (bitField0_ & ~0x00000004);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -852,11 +998,41 @@ public final class DRAgent {
           to_bitField0_ |= 0x00000002;
         }
         result.timestamp_ = timestamp_;
+        if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
+          to_bitField0_ |= 0x00000004;
+        }
+        result.averageRowLatencyNanos_ = averageRowLatencyNanos_;
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.Ack) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.Ack)other);
@@ -874,7 +1050,11 @@ public final class DRAgent {
         if (other.hasTimestamp()) {
           setTimestamp(other.getTimestamp());
         }
-        this.mergeUnknownFields(other.getUnknownFields());
+        if (other.hasAverageRowLatencyNanos()) {
+          setAverageRowLatencyNanos(other.getAverageRowLatencyNanos());
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
@@ -891,7 +1071,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.Ack) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -901,7 +1081,6 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // optional int32 partitionId = 1;
       private int partitionId_ ;
       /**
        * <code>optional int32 partitionId = 1;</code>
@@ -934,7 +1113,6 @@ public final class DRAgent {
         return this;
       }
 
-      // optional fixed64 timestamp = 2;
       private long timestamp_ ;
       /**
        * <code>optional fixed64 timestamp = 2;</code>
@@ -967,21 +1145,90 @@ public final class DRAgent {
         return this;
       }
 
+      private long averageRowLatencyNanos_ ;
+      /**
+       * <code>optional fixed64 averageRowLatencyNanos = 3;</code>
+       */
+      public boolean hasAverageRowLatencyNanos() {
+        return ((bitField0_ & 0x00000004) == 0x00000004);
+      }
+      /**
+       * <code>optional fixed64 averageRowLatencyNanos = 3;</code>
+       */
+      public long getAverageRowLatencyNanos() {
+        return averageRowLatencyNanos_;
+      }
+      /**
+       * <code>optional fixed64 averageRowLatencyNanos = 3;</code>
+       */
+      public Builder setAverageRowLatencyNanos(long value) {
+        bitField0_ |= 0x00000004;
+        averageRowLatencyNanos_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional fixed64 averageRowLatencyNanos = 3;</code>
+       */
+      public Builder clearAverageRowLatencyNanos() {
+        bitField0_ = (bitField0_ & ~0x00000004);
+        averageRowLatencyNanos_ = 0L;
+        onChanged();
+        return this;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
+
       // @@protoc_insertion_point(builder_scope:pmsg.Ack)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.Ack)
+    private static final org.voltdb.pmsg.DRAgent.Ack DEFAULT_INSTANCE;
     static {
-      defaultInstance = new Ack(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.Ack();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.Ack)
+    public static org.voltdb.pmsg.DRAgent.Ack getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<Ack>
+        PARSER = new com.google.protobuf.AbstractParser<Ack>() {
+      public Ack parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new Ack(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<Ack> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<Ack> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.Ack getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface SnapshotReqOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface SnapshotReqOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.SnapshotReq)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional string nonce = 1;
     /**
      * <code>optional string nonce = 1;</code>
      */
@@ -995,40 +1242,42 @@ public final class DRAgent {
      */
     com.google.protobuf.ByteString
         getNonceBytes();
+
+    /**
+     * <code>optional int32 globalPartitionCount = 2;</code>
+     */
+    boolean hasGlobalPartitionCount();
+    /**
+     * <code>optional int32 globalPartitionCount = 2;</code>
+     */
+    int getGlobalPartitionCount();
   }
   /**
    * Protobuf type {@code pmsg.SnapshotReq}
    */
-  public static final class SnapshotReq extends
-      com.google.protobuf.GeneratedMessage
-      implements SnapshotReqOrBuilder {
+  public  static final class SnapshotReq extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.SnapshotReq)
+      SnapshotReqOrBuilder {
     // Use SnapshotReq.newBuilder() to construct.
-    private SnapshotReq(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    private SnapshotReq(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private SnapshotReq(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final SnapshotReq defaultInstance;
-    public static SnapshotReq getDefaultInstance() {
-      return defaultInstance;
+    private SnapshotReq() {
+      nonce_ = "";
+      globalPartitionCount_ = 0;
     }
 
-    public SnapshotReq getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
     private SnapshotReq(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -1048,8 +1297,14 @@ public final class DRAgent {
               break;
             }
             case 10: {
+              com.google.protobuf.ByteString bs = input.readBytes();
               bitField0_ |= 0x00000001;
-              nonce_ = input.readBytes();
+              nonce_ = bs;
+              break;
+            }
+            case 16: {
+              bitField0_ |= 0x00000002;
+              globalPartitionCount_ = input.readInt32();
               break;
             }
           }
@@ -1058,7 +1313,7 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -1069,32 +1324,16 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_SnapshotReq_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_SnapshotReq_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.SnapshotReq.class, org.voltdb.pmsg.DRAgent.SnapshotReq.Builder.class);
     }
 
-    public static com.google.protobuf.Parser<SnapshotReq> PARSER =
-        new com.google.protobuf.AbstractParser<SnapshotReq>() {
-      public SnapshotReq parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new SnapshotReq(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<SnapshotReq> getParserForType() {
-      return PARSER;
-    }
-
     private int bitField0_;
-    // optional string nonce = 1;
     public static final int NONCE_FIELD_NUMBER = 1;
-    private java.lang.Object nonce_;
+    private volatile java.lang.Object nonce_;
     /**
      * <code>optional string nonce = 1;</code>
      */
@@ -1135,13 +1374,26 @@ public final class DRAgent {
       }
     }
 
-    private void initFields() {
-      nonce_ = "";
+    public static final int GLOBALPARTITIONCOUNT_FIELD_NUMBER = 2;
+    private int globalPartitionCount_;
+    /**
+     * <code>optional int32 globalPartitionCount = 2;</code>
+     */
+    public boolean hasGlobalPartitionCount() {
+      return ((bitField0_ & 0x00000002) == 0x00000002);
     }
+    /**
+     * <code>optional int32 globalPartitionCount = 2;</code>
+     */
+    public int getGlobalPartitionCount() {
+      return globalPartitionCount_;
+    }
+
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -1149,33 +1401,76 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
-        output.writeBytes(1, getNonceBytes());
+        com.google.protobuf.GeneratedMessageV3.writeString(output, 1, nonce_);
       }
-      getUnknownFields().writeTo(output);
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
+        output.writeInt32(2, globalPartitionCount_);
+      }
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(1, getNonceBytes());
+        size += com.google.protobuf.GeneratedMessageV3.computeStringSize(1, nonce_);
       }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeInt32Size(2, globalPartitionCount_);
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.SnapshotReq)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.SnapshotReq other = (org.voltdb.pmsg.DRAgent.SnapshotReq) obj;
+
+      boolean result = true;
+      result = result && (hasNonce() == other.hasNonce());
+      if (hasNonce()) {
+        result = result && getNonce()
+            .equals(other.getNonce());
+      }
+      result = result && (hasGlobalPartitionCount() == other.hasGlobalPartitionCount());
+      if (hasGlobalPartitionCount()) {
+        result = result && (getGlobalPartitionCount()
+            == other.getGlobalPartitionCount());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasNonce()) {
+        hash = (37 * hash) + NONCE_FIELD_NUMBER;
+        hash = (53 * hash) + getNonce().hashCode();
+      }
+      if (hasGlobalPartitionCount()) {
+        hash = (37 * hash) + GLOBALPARTITIONCOUNT_FIELD_NUMBER;
+        hash = (53 * hash) + getGlobalPartitionCount();
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.SnapshotReq parseFrom(
@@ -1201,46 +1496,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.SnapshotReq parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.SnapshotReq parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.SnapshotReq parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.SnapshotReq parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.SnapshotReq parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.SnapshotReq parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.SnapshotReq prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.SnapshotReq prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -1248,14 +1554,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.SnapshotReq}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.SnapshotReqOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.SnapshotReq)
+        org.voltdb.pmsg.DRAgent.SnapshotReqOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_SnapshotReq_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_SnapshotReq_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -1268,27 +1575,22 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
         nonce_ = "";
         bitField0_ = (bitField0_ & ~0x00000001);
+        globalPartitionCount_ = 0;
+        bitField0_ = (bitField0_ & ~0x00000002);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -1316,11 +1618,41 @@ public final class DRAgent {
           to_bitField0_ |= 0x00000001;
         }
         result.nonce_ = nonce_;
+        if (((from_bitField0_ & 0x00000002) == 0x00000002)) {
+          to_bitField0_ |= 0x00000002;
+        }
+        result.globalPartitionCount_ = globalPartitionCount_;
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.SnapshotReq) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.SnapshotReq)other);
@@ -1337,7 +1669,11 @@ public final class DRAgent {
           nonce_ = other.nonce_;
           onChanged();
         }
-        this.mergeUnknownFields(other.getUnknownFields());
+        if (other.hasGlobalPartitionCount()) {
+          setGlobalPartitionCount(other.getGlobalPartitionCount());
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
@@ -1354,7 +1690,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.SnapshotReq) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -1364,7 +1700,6 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // optional string nonce = 1;
       private java.lang.Object nonce_ = "";
       /**
        * <code>optional string nonce = 1;</code>
@@ -1378,9 +1713,12 @@ public final class DRAgent {
       public java.lang.String getNonce() {
         java.lang.Object ref = nonce_;
         if (!(ref instanceof java.lang.String)) {
-          java.lang.String s = ((com.google.protobuf.ByteString) ref)
-              .toStringUtf8();
-          nonce_ = s;
+          com.google.protobuf.ByteString bs =
+              (com.google.protobuf.ByteString) ref;
+          java.lang.String s = bs.toStringUtf8();
+          if (bs.isValidUtf8()) {
+            nonce_ = s;
+          }
           return s;
         } else {
           return (java.lang.String) ref;
@@ -1438,21 +1776,90 @@ public final class DRAgent {
         return this;
       }
 
+      private int globalPartitionCount_ ;
+      /**
+       * <code>optional int32 globalPartitionCount = 2;</code>
+       */
+      public boolean hasGlobalPartitionCount() {
+        return ((bitField0_ & 0x00000002) == 0x00000002);
+      }
+      /**
+       * <code>optional int32 globalPartitionCount = 2;</code>
+       */
+      public int getGlobalPartitionCount() {
+        return globalPartitionCount_;
+      }
+      /**
+       * <code>optional int32 globalPartitionCount = 2;</code>
+       */
+      public Builder setGlobalPartitionCount(int value) {
+        bitField0_ |= 0x00000002;
+        globalPartitionCount_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional int32 globalPartitionCount = 2;</code>
+       */
+      public Builder clearGlobalPartitionCount() {
+        bitField0_ = (bitField0_ & ~0x00000002);
+        globalPartitionCount_ = 0;
+        onChanged();
+        return this;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
+
       // @@protoc_insertion_point(builder_scope:pmsg.SnapshotReq)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.SnapshotReq)
+    private static final org.voltdb.pmsg.DRAgent.SnapshotReq DEFAULT_INSTANCE;
     static {
-      defaultInstance = new SnapshotReq(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.SnapshotReq();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.SnapshotReq)
+    public static org.voltdb.pmsg.DRAgent.SnapshotReq getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<SnapshotReq>
+        PARSER = new com.google.protobuf.AbstractParser<SnapshotReq>() {
+      public SnapshotReq parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new SnapshotReq(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<SnapshotReq> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<SnapshotReq> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.SnapshotReq getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface ResetOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface ResetOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.Reset)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional int32 partitionId = 1;
     /**
      * <code>optional int32 partitionId = 1;</code>
      */
@@ -1462,7 +1869,6 @@ public final class DRAgent {
      */
     int getPartitionId();
 
-    // optional fixed64 timestamp = 2;
     /**
      * <code>optional fixed64 timestamp = 2;</code>
      */
@@ -1475,36 +1881,29 @@ public final class DRAgent {
   /**
    * Protobuf type {@code pmsg.Reset}
    */
-  public static final class Reset extends
-      com.google.protobuf.GeneratedMessage
-      implements ResetOrBuilder {
+  public  static final class Reset extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.Reset)
+      ResetOrBuilder {
     // Use Reset.newBuilder() to construct.
-    private Reset(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    private Reset(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private Reset(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final Reset defaultInstance;
-    public static Reset getDefaultInstance() {
-      return defaultInstance;
+    private Reset() {
+      partitionId_ = 0;
+      timestamp_ = 0L;
     }
 
-    public Reset getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
     private Reset(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -1539,7 +1938,7 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -1550,30 +1949,14 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Reset_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Reset_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.Reset.class, org.voltdb.pmsg.DRAgent.Reset.Builder.class);
     }
 
-    public static com.google.protobuf.Parser<Reset> PARSER =
-        new com.google.protobuf.AbstractParser<Reset>() {
-      public Reset parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new Reset(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<Reset> getParserForType() {
-      return PARSER;
-    }
-
     private int bitField0_;
-    // optional int32 partitionId = 1;
     public static final int PARTITIONID_FIELD_NUMBER = 1;
     private int partitionId_;
     /**
@@ -1589,7 +1972,6 @@ public final class DRAgent {
       return partitionId_;
     }
 
-    // optional fixed64 timestamp = 2;
     public static final int TIMESTAMP_FIELD_NUMBER = 2;
     private long timestamp_;
     /**
@@ -1605,14 +1987,11 @@ public final class DRAgent {
       return timestamp_;
     }
 
-    private void initFields() {
-      partitionId_ = 0;
-      timestamp_ = 0L;
-    }
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -1620,19 +1999,17 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         output.writeInt32(1, partitionId_);
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         output.writeFixed64(2, timestamp_);
       }
-      getUnknownFields().writeTo(output);
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
@@ -1644,16 +2021,56 @@ public final class DRAgent {
         size += com.google.protobuf.CodedOutputStream
           .computeFixed64Size(2, timestamp_);
       }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.Reset)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.Reset other = (org.voltdb.pmsg.DRAgent.Reset) obj;
+
+      boolean result = true;
+      result = result && (hasPartitionId() == other.hasPartitionId());
+      if (hasPartitionId()) {
+        result = result && (getPartitionId()
+            == other.getPartitionId());
+      }
+      result = result && (hasTimestamp() == other.hasTimestamp());
+      if (hasTimestamp()) {
+        result = result && (getTimestamp()
+            == other.getTimestamp());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasPartitionId()) {
+        hash = (37 * hash) + PARTITIONID_FIELD_NUMBER;
+        hash = (53 * hash) + getPartitionId();
+      }
+      if (hasTimestamp()) {
+        hash = (37 * hash) + TIMESTAMP_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getTimestamp());
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.Reset parseFrom(
@@ -1679,46 +2096,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.Reset parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Reset parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Reset parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Reset parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Reset parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Reset parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Reset prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Reset prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -1726,14 +2154,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.Reset}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.ResetOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.Reset)
+        org.voltdb.pmsg.DRAgent.ResetOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Reset_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Reset_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -1746,18 +2175,15 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
         partitionId_ = 0;
@@ -1765,10 +2191,6 @@ public final class DRAgent {
         timestamp_ = 0L;
         bitField0_ = (bitField0_ & ~0x00000002);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -1805,6 +2227,32 @@ public final class DRAgent {
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.Reset) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.Reset)other);
@@ -1822,7 +2270,8 @@ public final class DRAgent {
         if (other.hasTimestamp()) {
           setTimestamp(other.getTimestamp());
         }
-        this.mergeUnknownFields(other.getUnknownFields());
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
@@ -1839,7 +2288,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.Reset) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -1849,7 +2298,6 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // optional int32 partitionId = 1;
       private int partitionId_ ;
       /**
        * <code>optional int32 partitionId = 1;</code>
@@ -1882,7 +2330,6 @@ public final class DRAgent {
         return this;
       }
 
-      // optional fixed64 timestamp = 2;
       private long timestamp_ ;
       /**
        * <code>optional fixed64 timestamp = 2;</code>
@@ -1914,22 +2361,59 @@ public final class DRAgent {
         onChanged();
         return this;
       }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
 
       // @@protoc_insertion_point(builder_scope:pmsg.Reset)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.Reset)
+    private static final org.voltdb.pmsg.DRAgent.Reset DEFAULT_INSTANCE;
     static {
-      defaultInstance = new Reset(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.Reset();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.Reset)
+    public static org.voltdb.pmsg.DRAgent.Reset getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<Reset>
+        PARSER = new com.google.protobuf.AbstractParser<Reset>() {
+      public Reset parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new Reset(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<Reset> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<Reset> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.Reset getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface PauseOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface PauseOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.Pause)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional int32 partitionId = 1;
     /**
      * <code>optional int32 partitionId = 1;</code>
      */
@@ -1942,36 +2426,28 @@ public final class DRAgent {
   /**
    * Protobuf type {@code pmsg.Pause}
    */
-  public static final class Pause extends
-      com.google.protobuf.GeneratedMessage
-      implements PauseOrBuilder {
+  public  static final class Pause extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.Pause)
+      PauseOrBuilder {
     // Use Pause.newBuilder() to construct.
-    private Pause(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    private Pause(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private Pause(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final Pause defaultInstance;
-    public static Pause getDefaultInstance() {
-      return defaultInstance;
+    private Pause() {
+      partitionId_ = 0;
     }
 
-    public Pause getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
     private Pause(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -2001,7 +2477,7 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -2012,30 +2488,14 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Pause_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Pause_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.Pause.class, org.voltdb.pmsg.DRAgent.Pause.Builder.class);
     }
 
-    public static com.google.protobuf.Parser<Pause> PARSER =
-        new com.google.protobuf.AbstractParser<Pause>() {
-      public Pause parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new Pause(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<Pause> getParserForType() {
-      return PARSER;
-    }
-
     private int bitField0_;
-    // optional int32 partitionId = 1;
     public static final int PARTITIONID_FIELD_NUMBER = 1;
     private int partitionId_;
     /**
@@ -2051,13 +2511,11 @@ public final class DRAgent {
       return partitionId_;
     }
 
-    private void initFields() {
-      partitionId_ = 0;
-    }
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -2065,16 +2523,14 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         output.writeInt32(1, partitionId_);
       }
-      getUnknownFields().writeTo(output);
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
@@ -2082,16 +2538,46 @@ public final class DRAgent {
         size += com.google.protobuf.CodedOutputStream
           .computeInt32Size(1, partitionId_);
       }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.Pause)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.Pause other = (org.voltdb.pmsg.DRAgent.Pause) obj;
+
+      boolean result = true;
+      result = result && (hasPartitionId() == other.hasPartitionId());
+      if (hasPartitionId()) {
+        result = result && (getPartitionId()
+            == other.getPartitionId());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasPartitionId()) {
+        hash = (37 * hash) + PARTITIONID_FIELD_NUMBER;
+        hash = (53 * hash) + getPartitionId();
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.Pause parseFrom(
@@ -2117,46 +2603,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.Pause parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Pause parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Pause parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Pause parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Pause parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Pause parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Pause prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Pause prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -2164,14 +2661,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.Pause}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.PauseOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.Pause)
+        org.voltdb.pmsg.DRAgent.PauseOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Pause_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Pause_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -2184,27 +2682,20 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
         partitionId_ = 0;
         bitField0_ = (bitField0_ & ~0x00000001);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -2237,6 +2728,32 @@ public final class DRAgent {
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.Pause) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.Pause)other);
@@ -2251,7 +2768,8 @@ public final class DRAgent {
         if (other.hasPartitionId()) {
           setPartitionId(other.getPartitionId());
         }
-        this.mergeUnknownFields(other.getUnknownFields());
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
@@ -2268,7 +2786,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.Pause) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -2278,7 +2796,6 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // optional int32 partitionId = 1;
       private int partitionId_ ;
       /**
        * <code>optional int32 partitionId = 1;</code>
@@ -2310,22 +2827,59 @@ public final class DRAgent {
         onChanged();
         return this;
       }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
 
       // @@protoc_insertion_point(builder_scope:pmsg.Pause)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.Pause)
+    private static final org.voltdb.pmsg.DRAgent.Pause DEFAULT_INSTANCE;
     static {
-      defaultInstance = new Pause(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.Pause();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.Pause)
+    public static org.voltdb.pmsg.DRAgent.Pause getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<Pause>
+        PARSER = new com.google.protobuf.AbstractParser<Pause>() {
+      public Pause parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new Pause(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<Pause> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<Pause> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.Pause getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface ConnectOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface ConnectOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.Connect)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional int32 clusterId = 1;
     /**
      * <code>optional int32 clusterId = 1;</code>
      */
@@ -2335,49 +2889,74 @@ public final class DRAgent {
      */
     int getClusterId();
 
-    // optional fixed64 persistInstanceId = 2;
     /**
-     * <code>optional fixed64 persistInstanceId = 2;</code>
+     * <code>optional fixed64 clusterCreationId = 2;</code>
      */
-    boolean hasPersistInstanceId();
+    boolean hasClusterCreationId();
     /**
-     * <code>optional fixed64 persistInstanceId = 2;</code>
+     * <code>optional fixed64 clusterCreationId = 2;</code>
      */
-    long getPersistInstanceId();
+    long getClusterCreationId();
+
+    /**
+     * <code>optional int32 protocolVersion = 3;</code>
+     */
+    boolean hasProtocolVersion();
+    /**
+     * <code>optional int32 protocolVersion = 3;</code>
+     */
+    int getProtocolVersion();
+
+    /**
+     * <code>optional fixed64 clusterRecoveryId = 4;</code>
+     */
+    boolean hasClusterRecoveryId();
+    /**
+     * <code>optional fixed64 clusterRecoveryId = 4;</code>
+     */
+    long getClusterRecoveryId();
+
+    /**
+     * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+     */
+    boolean hasNodeInfo();
+    /**
+     * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+     */
+    org.voltdb.pmsg.DRAgent.NodeInfo getNodeInfo();
+    /**
+     * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+     */
+    org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder getNodeInfoOrBuilder();
   }
   /**
    * Protobuf type {@code pmsg.Connect}
    */
-  public static final class Connect extends
-      com.google.protobuf.GeneratedMessage
-      implements ConnectOrBuilder {
+  public  static final class Connect extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.Connect)
+      ConnectOrBuilder {
     // Use Connect.newBuilder() to construct.
-    private Connect(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    private Connect(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private Connect(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final Connect defaultInstance;
-    public static Connect getDefaultInstance() {
-      return defaultInstance;
-    }
-
-    public Connect getDefaultInstanceForType() {
-      return defaultInstance;
+    private Connect() {
+      clusterId_ = 0;
+      clusterCreationId_ = 0L;
+      protocolVersion_ = 0;
+      clusterRecoveryId_ = 0L;
     }
 
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
     private Connect(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -2403,7 +2982,30 @@ public final class DRAgent {
             }
             case 17: {
               bitField0_ |= 0x00000002;
-              persistInstanceId_ = input.readFixed64();
+              clusterCreationId_ = input.readFixed64();
+              break;
+            }
+            case 24: {
+              bitField0_ |= 0x00000004;
+              protocolVersion_ = input.readInt32();
+              break;
+            }
+            case 33: {
+              bitField0_ |= 0x00000008;
+              clusterRecoveryId_ = input.readFixed64();
+              break;
+            }
+            case 42: {
+              org.voltdb.pmsg.DRAgent.NodeInfo.Builder subBuilder = null;
+              if (((bitField0_ & 0x00000010) == 0x00000010)) {
+                subBuilder = nodeInfo_.toBuilder();
+              }
+              nodeInfo_ = input.readMessage(org.voltdb.pmsg.DRAgent.NodeInfo.PARSER, extensionRegistry);
+              if (subBuilder != null) {
+                subBuilder.mergeFrom(nodeInfo_);
+                nodeInfo_ = subBuilder.buildPartial();
+              }
+              bitField0_ |= 0x00000010;
               break;
             }
           }
@@ -2412,7 +3014,7 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -2423,30 +3025,14 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Connect_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Connect_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.Connect.class, org.voltdb.pmsg.DRAgent.Connect.Builder.class);
     }
 
-    public static com.google.protobuf.Parser<Connect> PARSER =
-        new com.google.protobuf.AbstractParser<Connect>() {
-      public Connect parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new Connect(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<Connect> getParserForType() {
-      return PARSER;
-    }
-
     private int bitField0_;
-    // optional int32 clusterId = 1;
     public static final int CLUSTERID_FIELD_NUMBER = 1;
     private int clusterId_;
     /**
@@ -2462,30 +3048,77 @@ public final class DRAgent {
       return clusterId_;
     }
 
-    // optional fixed64 persistInstanceId = 2;
-    public static final int PERSISTINSTANCEID_FIELD_NUMBER = 2;
-    private long persistInstanceId_;
+    public static final int CLUSTERCREATIONID_FIELD_NUMBER = 2;
+    private long clusterCreationId_;
     /**
-     * <code>optional fixed64 persistInstanceId = 2;</code>
+     * <code>optional fixed64 clusterCreationId = 2;</code>
      */
-    public boolean hasPersistInstanceId() {
+    public boolean hasClusterCreationId() {
       return ((bitField0_ & 0x00000002) == 0x00000002);
     }
     /**
-     * <code>optional fixed64 persistInstanceId = 2;</code>
+     * <code>optional fixed64 clusterCreationId = 2;</code>
      */
-    public long getPersistInstanceId() {
-      return persistInstanceId_;
+    public long getClusterCreationId() {
+      return clusterCreationId_;
     }
 
-    private void initFields() {
-      clusterId_ = 0;
-      persistInstanceId_ = 0L;
+    public static final int PROTOCOLVERSION_FIELD_NUMBER = 3;
+    private int protocolVersion_;
+    /**
+     * <code>optional int32 protocolVersion = 3;</code>
+     */
+    public boolean hasProtocolVersion() {
+      return ((bitField0_ & 0x00000004) == 0x00000004);
     }
+    /**
+     * <code>optional int32 protocolVersion = 3;</code>
+     */
+    public int getProtocolVersion() {
+      return protocolVersion_;
+    }
+
+    public static final int CLUSTERRECOVERYID_FIELD_NUMBER = 4;
+    private long clusterRecoveryId_;
+    /**
+     * <code>optional fixed64 clusterRecoveryId = 4;</code>
+     */
+    public boolean hasClusterRecoveryId() {
+      return ((bitField0_ & 0x00000008) == 0x00000008);
+    }
+    /**
+     * <code>optional fixed64 clusterRecoveryId = 4;</code>
+     */
+    public long getClusterRecoveryId() {
+      return clusterRecoveryId_;
+    }
+
+    public static final int NODEINFO_FIELD_NUMBER = 5;
+    private org.voltdb.pmsg.DRAgent.NodeInfo nodeInfo_;
+    /**
+     * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+     */
+    public boolean hasNodeInfo() {
+      return ((bitField0_ & 0x00000010) == 0x00000010);
+    }
+    /**
+     * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.NodeInfo getNodeInfo() {
+      return nodeInfo_ == null ? org.voltdb.pmsg.DRAgent.NodeInfo.getDefaultInstance() : nodeInfo_;
+    }
+    /**
+     * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder getNodeInfoOrBuilder() {
+      return nodeInfo_ == null ? org.voltdb.pmsg.DRAgent.NodeInfo.getDefaultInstance() : nodeInfo_;
+    }
+
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -2493,19 +3126,26 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         output.writeInt32(1, clusterId_);
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
-        output.writeFixed64(2, persistInstanceId_);
+        output.writeFixed64(2, clusterCreationId_);
       }
-      getUnknownFields().writeTo(output);
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        output.writeInt32(3, protocolVersion_);
+      }
+      if (((bitField0_ & 0x00000008) == 0x00000008)) {
+        output.writeFixed64(4, clusterRecoveryId_);
+      }
+      if (((bitField0_ & 0x00000010) == 0x00000010)) {
+        output.writeMessage(5, getNodeInfo());
+      }
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
@@ -2515,18 +3155,98 @@ public final class DRAgent {
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeFixed64Size(2, persistInstanceId_);
+          .computeFixed64Size(2, clusterCreationId_);
       }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeInt32Size(3, protocolVersion_);
+      }
+      if (((bitField0_ & 0x00000008) == 0x00000008)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeFixed64Size(4, clusterRecoveryId_);
+      }
+      if (((bitField0_ & 0x00000010) == 0x00000010)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(5, getNodeInfo());
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.Connect)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.Connect other = (org.voltdb.pmsg.DRAgent.Connect) obj;
+
+      boolean result = true;
+      result = result && (hasClusterId() == other.hasClusterId());
+      if (hasClusterId()) {
+        result = result && (getClusterId()
+            == other.getClusterId());
+      }
+      result = result && (hasClusterCreationId() == other.hasClusterCreationId());
+      if (hasClusterCreationId()) {
+        result = result && (getClusterCreationId()
+            == other.getClusterCreationId());
+      }
+      result = result && (hasProtocolVersion() == other.hasProtocolVersion());
+      if (hasProtocolVersion()) {
+        result = result && (getProtocolVersion()
+            == other.getProtocolVersion());
+      }
+      result = result && (hasClusterRecoveryId() == other.hasClusterRecoveryId());
+      if (hasClusterRecoveryId()) {
+        result = result && (getClusterRecoveryId()
+            == other.getClusterRecoveryId());
+      }
+      result = result && (hasNodeInfo() == other.hasNodeInfo());
+      if (hasNodeInfo()) {
+        result = result && getNodeInfo()
+            .equals(other.getNodeInfo());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasClusterId()) {
+        hash = (37 * hash) + CLUSTERID_FIELD_NUMBER;
+        hash = (53 * hash) + getClusterId();
+      }
+      if (hasClusterCreationId()) {
+        hash = (37 * hash) + CLUSTERCREATIONID_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getClusterCreationId());
+      }
+      if (hasProtocolVersion()) {
+        hash = (37 * hash) + PROTOCOLVERSION_FIELD_NUMBER;
+        hash = (53 * hash) + getProtocolVersion();
+      }
+      if (hasClusterRecoveryId()) {
+        hash = (37 * hash) + CLUSTERRECOVERYID_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getClusterRecoveryId());
+      }
+      if (hasNodeInfo()) {
+        hash = (37 * hash) + NODEINFO_FIELD_NUMBER;
+        hash = (53 * hash) + getNodeInfo().hashCode();
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.Connect parseFrom(
@@ -2552,46 +3272,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.Connect parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Connect parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Connect parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Connect parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Connect parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Connect parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Connect prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Connect prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -2599,14 +3330,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.Connect}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.ConnectOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.Connect)
+        org.voltdb.pmsg.DRAgent.ConnectOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Connect_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Connect_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -2619,29 +3351,33 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
+          getNodeInfoFieldBuilder();
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
         clusterId_ = 0;
         bitField0_ = (bitField0_ & ~0x00000001);
-        persistInstanceId_ = 0L;
+        clusterCreationId_ = 0L;
         bitField0_ = (bitField0_ & ~0x00000002);
+        protocolVersion_ = 0;
+        bitField0_ = (bitField0_ & ~0x00000004);
+        clusterRecoveryId_ = 0L;
+        bitField0_ = (bitField0_ & ~0x00000008);
+        if (nodeInfoBuilder_ == null) {
+          nodeInfo_ = null;
+        } else {
+          nodeInfoBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000010);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -2672,12 +3408,54 @@ public final class DRAgent {
         if (((from_bitField0_ & 0x00000002) == 0x00000002)) {
           to_bitField0_ |= 0x00000002;
         }
-        result.persistInstanceId_ = persistInstanceId_;
+        result.clusterCreationId_ = clusterCreationId_;
+        if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
+          to_bitField0_ |= 0x00000004;
+        }
+        result.protocolVersion_ = protocolVersion_;
+        if (((from_bitField0_ & 0x00000008) == 0x00000008)) {
+          to_bitField0_ |= 0x00000008;
+        }
+        result.clusterRecoveryId_ = clusterRecoveryId_;
+        if (((from_bitField0_ & 0x00000010) == 0x00000010)) {
+          to_bitField0_ |= 0x00000010;
+        }
+        if (nodeInfoBuilder_ == null) {
+          result.nodeInfo_ = nodeInfo_;
+        } else {
+          result.nodeInfo_ = nodeInfoBuilder_.build();
+        }
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.Connect) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.Connect)other);
@@ -2692,10 +3470,20 @@ public final class DRAgent {
         if (other.hasClusterId()) {
           setClusterId(other.getClusterId());
         }
-        if (other.hasPersistInstanceId()) {
-          setPersistInstanceId(other.getPersistInstanceId());
+        if (other.hasClusterCreationId()) {
+          setClusterCreationId(other.getClusterCreationId());
         }
-        this.mergeUnknownFields(other.getUnknownFields());
+        if (other.hasProtocolVersion()) {
+          setProtocolVersion(other.getProtocolVersion());
+        }
+        if (other.hasClusterRecoveryId()) {
+          setClusterRecoveryId(other.getClusterRecoveryId());
+        }
+        if (other.hasNodeInfo()) {
+          mergeNodeInfo(other.getNodeInfo());
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
@@ -2712,7 +3500,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.Connect) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -2722,7 +3510,6 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // optional int32 clusterId = 1;
       private int clusterId_ ;
       /**
        * <code>optional int32 clusterId = 1;</code>
@@ -2755,54 +3542,272 @@ public final class DRAgent {
         return this;
       }
 
-      // optional fixed64 persistInstanceId = 2;
-      private long persistInstanceId_ ;
+      private long clusterCreationId_ ;
       /**
-       * <code>optional fixed64 persistInstanceId = 2;</code>
+       * <code>optional fixed64 clusterCreationId = 2;</code>
        */
-      public boolean hasPersistInstanceId() {
+      public boolean hasClusterCreationId() {
         return ((bitField0_ & 0x00000002) == 0x00000002);
       }
       /**
-       * <code>optional fixed64 persistInstanceId = 2;</code>
+       * <code>optional fixed64 clusterCreationId = 2;</code>
        */
-      public long getPersistInstanceId() {
-        return persistInstanceId_;
+      public long getClusterCreationId() {
+        return clusterCreationId_;
       }
       /**
-       * <code>optional fixed64 persistInstanceId = 2;</code>
+       * <code>optional fixed64 clusterCreationId = 2;</code>
        */
-      public Builder setPersistInstanceId(long value) {
+      public Builder setClusterCreationId(long value) {
         bitField0_ |= 0x00000002;
-        persistInstanceId_ = value;
+        clusterCreationId_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>optional fixed64 persistInstanceId = 2;</code>
+       * <code>optional fixed64 clusterCreationId = 2;</code>
        */
-      public Builder clearPersistInstanceId() {
+      public Builder clearClusterCreationId() {
         bitField0_ = (bitField0_ & ~0x00000002);
-        persistInstanceId_ = 0L;
+        clusterCreationId_ = 0L;
         onChanged();
         return this;
       }
+
+      private int protocolVersion_ ;
+      /**
+       * <code>optional int32 protocolVersion = 3;</code>
+       */
+      public boolean hasProtocolVersion() {
+        return ((bitField0_ & 0x00000004) == 0x00000004);
+      }
+      /**
+       * <code>optional int32 protocolVersion = 3;</code>
+       */
+      public int getProtocolVersion() {
+        return protocolVersion_;
+      }
+      /**
+       * <code>optional int32 protocolVersion = 3;</code>
+       */
+      public Builder setProtocolVersion(int value) {
+        bitField0_ |= 0x00000004;
+        protocolVersion_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional int32 protocolVersion = 3;</code>
+       */
+      public Builder clearProtocolVersion() {
+        bitField0_ = (bitField0_ & ~0x00000004);
+        protocolVersion_ = 0;
+        onChanged();
+        return this;
+      }
+
+      private long clusterRecoveryId_ ;
+      /**
+       * <code>optional fixed64 clusterRecoveryId = 4;</code>
+       */
+      public boolean hasClusterRecoveryId() {
+        return ((bitField0_ & 0x00000008) == 0x00000008);
+      }
+      /**
+       * <code>optional fixed64 clusterRecoveryId = 4;</code>
+       */
+      public long getClusterRecoveryId() {
+        return clusterRecoveryId_;
+      }
+      /**
+       * <code>optional fixed64 clusterRecoveryId = 4;</code>
+       */
+      public Builder setClusterRecoveryId(long value) {
+        bitField0_ |= 0x00000008;
+        clusterRecoveryId_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional fixed64 clusterRecoveryId = 4;</code>
+       */
+      public Builder clearClusterRecoveryId() {
+        bitField0_ = (bitField0_ & ~0x00000008);
+        clusterRecoveryId_ = 0L;
+        onChanged();
+        return this;
+      }
+
+      private org.voltdb.pmsg.DRAgent.NodeInfo nodeInfo_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.NodeInfo, org.voltdb.pmsg.DRAgent.NodeInfo.Builder, org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> nodeInfoBuilder_;
+      /**
+       * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+       */
+      public boolean hasNodeInfo() {
+        return ((bitField0_ & 0x00000010) == 0x00000010);
+      }
+      /**
+       * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.NodeInfo getNodeInfo() {
+        if (nodeInfoBuilder_ == null) {
+          return nodeInfo_ == null ? org.voltdb.pmsg.DRAgent.NodeInfo.getDefaultInstance() : nodeInfo_;
+        } else {
+          return nodeInfoBuilder_.getMessage();
+        }
+      }
+      /**
+       * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+       */
+      public Builder setNodeInfo(org.voltdb.pmsg.DRAgent.NodeInfo value) {
+        if (nodeInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          nodeInfo_ = value;
+          onChanged();
+        } else {
+          nodeInfoBuilder_.setMessage(value);
+        }
+        bitField0_ |= 0x00000010;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+       */
+      public Builder setNodeInfo(
+          org.voltdb.pmsg.DRAgent.NodeInfo.Builder builderForValue) {
+        if (nodeInfoBuilder_ == null) {
+          nodeInfo_ = builderForValue.build();
+          onChanged();
+        } else {
+          nodeInfoBuilder_.setMessage(builderForValue.build());
+        }
+        bitField0_ |= 0x00000010;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+       */
+      public Builder mergeNodeInfo(org.voltdb.pmsg.DRAgent.NodeInfo value) {
+        if (nodeInfoBuilder_ == null) {
+          if (((bitField0_ & 0x00000010) == 0x00000010) &&
+              nodeInfo_ != null &&
+              nodeInfo_ != org.voltdb.pmsg.DRAgent.NodeInfo.getDefaultInstance()) {
+            nodeInfo_ =
+              org.voltdb.pmsg.DRAgent.NodeInfo.newBuilder(nodeInfo_).mergeFrom(value).buildPartial();
+          } else {
+            nodeInfo_ = value;
+          }
+          onChanged();
+        } else {
+          nodeInfoBuilder_.mergeFrom(value);
+        }
+        bitField0_ |= 0x00000010;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+       */
+      public Builder clearNodeInfo() {
+        if (nodeInfoBuilder_ == null) {
+          nodeInfo_ = null;
+          onChanged();
+        } else {
+          nodeInfoBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000010);
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.NodeInfo.Builder getNodeInfoBuilder() {
+        bitField0_ |= 0x00000010;
+        onChanged();
+        return getNodeInfoFieldBuilder().getBuilder();
+      }
+      /**
+       * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder getNodeInfoOrBuilder() {
+        if (nodeInfoBuilder_ != null) {
+          return nodeInfoBuilder_.getMessageOrBuilder();
+        } else {
+          return nodeInfo_ == null ?
+              org.voltdb.pmsg.DRAgent.NodeInfo.getDefaultInstance() : nodeInfo_;
+        }
+      }
+      /**
+       * <code>optional .pmsg.NodeInfo nodeInfo = 5;</code>
+       */
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.NodeInfo, org.voltdb.pmsg.DRAgent.NodeInfo.Builder, org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> 
+          getNodeInfoFieldBuilder() {
+        if (nodeInfoBuilder_ == null) {
+          nodeInfoBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.NodeInfo, org.voltdb.pmsg.DRAgent.NodeInfo.Builder, org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder>(
+                  getNodeInfo(),
+                  getParentForChildren(),
+                  isClean());
+          nodeInfo_ = null;
+        }
+        return nodeInfoBuilder_;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
 
       // @@protoc_insertion_point(builder_scope:pmsg.Connect)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.Connect)
+    private static final org.voltdb.pmsg.DRAgent.Connect DEFAULT_INSTANCE;
     static {
-      defaultInstance = new Connect(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.Connect();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.Connect)
+    public static org.voltdb.pmsg.DRAgent.Connect getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<Connect>
+        PARSER = new com.google.protobuf.AbstractParser<Connect>() {
+      public Connect parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new Connect(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<Connect> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<Connect> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.Connect getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface SubscribeOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface SubscribeOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.Subscribe)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional int32 partitionId = 1;
     /**
      * <code>optional int32 partitionId = 1;</code>
      */
@@ -2812,7 +3817,6 @@ public final class DRAgent {
      */
     int getPartitionId();
 
-    // optional fixed64 timestamp = 2;
     /**
      * <code>optional fixed64 timestamp = 2;</code>
      */
@@ -2822,7 +3826,6 @@ public final class DRAgent {
      */
     long getTimestamp();
 
-    // optional bool isCovering = 3;
     /**
      * <code>optional bool isCovering = 3;</code>
      */
@@ -2832,7 +3835,6 @@ public final class DRAgent {
      */
     boolean getIsCovering();
 
-    // optional fixed64 rewindToUniqueId = 4;
     /**
      * <code>optional fixed64 rewindToUniqueId = 4;</code>
      */
@@ -2842,7 +3844,6 @@ public final class DRAgent {
      */
     long getRewindToUniqueId();
 
-    // optional bool isSyncing = 5;
     /**
      * <code>optional bool isSyncing = 5;</code>
      */
@@ -2855,36 +3856,32 @@ public final class DRAgent {
   /**
    * Protobuf type {@code pmsg.Subscribe}
    */
-  public static final class Subscribe extends
-      com.google.protobuf.GeneratedMessage
-      implements SubscribeOrBuilder {
+  public  static final class Subscribe extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.Subscribe)
+      SubscribeOrBuilder {
     // Use Subscribe.newBuilder() to construct.
-    private Subscribe(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    private Subscribe(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private Subscribe(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final Subscribe defaultInstance;
-    public static Subscribe getDefaultInstance() {
-      return defaultInstance;
-    }
-
-    public Subscribe getDefaultInstanceForType() {
-      return defaultInstance;
+    private Subscribe() {
+      partitionId_ = 0;
+      timestamp_ = 0L;
+      isCovering_ = false;
+      rewindToUniqueId_ = 0L;
+      isSyncing_ = false;
     }
 
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
     private Subscribe(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -2934,7 +3931,7 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -2945,30 +3942,14 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Subscribe_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Subscribe_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.Subscribe.class, org.voltdb.pmsg.DRAgent.Subscribe.Builder.class);
     }
 
-    public static com.google.protobuf.Parser<Subscribe> PARSER =
-        new com.google.protobuf.AbstractParser<Subscribe>() {
-      public Subscribe parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new Subscribe(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<Subscribe> getParserForType() {
-      return PARSER;
-    }
-
     private int bitField0_;
-    // optional int32 partitionId = 1;
     public static final int PARTITIONID_FIELD_NUMBER = 1;
     private int partitionId_;
     /**
@@ -2984,7 +3965,6 @@ public final class DRAgent {
       return partitionId_;
     }
 
-    // optional fixed64 timestamp = 2;
     public static final int TIMESTAMP_FIELD_NUMBER = 2;
     private long timestamp_;
     /**
@@ -3000,7 +3980,6 @@ public final class DRAgent {
       return timestamp_;
     }
 
-    // optional bool isCovering = 3;
     public static final int ISCOVERING_FIELD_NUMBER = 3;
     private boolean isCovering_;
     /**
@@ -3016,7 +3995,6 @@ public final class DRAgent {
       return isCovering_;
     }
 
-    // optional fixed64 rewindToUniqueId = 4;
     public static final int REWINDTOUNIQUEID_FIELD_NUMBER = 4;
     private long rewindToUniqueId_;
     /**
@@ -3032,7 +4010,6 @@ public final class DRAgent {
       return rewindToUniqueId_;
     }
 
-    // optional bool isSyncing = 5;
     public static final int ISSYNCING_FIELD_NUMBER = 5;
     private boolean isSyncing_;
     /**
@@ -3048,17 +4025,11 @@ public final class DRAgent {
       return isSyncing_;
     }
 
-    private void initFields() {
-      partitionId_ = 0;
-      timestamp_ = 0L;
-      isCovering_ = false;
-      rewindToUniqueId_ = 0L;
-      isSyncing_ = false;
-    }
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -3066,7 +4037,6 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         output.writeInt32(1, partitionId_);
       }
@@ -3082,12 +4052,11 @@ public final class DRAgent {
       if (((bitField0_ & 0x00000010) == 0x00000010)) {
         output.writeBool(5, isSyncing_);
       }
-      getUnknownFields().writeTo(output);
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
@@ -3111,16 +4080,86 @@ public final class DRAgent {
         size += com.google.protobuf.CodedOutputStream
           .computeBoolSize(5, isSyncing_);
       }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.Subscribe)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.Subscribe other = (org.voltdb.pmsg.DRAgent.Subscribe) obj;
+
+      boolean result = true;
+      result = result && (hasPartitionId() == other.hasPartitionId());
+      if (hasPartitionId()) {
+        result = result && (getPartitionId()
+            == other.getPartitionId());
+      }
+      result = result && (hasTimestamp() == other.hasTimestamp());
+      if (hasTimestamp()) {
+        result = result && (getTimestamp()
+            == other.getTimestamp());
+      }
+      result = result && (hasIsCovering() == other.hasIsCovering());
+      if (hasIsCovering()) {
+        result = result && (getIsCovering()
+            == other.getIsCovering());
+      }
+      result = result && (hasRewindToUniqueId() == other.hasRewindToUniqueId());
+      if (hasRewindToUniqueId()) {
+        result = result && (getRewindToUniqueId()
+            == other.getRewindToUniqueId());
+      }
+      result = result && (hasIsSyncing() == other.hasIsSyncing());
+      if (hasIsSyncing()) {
+        result = result && (getIsSyncing()
+            == other.getIsSyncing());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasPartitionId()) {
+        hash = (37 * hash) + PARTITIONID_FIELD_NUMBER;
+        hash = (53 * hash) + getPartitionId();
+      }
+      if (hasTimestamp()) {
+        hash = (37 * hash) + TIMESTAMP_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getTimestamp());
+      }
+      if (hasIsCovering()) {
+        hash = (37 * hash) + ISCOVERING_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getIsCovering());
+      }
+      if (hasRewindToUniqueId()) {
+        hash = (37 * hash) + REWINDTOUNIQUEID_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getRewindToUniqueId());
+      }
+      if (hasIsSyncing()) {
+        hash = (37 * hash) + ISSYNCING_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getIsSyncing());
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.Subscribe parseFrom(
@@ -3146,46 +4185,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.Subscribe parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Subscribe parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Subscribe parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Subscribe parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Subscribe parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Subscribe parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Subscribe prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Subscribe prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -3193,14 +4243,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.Subscribe}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.SubscribeOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.Subscribe)
+        org.voltdb.pmsg.DRAgent.SubscribeOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Subscribe_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Subscribe_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -3213,18 +4264,15 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
         partitionId_ = 0;
@@ -3238,10 +4286,6 @@ public final class DRAgent {
         isSyncing_ = false;
         bitField0_ = (bitField0_ & ~0x00000010);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -3290,6 +4334,32 @@ public final class DRAgent {
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.Subscribe) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.Subscribe)other);
@@ -3316,7 +4386,8 @@ public final class DRAgent {
         if (other.hasIsSyncing()) {
           setIsSyncing(other.getIsSyncing());
         }
-        this.mergeUnknownFields(other.getUnknownFields());
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
@@ -3333,7 +4404,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.Subscribe) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -3343,7 +4414,6 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // optional int32 partitionId = 1;
       private int partitionId_ ;
       /**
        * <code>optional int32 partitionId = 1;</code>
@@ -3376,7 +4446,6 @@ public final class DRAgent {
         return this;
       }
 
-      // optional fixed64 timestamp = 2;
       private long timestamp_ ;
       /**
        * <code>optional fixed64 timestamp = 2;</code>
@@ -3409,7 +4478,6 @@ public final class DRAgent {
         return this;
       }
 
-      // optional bool isCovering = 3;
       private boolean isCovering_ ;
       /**
        * <code>optional bool isCovering = 3;</code>
@@ -3442,7 +4510,6 @@ public final class DRAgent {
         return this;
       }
 
-      // optional fixed64 rewindToUniqueId = 4;
       private long rewindToUniqueId_ ;
       /**
        * <code>optional fixed64 rewindToUniqueId = 4;</code>
@@ -3475,7 +4542,6 @@ public final class DRAgent {
         return this;
       }
 
-      // optional bool isSyncing = 5;
       private boolean isSyncing_ ;
       /**
        * <code>optional bool isSyncing = 5;</code>
@@ -3507,126 +4573,101 @@ public final class DRAgent {
         onChanged();
         return this;
       }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
 
       // @@protoc_insertion_point(builder_scope:pmsg.Subscribe)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.Subscribe)
+    private static final org.voltdb.pmsg.DRAgent.Subscribe DEFAULT_INSTANCE;
     static {
-      defaultInstance = new Subscribe(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.Subscribe();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.Subscribe)
+    public static org.voltdb.pmsg.DRAgent.Subscribe getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<Subscribe>
+        PARSER = new com.google.protobuf.AbstractParser<Subscribe>() {
+      public Subscribe parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new Subscribe(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<Subscribe> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<Subscribe> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.Subscribe getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface EventAckOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface QueryOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.Query)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional int32 partitionId = 1;
     /**
-     * <code>optional int32 partitionId = 1;</code>
-     */
-    boolean hasPartitionId();
-    /**
-     * <code>optional int32 partitionId = 1;</code>
-     */
-    int getPartitionId();
-
-    // optional int32 eventType = 2;
-    /**
-     * <code>optional int32 eventType = 2;</code>
-     *
      * <pre>
-     * poison pill, cluster restart, rejoin
+     * whether or not to include other clusters in the mesh
      * </pre>
-     */
-    boolean hasEventType();
-    /**
-     * <code>optional int32 eventType = 2;</code>
      *
-     * <pre>
-     * poison pill, cluster restart, rejoin
-     * </pre>
+     * <code>optional bool includeMesh = 1 [default = false];</code>
      */
-    int getEventType();
-
-    // optional bool lookForEvent = 3;
+    boolean hasIncludeMesh();
     /**
-     * <code>optional bool lookForEvent = 3;</code>
-     *
      * <pre>
-     * if true, the recipient should expect to have
-     * a corresponding event to discard
-     * if false, this is just a query for the next
-     * unique id available for this partition
+     * whether or not to include other clusters in the mesh
      * </pre>
-     */
-    boolean hasLookForEvent();
-    /**
-     * <code>optional bool lookForEvent = 3;</code>
      *
-     * <pre>
-     * if true, the recipient should expect to have
-     * a corresponding event to discard
-     * if false, this is just a query for the next
-     * unique id available for this partition
-     * </pre>
+     * <code>optional bool includeMesh = 1 [default = false];</code>
      */
-    boolean getLookForEvent();
-
-    // optional fixed64 lastAckedUniqueId = 4;
-    /**
-     * <code>optional fixed64 lastAckedUniqueId = 4;</code>
-     *
-     * <pre>
-     * unique id of the last thing the receiver has
-     * acked for this partition
-     * </pre>
-     */
-    boolean hasLastAckedUniqueId();
-    /**
-     * <code>optional fixed64 lastAckedUniqueId = 4;</code>
-     *
-     * <pre>
-     * unique id of the last thing the receiver has
-     * acked for this partition
-     * </pre>
-     */
-    long getLastAckedUniqueId();
+    boolean getIncludeMesh();
   }
   /**
-   * Protobuf type {@code pmsg.EventAck}
+   * Protobuf type {@code pmsg.Query}
    */
-  public static final class EventAck extends
-      com.google.protobuf.GeneratedMessage
-      implements EventAckOrBuilder {
-    // Use EventAck.newBuilder() to construct.
-    private EventAck(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+  public  static final class Query extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.Query)
+      QueryOrBuilder {
+    // Use Query.newBuilder() to construct.
+    private Query(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private EventAck(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final EventAck defaultInstance;
-    public static EventAck getDefaultInstance() {
-      return defaultInstance;
+    private Query() {
+      includeMesh_ = false;
     }
 
-    public EventAck getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
-    private EventAck(
+    private Query(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -3647,22 +4688,7 @@ public final class DRAgent {
             }
             case 8: {
               bitField0_ |= 0x00000001;
-              partitionId_ = input.readInt32();
-              break;
-            }
-            case 16: {
-              bitField0_ |= 0x00000002;
-              eventType_ = input.readInt32();
-              break;
-            }
-            case 24: {
-              bitField0_ |= 0x00000004;
-              lookForEvent_ = input.readBool();
-              break;
-            }
-            case 33: {
-              bitField0_ |= 0x00000008;
-              lastAckedUniqueId_ = input.readFixed64();
+              includeMesh_ = input.readBool();
               break;
             }
           }
@@ -3671,7 +4697,7 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -3679,138 +4705,45 @@ public final class DRAgent {
     }
     public static final com.google.protobuf.Descriptors.Descriptor
         getDescriptor() {
-      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_EventAck_descriptor;
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Query_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
-      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_EventAck_fieldAccessorTable
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Query_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
-              org.voltdb.pmsg.DRAgent.EventAck.class, org.voltdb.pmsg.DRAgent.EventAck.Builder.class);
-    }
-
-    public static com.google.protobuf.Parser<EventAck> PARSER =
-        new com.google.protobuf.AbstractParser<EventAck>() {
-      public EventAck parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new EventAck(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<EventAck> getParserForType() {
-      return PARSER;
+              org.voltdb.pmsg.DRAgent.Query.class, org.voltdb.pmsg.DRAgent.Query.Builder.class);
     }
 
     private int bitField0_;
-    // optional int32 partitionId = 1;
-    public static final int PARTITIONID_FIELD_NUMBER = 1;
-    private int partitionId_;
+    public static final int INCLUDEMESH_FIELD_NUMBER = 1;
+    private boolean includeMesh_;
     /**
-     * <code>optional int32 partitionId = 1;</code>
+     * <pre>
+     * whether or not to include other clusters in the mesh
+     * </pre>
+     *
+     * <code>optional bool includeMesh = 1 [default = false];</code>
      */
-    public boolean hasPartitionId() {
+    public boolean hasIncludeMesh() {
       return ((bitField0_ & 0x00000001) == 0x00000001);
     }
     /**
-     * <code>optional int32 partitionId = 1;</code>
+     * <pre>
+     * whether or not to include other clusters in the mesh
+     * </pre>
+     *
+     * <code>optional bool includeMesh = 1 [default = false];</code>
      */
-    public int getPartitionId() {
-      return partitionId_;
+    public boolean getIncludeMesh() {
+      return includeMesh_;
     }
 
-    // optional int32 eventType = 2;
-    public static final int EVENTTYPE_FIELD_NUMBER = 2;
-    private int eventType_;
-    /**
-     * <code>optional int32 eventType = 2;</code>
-     *
-     * <pre>
-     * poison pill, cluster restart, rejoin
-     * </pre>
-     */
-    public boolean hasEventType() {
-      return ((bitField0_ & 0x00000002) == 0x00000002);
-    }
-    /**
-     * <code>optional int32 eventType = 2;</code>
-     *
-     * <pre>
-     * poison pill, cluster restart, rejoin
-     * </pre>
-     */
-    public int getEventType() {
-      return eventType_;
-    }
-
-    // optional bool lookForEvent = 3;
-    public static final int LOOKFOREVENT_FIELD_NUMBER = 3;
-    private boolean lookForEvent_;
-    /**
-     * <code>optional bool lookForEvent = 3;</code>
-     *
-     * <pre>
-     * if true, the recipient should expect to have
-     * a corresponding event to discard
-     * if false, this is just a query for the next
-     * unique id available for this partition
-     * </pre>
-     */
-    public boolean hasLookForEvent() {
-      return ((bitField0_ & 0x00000004) == 0x00000004);
-    }
-    /**
-     * <code>optional bool lookForEvent = 3;</code>
-     *
-     * <pre>
-     * if true, the recipient should expect to have
-     * a corresponding event to discard
-     * if false, this is just a query for the next
-     * unique id available for this partition
-     * </pre>
-     */
-    public boolean getLookForEvent() {
-      return lookForEvent_;
-    }
-
-    // optional fixed64 lastAckedUniqueId = 4;
-    public static final int LASTACKEDUNIQUEID_FIELD_NUMBER = 4;
-    private long lastAckedUniqueId_;
-    /**
-     * <code>optional fixed64 lastAckedUniqueId = 4;</code>
-     *
-     * <pre>
-     * unique id of the last thing the receiver has
-     * acked for this partition
-     * </pre>
-     */
-    public boolean hasLastAckedUniqueId() {
-      return ((bitField0_ & 0x00000008) == 0x00000008);
-    }
-    /**
-     * <code>optional fixed64 lastAckedUniqueId = 4;</code>
-     *
-     * <pre>
-     * unique id of the last thing the receiver has
-     * acked for this partition
-     * </pre>
-     */
-    public long getLastAckedUniqueId() {
-      return lastAckedUniqueId_;
-    }
-
-    private void initFields() {
-      partitionId_ = 0;
-      eventType_ = 0;
-      lookForEvent_ = false;
-      lastAckedUniqueId_ = 0L;
-    }
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -3818,241 +4751,254 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
-        output.writeInt32(1, partitionId_);
+        output.writeBool(1, includeMesh_);
       }
-      if (((bitField0_ & 0x00000002) == 0x00000002)) {
-        output.writeInt32(2, eventType_);
-      }
-      if (((bitField0_ & 0x00000004) == 0x00000004)) {
-        output.writeBool(3, lookForEvent_);
-      }
-      if (((bitField0_ & 0x00000008) == 0x00000008)) {
-        output.writeFixed64(4, lastAckedUniqueId_);
-      }
-      getUnknownFields().writeTo(output);
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeInt32Size(1, partitionId_);
+          .computeBoolSize(1, includeMesh_);
       }
-      if (((bitField0_ & 0x00000002) == 0x00000002)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeInt32Size(2, eventType_);
-      }
-      if (((bitField0_ & 0x00000004) == 0x00000004)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(3, lookForEvent_);
-      }
-      if (((bitField0_ & 0x00000008) == 0x00000008)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeFixed64Size(4, lastAckedUniqueId_);
-      }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.Query)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.Query other = (org.voltdb.pmsg.DRAgent.Query) obj;
+
+      boolean result = true;
+      result = result && (hasIncludeMesh() == other.hasIncludeMesh());
+      if (hasIncludeMesh()) {
+        result = result && (getIncludeMesh()
+            == other.getIncludeMesh());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
     }
 
-    public static org.voltdb.pmsg.DRAgent.EventAck parseFrom(
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasIncludeMesh()) {
+        hash = (37 * hash) + INCLUDEMESH_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getIncludeMesh());
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
+    }
+
+    public static org.voltdb.pmsg.DRAgent.Query parseFrom(
         com.google.protobuf.ByteString data)
         throws com.google.protobuf.InvalidProtocolBufferException {
       return PARSER.parseFrom(data);
     }
-    public static org.voltdb.pmsg.DRAgent.EventAck parseFrom(
+    public static org.voltdb.pmsg.DRAgent.Query parseFrom(
         com.google.protobuf.ByteString data,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
       return PARSER.parseFrom(data, extensionRegistry);
     }
-    public static org.voltdb.pmsg.DRAgent.EventAck parseFrom(byte[] data)
+    public static org.voltdb.pmsg.DRAgent.Query parseFrom(byte[] data)
         throws com.google.protobuf.InvalidProtocolBufferException {
       return PARSER.parseFrom(data);
     }
-    public static org.voltdb.pmsg.DRAgent.EventAck parseFrom(
+    public static org.voltdb.pmsg.DRAgent.Query parseFrom(
         byte[] data,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
       return PARSER.parseFrom(data, extensionRegistry);
     }
-    public static org.voltdb.pmsg.DRAgent.EventAck parseFrom(java.io.InputStream input)
+    public static org.voltdb.pmsg.DRAgent.Query parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
-    public static org.voltdb.pmsg.DRAgent.EventAck parseFrom(
+    public static org.voltdb.pmsg.DRAgent.Query parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
-    public static org.voltdb.pmsg.DRAgent.EventAck parseDelimitedFrom(java.io.InputStream input)
+    public static org.voltdb.pmsg.DRAgent.Query parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
-    public static org.voltdb.pmsg.DRAgent.EventAck parseDelimitedFrom(
+    public static org.voltdb.pmsg.DRAgent.Query parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
-    public static org.voltdb.pmsg.DRAgent.EventAck parseFrom(
+    public static org.voltdb.pmsg.DRAgent.Query parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
-    public static org.voltdb.pmsg.DRAgent.EventAck parseFrom(
+    public static org.voltdb.pmsg.DRAgent.Query parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.EventAck prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Query prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
     /**
-     * Protobuf type {@code pmsg.EventAck}
+     * Protobuf type {@code pmsg.Query}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.EventAckOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.Query)
+        org.voltdb.pmsg.DRAgent.QueryOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
-        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_EventAck_descriptor;
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Query_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
-        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_EventAck_fieldAccessorTable
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Query_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
-                org.voltdb.pmsg.DRAgent.EventAck.class, org.voltdb.pmsg.DRAgent.EventAck.Builder.class);
+                org.voltdb.pmsg.DRAgent.Query.class, org.voltdb.pmsg.DRAgent.Query.Builder.class);
       }
 
-      // Construct using org.voltdb.pmsg.DRAgent.EventAck.newBuilder()
+      // Construct using org.voltdb.pmsg.DRAgent.Query.newBuilder()
       private Builder() {
         maybeForceBuilderInitialization();
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
-        partitionId_ = 0;
+        includeMesh_ = false;
         bitField0_ = (bitField0_ & ~0x00000001);
-        eventType_ = 0;
-        bitField0_ = (bitField0_ & ~0x00000002);
-        lookForEvent_ = false;
-        bitField0_ = (bitField0_ & ~0x00000004);
-        lastAckedUniqueId_ = 0L;
-        bitField0_ = (bitField0_ & ~0x00000008);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
           getDescriptorForType() {
-        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_EventAck_descriptor;
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Query_descriptor;
       }
 
-      public org.voltdb.pmsg.DRAgent.EventAck getDefaultInstanceForType() {
-        return org.voltdb.pmsg.DRAgent.EventAck.getDefaultInstance();
+      public org.voltdb.pmsg.DRAgent.Query getDefaultInstanceForType() {
+        return org.voltdb.pmsg.DRAgent.Query.getDefaultInstance();
       }
 
-      public org.voltdb.pmsg.DRAgent.EventAck build() {
-        org.voltdb.pmsg.DRAgent.EventAck result = buildPartial();
+      public org.voltdb.pmsg.DRAgent.Query build() {
+        org.voltdb.pmsg.DRAgent.Query result = buildPartial();
         if (!result.isInitialized()) {
           throw newUninitializedMessageException(result);
         }
         return result;
       }
 
-      public org.voltdb.pmsg.DRAgent.EventAck buildPartial() {
-        org.voltdb.pmsg.DRAgent.EventAck result = new org.voltdb.pmsg.DRAgent.EventAck(this);
+      public org.voltdb.pmsg.DRAgent.Query buildPartial() {
+        org.voltdb.pmsg.DRAgent.Query result = new org.voltdb.pmsg.DRAgent.Query(this);
         int from_bitField0_ = bitField0_;
         int to_bitField0_ = 0;
         if (((from_bitField0_ & 0x00000001) == 0x00000001)) {
           to_bitField0_ |= 0x00000001;
         }
-        result.partitionId_ = partitionId_;
-        if (((from_bitField0_ & 0x00000002) == 0x00000002)) {
-          to_bitField0_ |= 0x00000002;
-        }
-        result.eventType_ = eventType_;
-        if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
-          to_bitField0_ |= 0x00000004;
-        }
-        result.lookForEvent_ = lookForEvent_;
-        if (((from_bitField0_ & 0x00000008) == 0x00000008)) {
-          to_bitField0_ |= 0x00000008;
-        }
-        result.lastAckedUniqueId_ = lastAckedUniqueId_;
+        result.includeMesh_ = includeMesh_;
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
-        if (other instanceof org.voltdb.pmsg.DRAgent.EventAck) {
-          return mergeFrom((org.voltdb.pmsg.DRAgent.EventAck)other);
+        if (other instanceof org.voltdb.pmsg.DRAgent.Query) {
+          return mergeFrom((org.voltdb.pmsg.DRAgent.Query)other);
         } else {
           super.mergeFrom(other);
           return this;
         }
       }
 
-      public Builder mergeFrom(org.voltdb.pmsg.DRAgent.EventAck other) {
-        if (other == org.voltdb.pmsg.DRAgent.EventAck.getDefaultInstance()) return this;
-        if (other.hasPartitionId()) {
-          setPartitionId(other.getPartitionId());
+      public Builder mergeFrom(org.voltdb.pmsg.DRAgent.Query other) {
+        if (other == org.voltdb.pmsg.DRAgent.Query.getDefaultInstance()) return this;
+        if (other.hasIncludeMesh()) {
+          setIncludeMesh(other.getIncludeMesh());
         }
-        if (other.hasEventType()) {
-          setEventType(other.getEventType());
-        }
-        if (other.hasLookForEvent()) {
-          setLookForEvent(other.getLookForEvent());
-        }
-        if (other.hasLastAckedUniqueId()) {
-          setLastAckedUniqueId(other.getLastAckedUniqueId());
-        }
-        this.mergeUnknownFields(other.getUnknownFields());
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
@@ -4064,12 +5010,12 @@ public final class DRAgent {
           com.google.protobuf.CodedInputStream input,
           com.google.protobuf.ExtensionRegistryLite extensionRegistry)
           throws java.io.IOException {
-        org.voltdb.pmsg.DRAgent.EventAck parsedMessage = null;
+        org.voltdb.pmsg.DRAgent.Query parsedMessage = null;
         try {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
-          parsedMessage = (org.voltdb.pmsg.DRAgent.EventAck) e.getUnfinishedMessage();
-          throw e;
+          parsedMessage = (org.voltdb.pmsg.DRAgent.Query) e.getUnfinishedMessage();
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -4079,217 +5025,860 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // optional int32 partitionId = 1;
-      private int partitionId_ ;
+      private boolean includeMesh_ ;
       /**
-       * <code>optional int32 partitionId = 1;</code>
+       * <pre>
+       * whether or not to include other clusters in the mesh
+       * </pre>
+       *
+       * <code>optional bool includeMesh = 1 [default = false];</code>
        */
-      public boolean hasPartitionId() {
+      public boolean hasIncludeMesh() {
         return ((bitField0_ & 0x00000001) == 0x00000001);
       }
       /**
-       * <code>optional int32 partitionId = 1;</code>
+       * <pre>
+       * whether or not to include other clusters in the mesh
+       * </pre>
+       *
+       * <code>optional bool includeMesh = 1 [default = false];</code>
        */
-      public int getPartitionId() {
-        return partitionId_;
+      public boolean getIncludeMesh() {
+        return includeMesh_;
       }
       /**
-       * <code>optional int32 partitionId = 1;</code>
+       * <pre>
+       * whether or not to include other clusters in the mesh
+       * </pre>
+       *
+       * <code>optional bool includeMesh = 1 [default = false];</code>
        */
-      public Builder setPartitionId(int value) {
+      public Builder setIncludeMesh(boolean value) {
         bitField0_ |= 0x00000001;
-        partitionId_ = value;
+        includeMesh_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>optional int32 partitionId = 1;</code>
+       * <pre>
+       * whether or not to include other clusters in the mesh
+       * </pre>
+       *
+       * <code>optional bool includeMesh = 1 [default = false];</code>
        */
-      public Builder clearPartitionId() {
+      public Builder clearIncludeMesh() {
         bitField0_ = (bitField0_ & ~0x00000001);
-        partitionId_ = 0;
+        includeMesh_ = false;
         onChanged();
         return this;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
       }
 
-      // optional int32 eventType = 2;
-      private int eventType_ ;
-      /**
-       * <code>optional int32 eventType = 2;</code>
-       *
-       * <pre>
-       * poison pill, cluster restart, rejoin
-       * </pre>
-       */
-      public boolean hasEventType() {
-        return ((bitField0_ & 0x00000002) == 0x00000002);
-      }
-      /**
-       * <code>optional int32 eventType = 2;</code>
-       *
-       * <pre>
-       * poison pill, cluster restart, rejoin
-       * </pre>
-       */
-      public int getEventType() {
-        return eventType_;
-      }
-      /**
-       * <code>optional int32 eventType = 2;</code>
-       *
-       * <pre>
-       * poison pill, cluster restart, rejoin
-       * </pre>
-       */
-      public Builder setEventType(int value) {
-        bitField0_ |= 0x00000002;
-        eventType_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional int32 eventType = 2;</code>
-       *
-       * <pre>
-       * poison pill, cluster restart, rejoin
-       * </pre>
-       */
-      public Builder clearEventType() {
-        bitField0_ = (bitField0_ & ~0x00000002);
-        eventType_ = 0;
-        onChanged();
-        return this;
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
       }
 
-      // optional bool lookForEvent = 3;
-      private boolean lookForEvent_ ;
-      /**
-       * <code>optional bool lookForEvent = 3;</code>
-       *
-       * <pre>
-       * if true, the recipient should expect to have
-       * a corresponding event to discard
-       * if false, this is just a query for the next
-       * unique id available for this partition
-       * </pre>
-       */
-      public boolean hasLookForEvent() {
-        return ((bitField0_ & 0x00000004) == 0x00000004);
-      }
-      /**
-       * <code>optional bool lookForEvent = 3;</code>
-       *
-       * <pre>
-       * if true, the recipient should expect to have
-       * a corresponding event to discard
-       * if false, this is just a query for the next
-       * unique id available for this partition
-       * </pre>
-       */
-      public boolean getLookForEvent() {
-        return lookForEvent_;
-      }
-      /**
-       * <code>optional bool lookForEvent = 3;</code>
-       *
-       * <pre>
-       * if true, the recipient should expect to have
-       * a corresponding event to discard
-       * if false, this is just a query for the next
-       * unique id available for this partition
-       * </pre>
-       */
-      public Builder setLookForEvent(boolean value) {
-        bitField0_ |= 0x00000004;
-        lookForEvent_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional bool lookForEvent = 3;</code>
-       *
-       * <pre>
-       * if true, the recipient should expect to have
-       * a corresponding event to discard
-       * if false, this is just a query for the next
-       * unique id available for this partition
-       * </pre>
-       */
-      public Builder clearLookForEvent() {
-        bitField0_ = (bitField0_ & ~0x00000004);
-        lookForEvent_ = false;
-        onChanged();
-        return this;
-      }
 
-      // optional fixed64 lastAckedUniqueId = 4;
-      private long lastAckedUniqueId_ ;
-      /**
-       * <code>optional fixed64 lastAckedUniqueId = 4;</code>
-       *
-       * <pre>
-       * unique id of the last thing the receiver has
-       * acked for this partition
-       * </pre>
-       */
-      public boolean hasLastAckedUniqueId() {
-        return ((bitField0_ & 0x00000008) == 0x00000008);
-      }
-      /**
-       * <code>optional fixed64 lastAckedUniqueId = 4;</code>
-       *
-       * <pre>
-       * unique id of the last thing the receiver has
-       * acked for this partition
-       * </pre>
-       */
-      public long getLastAckedUniqueId() {
-        return lastAckedUniqueId_;
-      }
-      /**
-       * <code>optional fixed64 lastAckedUniqueId = 4;</code>
-       *
-       * <pre>
-       * unique id of the last thing the receiver has
-       * acked for this partition
-       * </pre>
-       */
-      public Builder setLastAckedUniqueId(long value) {
-        bitField0_ |= 0x00000008;
-        lastAckedUniqueId_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional fixed64 lastAckedUniqueId = 4;</code>
-       *
-       * <pre>
-       * unique id of the last thing the receiver has
-       * acked for this partition
-       * </pre>
-       */
-      public Builder clearLastAckedUniqueId() {
-        bitField0_ = (bitField0_ & ~0x00000008);
-        lastAckedUniqueId_ = 0L;
-        onChanged();
-        return this;
-      }
-
-      // @@protoc_insertion_point(builder_scope:pmsg.EventAck)
+      // @@protoc_insertion_point(builder_scope:pmsg.Query)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.Query)
+    private static final org.voltdb.pmsg.DRAgent.Query DEFAULT_INSTANCE;
     static {
-      defaultInstance = new EventAck(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.Query();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.EventAck)
+    public static org.voltdb.pmsg.DRAgent.Query getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<Query>
+        PARSER = new com.google.protobuf.AbstractParser<Query>() {
+      public Query parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new Query(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<Query> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<Query> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.Query getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface ResponseOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface StartCursorOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.StartCursor)
+      com.google.protobuf.MessageOrBuilder {
 
-    // required .pmsg.UUID id = 1;
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+     */
+    java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> 
+        getClusterInfoList();
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+     */
+    org.voltdb.pmsg.DRAgent.ClusterInfo getClusterInfo(int index);
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+     */
+    int getClusterInfoCount();
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+     */
+    java.util.List<? extends org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+        getClusterInfoOrBuilderList();
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+     */
+    org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder getClusterInfoOrBuilder(
+        int index);
+  }
+  /**
+   * Protobuf type {@code pmsg.StartCursor}
+   */
+  public  static final class StartCursor extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.StartCursor)
+      StartCursorOrBuilder {
+    // Use StartCursor.newBuilder() to construct.
+    private StartCursor(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
+      super(builder);
+    }
+    private StartCursor() {
+      clusterInfo_ = java.util.Collections.emptyList();
+    }
+
+    @java.lang.Override
+    public final com.google.protobuf.UnknownFieldSet
+    getUnknownFields() {
+      return this.unknownFields;
+    }
+    private StartCursor(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      this();
+      int mutable_bitField0_ = 0;
+      com.google.protobuf.UnknownFieldSet.Builder unknownFields =
+          com.google.protobuf.UnknownFieldSet.newBuilder();
+      try {
+        boolean done = false;
+        while (!done) {
+          int tag = input.readTag();
+          switch (tag) {
+            case 0:
+              done = true;
+              break;
+            default: {
+              if (!parseUnknownField(input, unknownFields,
+                                     extensionRegistry, tag)) {
+                done = true;
+              }
+              break;
+            }
+            case 10: {
+              if (!((mutable_bitField0_ & 0x00000001) == 0x00000001)) {
+                clusterInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.ClusterInfo>();
+                mutable_bitField0_ |= 0x00000001;
+              }
+              clusterInfo_.add(
+                  input.readMessage(org.voltdb.pmsg.DRAgent.ClusterInfo.PARSER, extensionRegistry));
+              break;
+            }
+          }
+        }
+      } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+        throw e.setUnfinishedMessage(this);
+      } catch (java.io.IOException e) {
+        throw new com.google.protobuf.InvalidProtocolBufferException(
+            e).setUnfinishedMessage(this);
+      } finally {
+        if (((mutable_bitField0_ & 0x00000001) == 0x00000001)) {
+          clusterInfo_ = java.util.Collections.unmodifiableList(clusterInfo_);
+        }
+        this.unknownFields = unknownFields.build();
+        makeExtensionsImmutable();
+      }
+    }
+    public static final com.google.protobuf.Descriptors.Descriptor
+        getDescriptor() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_StartCursor_descriptor;
+    }
+
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+        internalGetFieldAccessorTable() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_StartCursor_fieldAccessorTable
+          .ensureFieldAccessorsInitialized(
+              org.voltdb.pmsg.DRAgent.StartCursor.class, org.voltdb.pmsg.DRAgent.StartCursor.Builder.class);
+    }
+
+    public static final int CLUSTERINFO_FIELD_NUMBER = 1;
+    private java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> clusterInfo_;
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+     */
+    public java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> getClusterInfoList() {
+      return clusterInfo_;
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+     */
+    public java.util.List<? extends org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+        getClusterInfoOrBuilderList() {
+      return clusterInfo_;
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+     */
+    public int getClusterInfoCount() {
+      return clusterInfo_.size();
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.ClusterInfo getClusterInfo(int index) {
+      return clusterInfo_.get(index);
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder getClusterInfoOrBuilder(
+        int index) {
+      return clusterInfo_.get(index);
+    }
+
+    private byte memoizedIsInitialized = -1;
+    public final boolean isInitialized() {
+      byte isInitialized = memoizedIsInitialized;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
+
+      for (int i = 0; i < getClusterInfoCount(); i++) {
+        if (!getClusterInfo(i).isInitialized()) {
+          memoizedIsInitialized = 0;
+          return false;
+        }
+      }
+      memoizedIsInitialized = 1;
+      return true;
+    }
+
+    public void writeTo(com.google.protobuf.CodedOutputStream output)
+                        throws java.io.IOException {
+      for (int i = 0; i < clusterInfo_.size(); i++) {
+        output.writeMessage(1, clusterInfo_.get(i));
+      }
+      unknownFields.writeTo(output);
+    }
+
+    public int getSerializedSize() {
+      int size = memoizedSize;
+      if (size != -1) return size;
+
+      size = 0;
+      for (int i = 0; i < clusterInfo_.size(); i++) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(1, clusterInfo_.get(i));
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
+      return size;
+    }
+
+    private static final long serialVersionUID = 0L;
+    @java.lang.Override
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.StartCursor)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.StartCursor other = (org.voltdb.pmsg.DRAgent.StartCursor) obj;
+
+      boolean result = true;
+      result = result && getClusterInfoList()
+          .equals(other.getClusterInfoList());
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (getClusterInfoCount() > 0) {
+        hash = (37 * hash) + CLUSTERINFO_FIELD_NUMBER;
+        hash = (53 * hash) + getClusterInfoList().hashCode();
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
+    }
+
+    public static org.voltdb.pmsg.DRAgent.StartCursor parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.StartCursor parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.StartCursor parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.StartCursor parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.StartCursor parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.StartCursor parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.StartCursor parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.StartCursor parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.StartCursor parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.StartCursor parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+
+    public Builder newBuilderForType() { return newBuilder(); }
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
+    }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.StartCursor prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
+
+    @java.lang.Override
+    protected Builder newBuilderForType(
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+      Builder builder = new Builder(parent);
+      return builder;
+    }
+    /**
+     * Protobuf type {@code pmsg.StartCursor}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.StartCursor)
+        org.voltdb.pmsg.DRAgent.StartCursorOrBuilder {
+      public static final com.google.protobuf.Descriptors.Descriptor
+          getDescriptor() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_StartCursor_descriptor;
+      }
+
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+          internalGetFieldAccessorTable() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_StartCursor_fieldAccessorTable
+            .ensureFieldAccessorsInitialized(
+                org.voltdb.pmsg.DRAgent.StartCursor.class, org.voltdb.pmsg.DRAgent.StartCursor.Builder.class);
+      }
+
+      // Construct using org.voltdb.pmsg.DRAgent.StartCursor.newBuilder()
+      private Builder() {
+        maybeForceBuilderInitialization();
+      }
+
+      private Builder(
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+        super(parent);
+        maybeForceBuilderInitialization();
+      }
+      private void maybeForceBuilderInitialization() {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
+          getClusterInfoFieldBuilder();
+        }
+      }
+      public Builder clear() {
+        super.clear();
+        if (clusterInfoBuilder_ == null) {
+          clusterInfo_ = java.util.Collections.emptyList();
+          bitField0_ = (bitField0_ & ~0x00000001);
+        } else {
+          clusterInfoBuilder_.clear();
+        }
+        return this;
+      }
+
+      public com.google.protobuf.Descriptors.Descriptor
+          getDescriptorForType() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_StartCursor_descriptor;
+      }
+
+      public org.voltdb.pmsg.DRAgent.StartCursor getDefaultInstanceForType() {
+        return org.voltdb.pmsg.DRAgent.StartCursor.getDefaultInstance();
+      }
+
+      public org.voltdb.pmsg.DRAgent.StartCursor build() {
+        org.voltdb.pmsg.DRAgent.StartCursor result = buildPartial();
+        if (!result.isInitialized()) {
+          throw newUninitializedMessageException(result);
+        }
+        return result;
+      }
+
+      public org.voltdb.pmsg.DRAgent.StartCursor buildPartial() {
+        org.voltdb.pmsg.DRAgent.StartCursor result = new org.voltdb.pmsg.DRAgent.StartCursor(this);
+        int from_bitField0_ = bitField0_;
+        if (clusterInfoBuilder_ == null) {
+          if (((bitField0_ & 0x00000001) == 0x00000001)) {
+            clusterInfo_ = java.util.Collections.unmodifiableList(clusterInfo_);
+            bitField0_ = (bitField0_ & ~0x00000001);
+          }
+          result.clusterInfo_ = clusterInfo_;
+        } else {
+          result.clusterInfo_ = clusterInfoBuilder_.build();
+        }
+        onBuilt();
+        return result;
+      }
+
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
+      public Builder mergeFrom(com.google.protobuf.Message other) {
+        if (other instanceof org.voltdb.pmsg.DRAgent.StartCursor) {
+          return mergeFrom((org.voltdb.pmsg.DRAgent.StartCursor)other);
+        } else {
+          super.mergeFrom(other);
+          return this;
+        }
+      }
+
+      public Builder mergeFrom(org.voltdb.pmsg.DRAgent.StartCursor other) {
+        if (other == org.voltdb.pmsg.DRAgent.StartCursor.getDefaultInstance()) return this;
+        if (clusterInfoBuilder_ == null) {
+          if (!other.clusterInfo_.isEmpty()) {
+            if (clusterInfo_.isEmpty()) {
+              clusterInfo_ = other.clusterInfo_;
+              bitField0_ = (bitField0_ & ~0x00000001);
+            } else {
+              ensureClusterInfoIsMutable();
+              clusterInfo_.addAll(other.clusterInfo_);
+            }
+            onChanged();
+          }
+        } else {
+          if (!other.clusterInfo_.isEmpty()) {
+            if (clusterInfoBuilder_.isEmpty()) {
+              clusterInfoBuilder_.dispose();
+              clusterInfoBuilder_ = null;
+              clusterInfo_ = other.clusterInfo_;
+              bitField0_ = (bitField0_ & ~0x00000001);
+              clusterInfoBuilder_ = 
+                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
+                   getClusterInfoFieldBuilder() : null;
+            } else {
+              clusterInfoBuilder_.addAllMessages(other.clusterInfo_);
+            }
+          }
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
+        return this;
+      }
+
+      public final boolean isInitialized() {
+        for (int i = 0; i < getClusterInfoCount(); i++) {
+          if (!getClusterInfo(i).isInitialized()) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      public Builder mergeFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws java.io.IOException {
+        org.voltdb.pmsg.DRAgent.StartCursor parsedMessage = null;
+        try {
+          parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
+        } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+          parsedMessage = (org.voltdb.pmsg.DRAgent.StartCursor) e.getUnfinishedMessage();
+          throw e.unwrapIOException();
+        } finally {
+          if (parsedMessage != null) {
+            mergeFrom(parsedMessage);
+          }
+        }
+        return this;
+      }
+      private int bitField0_;
+
+      private java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> clusterInfo_ =
+        java.util.Collections.emptyList();
+      private void ensureClusterInfoIsMutable() {
+        if (!((bitField0_ & 0x00000001) == 0x00000001)) {
+          clusterInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.ClusterInfo>(clusterInfo_);
+          bitField0_ |= 0x00000001;
+         }
+      }
+
+      private com.google.protobuf.RepeatedFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.ClusterInfo, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder, org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> clusterInfoBuilder_;
+
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> getClusterInfoList() {
+        if (clusterInfoBuilder_ == null) {
+          return java.util.Collections.unmodifiableList(clusterInfo_);
+        } else {
+          return clusterInfoBuilder_.getMessageList();
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public int getClusterInfoCount() {
+        if (clusterInfoBuilder_ == null) {
+          return clusterInfo_.size();
+        } else {
+          return clusterInfoBuilder_.getCount();
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo getClusterInfo(int index) {
+        if (clusterInfoBuilder_ == null) {
+          return clusterInfo_.get(index);
+        } else {
+          return clusterInfoBuilder_.getMessage(index);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public Builder setClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo value) {
+        if (clusterInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureClusterInfoIsMutable();
+          clusterInfo_.set(index, value);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.setMessage(index, value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public Builder setClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder builderForValue) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.set(index, builderForValue.build());
+          onChanged();
+        } else {
+          clusterInfoBuilder_.setMessage(index, builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public Builder addClusterInfo(org.voltdb.pmsg.DRAgent.ClusterInfo value) {
+        if (clusterInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(value);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public Builder addClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo value) {
+        if (clusterInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(index, value);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(index, value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public Builder addClusterInfo(
+          org.voltdb.pmsg.DRAgent.ClusterInfo.Builder builderForValue) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(builderForValue.build());
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public Builder addClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder builderForValue) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(index, builderForValue.build());
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(index, builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public Builder addAllClusterInfo(
+          java.lang.Iterable<? extends org.voltdb.pmsg.DRAgent.ClusterInfo> values) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          com.google.protobuf.AbstractMessageLite.Builder.addAll(
+              values, clusterInfo_);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addAllMessages(values);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public Builder clearClusterInfo() {
+        if (clusterInfoBuilder_ == null) {
+          clusterInfo_ = java.util.Collections.emptyList();
+          bitField0_ = (bitField0_ & ~0x00000001);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.clear();
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public Builder removeClusterInfo(int index) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.remove(index);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.remove(index);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo.Builder getClusterInfoBuilder(
+          int index) {
+        return getClusterInfoFieldBuilder().getBuilder(index);
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder getClusterInfoOrBuilder(
+          int index) {
+        if (clusterInfoBuilder_ == null) {
+          return clusterInfo_.get(index);  } else {
+          return clusterInfoBuilder_.getMessageOrBuilder(index);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public java.util.List<? extends org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+           getClusterInfoOrBuilderList() {
+        if (clusterInfoBuilder_ != null) {
+          return clusterInfoBuilder_.getMessageOrBuilderList();
+        } else {
+          return java.util.Collections.unmodifiableList(clusterInfo_);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo.Builder addClusterInfoBuilder() {
+        return getClusterInfoFieldBuilder().addBuilder(
+            org.voltdb.pmsg.DRAgent.ClusterInfo.getDefaultInstance());
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo.Builder addClusterInfoBuilder(
+          int index) {
+        return getClusterInfoFieldBuilder().addBuilder(
+            index, org.voltdb.pmsg.DRAgent.ClusterInfo.getDefaultInstance());
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 1;</code>
+       */
+      public java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo.Builder> 
+           getClusterInfoBuilderList() {
+        return getClusterInfoFieldBuilder().getBuilderList();
+      }
+      private com.google.protobuf.RepeatedFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.ClusterInfo, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder, org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+          getClusterInfoFieldBuilder() {
+        if (clusterInfoBuilder_ == null) {
+          clusterInfoBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.ClusterInfo, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder, org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder>(
+                  clusterInfo_,
+                  ((bitField0_ & 0x00000001) == 0x00000001),
+                  getParentForChildren(),
+                  isClean());
+          clusterInfo_ = null;
+        }
+        return clusterInfoBuilder_;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
+
+      // @@protoc_insertion_point(builder_scope:pmsg.StartCursor)
+    }
+
+    // @@protoc_insertion_point(class_scope:pmsg.StartCursor)
+    private static final org.voltdb.pmsg.DRAgent.StartCursor DEFAULT_INSTANCE;
+    static {
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.StartCursor();
+    }
+
+    public static org.voltdb.pmsg.DRAgent.StartCursor getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<StartCursor>
+        PARSER = new com.google.protobuf.AbstractParser<StartCursor>() {
+      public StartCursor parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new StartCursor(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<StartCursor> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<StartCursor> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.StartCursor getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
+  }
+
+  public interface ResponseOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.Response)
+      com.google.protobuf.MessageOrBuilder {
+
     /**
      * <code>required .pmsg.UUID id = 1;</code>
      */
@@ -4303,7 +5892,6 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.UUIDOrBuilder getIdOrBuilder();
 
-    // optional .pmsg.Response.ReplicationMode mode = 2;
     /**
      * <code>optional .pmsg.Response.ReplicationMode mode = 2;</code>
      */
@@ -4313,7 +5901,6 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.Response.ReplicationMode getMode();
 
-    // optional fixed64 snapshotTimestamp = 3;
     /**
      * <code>optional fixed64 snapshotTimestamp = 3;</code>
      */
@@ -4323,7 +5910,6 @@ public final class DRAgent {
      */
     long getSnapshotTimestamp();
 
-    // optional fixed64 instanceIdHash = 4;
     /**
      * <code>optional fixed64 instanceIdHash = 4;</code>
      */
@@ -4333,7 +5919,6 @@ public final class DRAgent {
      */
     long getInstanceIdHash();
 
-    // optional string version = 5;
     /**
      * <code>optional string version = 5;</code>
      */
@@ -4348,57 +5933,55 @@ public final class DRAgent {
     com.google.protobuf.ByteString
         getVersionBytes();
 
-    // repeated .pmsg.NodeInfo nodeInfo = 6;
     /**
-     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-     *
      * <pre>
      * all known nodes globally
      *  first entry is self
      * </pre>
+     *
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
      */
     java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo> 
         getNodeInfoList();
     /**
-     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-     *
      * <pre>
      * all known nodes globally
      *  first entry is self
      * </pre>
+     *
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
      */
     org.voltdb.pmsg.DRAgent.NodeInfo getNodeInfo(int index);
     /**
-     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-     *
      * <pre>
      * all known nodes globally
      *  first entry is self
      * </pre>
+     *
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
      */
     int getNodeInfoCount();
     /**
-     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-     *
      * <pre>
      * all known nodes globally
      *  first entry is self
      * </pre>
+     *
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
      */
     java.util.List<? extends org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> 
         getNodeInfoOrBuilderList();
     /**
-     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-     *
      * <pre>
      * all known nodes globally
      *  first entry is self
      * </pre>
+     *
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
      */
     org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder getNodeInfoOrBuilder(
         int index);
 
-    // optional int32 globalPartitionCount = 7;
     /**
      * <code>optional int32 globalPartitionCount = 7;</code>
      */
@@ -4408,70 +5991,67 @@ public final class DRAgent {
      */
     int getGlobalPartitionCount();
 
-    // repeated .pmsg.PartitionInfo partitionInfo = 8;
     /**
-     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-     *
      * <pre>
      * local partitions
      * </pre>
+     *
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
      */
     java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo> 
         getPartitionInfoList();
     /**
-     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-     *
      * <pre>
      * local partitions
      * </pre>
+     *
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
      */
     org.voltdb.pmsg.DRAgent.PartitionInfo getPartitionInfo(int index);
     /**
-     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-     *
      * <pre>
      * local partitions
      * </pre>
+     *
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
      */
     int getPartitionInfoCount();
     /**
-     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-     *
      * <pre>
      * local partitions
      * </pre>
+     *
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
      */
     java.util.List<? extends org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder> 
         getPartitionInfoOrBuilderList();
     /**
-     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-     *
      * <pre>
      * local partitions
      * </pre>
+     *
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
      */
     org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder getPartitionInfoOrBuilder(
         int index);
 
-    // optional int32 status = 9 [default = 0];
     /**
-     * <code>optional int32 status = 9 [default = 0];</code>
-     *
      * <pre>
      * status. 0 means ok
      * </pre>
+     *
+     * <code>optional int32 status = 9 [default = 0];</code>
      */
     boolean hasStatus();
     /**
-     * <code>optional int32 status = 9 [default = 0];</code>
-     *
      * <pre>
      * status. 0 means ok
      * </pre>
+     *
+     * <code>optional int32 status = 9 [default = 0];</code>
      */
     int getStatus();
 
-    // optional .pmsg.CtrlEnvelope.Type type = 10;
     /**
      * <code>optional .pmsg.CtrlEnvelope.Type type = 10;</code>
      */
@@ -4481,7 +6061,6 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type getType();
 
-    // optional fixed64 catalogCRC = 11;
     /**
      * <code>optional fixed64 catalogCRC = 11;</code>
      */
@@ -4491,7 +6070,6 @@ public final class DRAgent {
      */
     long getCatalogCRC();
 
-    // optional string catalogSignature = 12;
     /**
      * <code>optional string catalogSignature = 12;</code>
      */
@@ -4506,7 +6084,6 @@ public final class DRAgent {
     com.google.protobuf.ByteString
         getCatalogSignatureBytes();
 
-    // optional string failureCause = 13;
     /**
      * <code>optional string failureCause = 13;</code>
      */
@@ -4520,40 +6097,63 @@ public final class DRAgent {
      */
     com.google.protobuf.ByteString
         getFailureCauseBytes();
+
+    /**
+     * <code>optional bool isEndOfStream = 14;</code>
+     */
+    boolean hasIsEndOfStream();
+    /**
+     * <code>optional bool isEndOfStream = 14;</code>
+     */
+    boolean getIsEndOfStream();
+
+    /**
+     * <code>optional int32 protocolVersion = 15;</code>
+     */
+    boolean hasProtocolVersion();
+    /**
+     * <code>optional int32 protocolVersion = 15;</code>
+     */
+    int getProtocolVersion();
   }
   /**
    * Protobuf type {@code pmsg.Response}
    */
-  public static final class Response extends
-      com.google.protobuf.GeneratedMessage
-      implements ResponseOrBuilder {
+  public  static final class Response extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.Response)
+      ResponseOrBuilder {
     // Use Response.newBuilder() to construct.
-    private Response(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    private Response(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private Response(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final Response defaultInstance;
-    public static Response getDefaultInstance() {
-      return defaultInstance;
+    private Response() {
+      mode_ = 1;
+      snapshotTimestamp_ = 0L;
+      instanceIdHash_ = 0L;
+      version_ = "";
+      nodeInfo_ = java.util.Collections.emptyList();
+      globalPartitionCount_ = 0;
+      partitionInfo_ = java.util.Collections.emptyList();
+      status_ = 0;
+      type_ = 1;
+      catalogCRC_ = 0L;
+      catalogSignature_ = "";
+      failureCause_ = "";
+      isEndOfStream_ = false;
+      protocolVersion_ = 0;
     }
 
-    public Response getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
     private Response(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -4592,7 +6192,7 @@ public final class DRAgent {
                 unknownFields.mergeVarintField(2, rawValue);
               } else {
                 bitField0_ |= 0x00000002;
-                mode_ = value;
+                mode_ = rawValue;
               }
               break;
             }
@@ -4607,8 +6207,9 @@ public final class DRAgent {
               break;
             }
             case 42: {
+              com.google.protobuf.ByteString bs = input.readBytes();
               bitField0_ |= 0x00000010;
-              version_ = input.readBytes();
+              version_ = bs;
               break;
             }
             case 50: {
@@ -4616,7 +6217,8 @@ public final class DRAgent {
                 nodeInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.NodeInfo>();
                 mutable_bitField0_ |= 0x00000020;
               }
-              nodeInfo_.add(input.readMessage(org.voltdb.pmsg.DRAgent.NodeInfo.PARSER, extensionRegistry));
+              nodeInfo_.add(
+                  input.readMessage(org.voltdb.pmsg.DRAgent.NodeInfo.PARSER, extensionRegistry));
               break;
             }
             case 56: {
@@ -4629,7 +6231,8 @@ public final class DRAgent {
                 partitionInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.PartitionInfo>();
                 mutable_bitField0_ |= 0x00000080;
               }
-              partitionInfo_.add(input.readMessage(org.voltdb.pmsg.DRAgent.PartitionInfo.PARSER, extensionRegistry));
+              partitionInfo_.add(
+                  input.readMessage(org.voltdb.pmsg.DRAgent.PartitionInfo.PARSER, extensionRegistry));
               break;
             }
             case 72: {
@@ -4644,7 +6247,7 @@ public final class DRAgent {
                 unknownFields.mergeVarintField(10, rawValue);
               } else {
                 bitField0_ |= 0x00000080;
-                type_ = value;
+                type_ = rawValue;
               }
               break;
             }
@@ -4654,13 +6257,25 @@ public final class DRAgent {
               break;
             }
             case 98: {
+              com.google.protobuf.ByteString bs = input.readBytes();
               bitField0_ |= 0x00000200;
-              catalogSignature_ = input.readBytes();
+              catalogSignature_ = bs;
               break;
             }
             case 106: {
+              com.google.protobuf.ByteString bs = input.readBytes();
               bitField0_ |= 0x00000400;
-              failureCause_ = input.readBytes();
+              failureCause_ = bs;
+              break;
+            }
+            case 112: {
+              bitField0_ |= 0x00000800;
+              isEndOfStream_ = input.readBool();
+              break;
+            }
+            case 120: {
+              bitField0_ |= 0x00001000;
+              protocolVersion_ = input.readInt32();
               break;
             }
           }
@@ -4669,7 +6284,7 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         if (((mutable_bitField0_ & 0x00000020) == 0x00000020)) {
           nodeInfo_ = java.util.Collections.unmodifiableList(nodeInfo_);
@@ -4686,26 +6301,11 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Response_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Response_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.Response.class, org.voltdb.pmsg.DRAgent.Response.Builder.class);
-    }
-
-    public static com.google.protobuf.Parser<Response> PARSER =
-        new com.google.protobuf.AbstractParser<Response>() {
-      public Response parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new Response(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<Response> getParserForType() {
-      return PARSER;
     }
 
     /**
@@ -4716,23 +6316,23 @@ public final class DRAgent {
       /**
        * <code>IDLE = 1;</code>
        */
-      IDLE(0, 1),
+      IDLE(1),
       /**
        * <code>SYNCING_REPLICATED = 2;</code>
        */
-      SYNCING_REPLICATED(1, 2),
+      SYNCING_REPLICATED(2),
       /**
        * <code>SYNCING_PARTITIONED = 3;</code>
        */
-      SYNCING_PARTITIONED(2, 3),
+      SYNCING_PARTITIONED(3),
       /**
        * <code>ACTIVE = 4;</code>
        */
-      ACTIVE(3, 4),
+      ACTIVE(4),
       /**
        * <code>UNAVAILABLE = 5;</code>
        */
-      UNAVAILABLE(4, 5),
+      UNAVAILABLE(5),
       ;
 
       /**
@@ -4757,9 +6357,19 @@ public final class DRAgent {
       public static final int UNAVAILABLE_VALUE = 5;
 
 
-      public final int getNumber() { return value; }
+      public final int getNumber() {
+        return value;
+      }
 
+      /**
+       * @deprecated Use {@link #forNumber(int)} instead.
+       */
+      @java.lang.Deprecated
       public static ReplicationMode valueOf(int value) {
+        return forNumber(value);
+      }
+
+      public static ReplicationMode forNumber(int value) {
         switch (value) {
           case 1: return IDLE;
           case 2: return SYNCING_REPLICATED;
@@ -4774,17 +6384,17 @@ public final class DRAgent {
           internalGetValueMap() {
         return internalValueMap;
       }
-      private static com.google.protobuf.Internal.EnumLiteMap<ReplicationMode>
-          internalValueMap =
+      private static final com.google.protobuf.Internal.EnumLiteMap<
+          ReplicationMode> internalValueMap =
             new com.google.protobuf.Internal.EnumLiteMap<ReplicationMode>() {
               public ReplicationMode findValueByNumber(int number) {
-                return ReplicationMode.valueOf(number);
+                return ReplicationMode.forNumber(number);
               }
             };
 
       public final com.google.protobuf.Descriptors.EnumValueDescriptor
           getValueDescriptor() {
-        return getDescriptor().getValues().get(index);
+        return getDescriptor().getValues().get(ordinal());
       }
       public final com.google.protobuf.Descriptors.EnumDescriptor
           getDescriptorForType() {
@@ -4806,11 +6416,9 @@ public final class DRAgent {
         return VALUES[desc.getIndex()];
       }
 
-      private final int index;
       private final int value;
 
-      private ReplicationMode(int index, int value) {
-        this.index = index;
+      private ReplicationMode(int value) {
         this.value = value;
       }
 
@@ -4818,7 +6426,6 @@ public final class DRAgent {
     }
 
     private int bitField0_;
-    // required .pmsg.UUID id = 1;
     public static final int ID_FIELD_NUMBER = 1;
     private org.voltdb.pmsg.DRAgent.UUID id_;
     /**
@@ -4831,18 +6438,17 @@ public final class DRAgent {
      * <code>required .pmsg.UUID id = 1;</code>
      */
     public org.voltdb.pmsg.DRAgent.UUID getId() {
-      return id_;
+      return id_ == null ? org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
     }
     /**
      * <code>required .pmsg.UUID id = 1;</code>
      */
     public org.voltdb.pmsg.DRAgent.UUIDOrBuilder getIdOrBuilder() {
-      return id_;
+      return id_ == null ? org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
     }
 
-    // optional .pmsg.Response.ReplicationMode mode = 2;
     public static final int MODE_FIELD_NUMBER = 2;
-    private org.voltdb.pmsg.DRAgent.Response.ReplicationMode mode_;
+    private int mode_;
     /**
      * <code>optional .pmsg.Response.ReplicationMode mode = 2;</code>
      */
@@ -4853,10 +6459,10 @@ public final class DRAgent {
      * <code>optional .pmsg.Response.ReplicationMode mode = 2;</code>
      */
     public org.voltdb.pmsg.DRAgent.Response.ReplicationMode getMode() {
-      return mode_;
+      org.voltdb.pmsg.DRAgent.Response.ReplicationMode result = org.voltdb.pmsg.DRAgent.Response.ReplicationMode.valueOf(mode_);
+      return result == null ? org.voltdb.pmsg.DRAgent.Response.ReplicationMode.IDLE : result;
     }
 
-    // optional fixed64 snapshotTimestamp = 3;
     public static final int SNAPSHOTTIMESTAMP_FIELD_NUMBER = 3;
     private long snapshotTimestamp_;
     /**
@@ -4872,7 +6478,6 @@ public final class DRAgent {
       return snapshotTimestamp_;
     }
 
-    // optional fixed64 instanceIdHash = 4;
     public static final int INSTANCEIDHASH_FIELD_NUMBER = 4;
     private long instanceIdHash_;
     /**
@@ -4888,9 +6493,8 @@ public final class DRAgent {
       return instanceIdHash_;
     }
 
-    // optional string version = 5;
     public static final int VERSION_FIELD_NUMBER = 5;
-    private java.lang.Object version_;
+    private volatile java.lang.Object version_;
     /**
      * <code>optional string version = 5;</code>
      */
@@ -4931,68 +6535,66 @@ public final class DRAgent {
       }
     }
 
-    // repeated .pmsg.NodeInfo nodeInfo = 6;
     public static final int NODEINFO_FIELD_NUMBER = 6;
     private java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo> nodeInfo_;
     /**
-     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-     *
      * <pre>
      * all known nodes globally
      *  first entry is self
      * </pre>
+     *
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
      */
     public java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo> getNodeInfoList() {
       return nodeInfo_;
     }
     /**
-     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-     *
      * <pre>
      * all known nodes globally
      *  first entry is self
      * </pre>
+     *
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
      */
     public java.util.List<? extends org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> 
         getNodeInfoOrBuilderList() {
       return nodeInfo_;
     }
     /**
-     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-     *
      * <pre>
      * all known nodes globally
      *  first entry is self
      * </pre>
+     *
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
      */
     public int getNodeInfoCount() {
       return nodeInfo_.size();
     }
     /**
-     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-     *
      * <pre>
      * all known nodes globally
      *  first entry is self
      * </pre>
+     *
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
      */
     public org.voltdb.pmsg.DRAgent.NodeInfo getNodeInfo(int index) {
       return nodeInfo_.get(index);
     }
     /**
-     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-     *
      * <pre>
      * all known nodes globally
      *  first entry is self
      * </pre>
+     *
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
      */
     public org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder getNodeInfoOrBuilder(
         int index) {
       return nodeInfo_.get(index);
     }
 
-    // optional int32 globalPartitionCount = 7;
     public static final int GLOBALPARTITIONCOUNT_FIELD_NUMBER = 7;
     private int globalPartitionCount_;
     /**
@@ -5008,89 +6610,86 @@ public final class DRAgent {
       return globalPartitionCount_;
     }
 
-    // repeated .pmsg.PartitionInfo partitionInfo = 8;
     public static final int PARTITIONINFO_FIELD_NUMBER = 8;
     private java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo> partitionInfo_;
     /**
-     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-     *
      * <pre>
      * local partitions
      * </pre>
+     *
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
      */
     public java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo> getPartitionInfoList() {
       return partitionInfo_;
     }
     /**
-     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-     *
      * <pre>
      * local partitions
      * </pre>
+     *
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
      */
     public java.util.List<? extends org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder> 
         getPartitionInfoOrBuilderList() {
       return partitionInfo_;
     }
     /**
-     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-     *
      * <pre>
      * local partitions
      * </pre>
+     *
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
      */
     public int getPartitionInfoCount() {
       return partitionInfo_.size();
     }
     /**
-     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-     *
      * <pre>
      * local partitions
      * </pre>
+     *
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
      */
     public org.voltdb.pmsg.DRAgent.PartitionInfo getPartitionInfo(int index) {
       return partitionInfo_.get(index);
     }
     /**
-     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-     *
      * <pre>
      * local partitions
      * </pre>
+     *
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
      */
     public org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder getPartitionInfoOrBuilder(
         int index) {
       return partitionInfo_.get(index);
     }
 
-    // optional int32 status = 9 [default = 0];
     public static final int STATUS_FIELD_NUMBER = 9;
     private int status_;
     /**
-     * <code>optional int32 status = 9 [default = 0];</code>
-     *
      * <pre>
      * status. 0 means ok
      * </pre>
+     *
+     * <code>optional int32 status = 9 [default = 0];</code>
      */
     public boolean hasStatus() {
       return ((bitField0_ & 0x00000040) == 0x00000040);
     }
     /**
-     * <code>optional int32 status = 9 [default = 0];</code>
-     *
      * <pre>
      * status. 0 means ok
      * </pre>
+     *
+     * <code>optional int32 status = 9 [default = 0];</code>
      */
     public int getStatus() {
       return status_;
     }
 
-    // optional .pmsg.CtrlEnvelope.Type type = 10;
     public static final int TYPE_FIELD_NUMBER = 10;
-    private org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type type_;
+    private int type_;
     /**
      * <code>optional .pmsg.CtrlEnvelope.Type type = 10;</code>
      */
@@ -5101,10 +6700,10 @@ public final class DRAgent {
      * <code>optional .pmsg.CtrlEnvelope.Type type = 10;</code>
      */
     public org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type getType() {
-      return type_;
+      org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type result = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.valueOf(type_);
+      return result == null ? org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK : result;
     }
 
-    // optional fixed64 catalogCRC = 11;
     public static final int CATALOGCRC_FIELD_NUMBER = 11;
     private long catalogCRC_;
     /**
@@ -5120,9 +6719,8 @@ public final class DRAgent {
       return catalogCRC_;
     }
 
-    // optional string catalogSignature = 12;
     public static final int CATALOGSIGNATURE_FIELD_NUMBER = 12;
-    private java.lang.Object catalogSignature_;
+    private volatile java.lang.Object catalogSignature_;
     /**
      * <code>optional string catalogSignature = 12;</code>
      */
@@ -5163,9 +6761,8 @@ public final class DRAgent {
       }
     }
 
-    // optional string failureCause = 13;
     public static final int FAILURECAUSE_FIELD_NUMBER = 13;
-    private java.lang.Object failureCause_;
+    private volatile java.lang.Object failureCause_;
     /**
      * <code>optional string failureCause = 13;</code>
      */
@@ -5206,25 +6803,41 @@ public final class DRAgent {
       }
     }
 
-    private void initFields() {
-      id_ = org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance();
-      mode_ = org.voltdb.pmsg.DRAgent.Response.ReplicationMode.IDLE;
-      snapshotTimestamp_ = 0L;
-      instanceIdHash_ = 0L;
-      version_ = "";
-      nodeInfo_ = java.util.Collections.emptyList();
-      globalPartitionCount_ = 0;
-      partitionInfo_ = java.util.Collections.emptyList();
-      status_ = 0;
-      type_ = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK;
-      catalogCRC_ = 0L;
-      catalogSignature_ = "";
-      failureCause_ = "";
+    public static final int ISENDOFSTREAM_FIELD_NUMBER = 14;
+    private boolean isEndOfStream_;
+    /**
+     * <code>optional bool isEndOfStream = 14;</code>
+     */
+    public boolean hasIsEndOfStream() {
+      return ((bitField0_ & 0x00000800) == 0x00000800);
     }
+    /**
+     * <code>optional bool isEndOfStream = 14;</code>
+     */
+    public boolean getIsEndOfStream() {
+      return isEndOfStream_;
+    }
+
+    public static final int PROTOCOLVERSION_FIELD_NUMBER = 15;
+    private int protocolVersion_;
+    /**
+     * <code>optional int32 protocolVersion = 15;</code>
+     */
+    public boolean hasProtocolVersion() {
+      return ((bitField0_ & 0x00001000) == 0x00001000);
+    }
+    /**
+     * <code>optional int32 protocolVersion = 15;</code>
+     */
+    public int getProtocolVersion() {
+      return protocolVersion_;
+    }
+
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       if (!hasId()) {
         memoizedIsInitialized = 0;
@@ -5240,12 +6853,11 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
-        output.writeMessage(1, id_);
+        output.writeMessage(1, getId());
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
-        output.writeEnum(2, mode_.getNumber());
+        output.writeEnum(2, mode_);
       }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
         output.writeFixed64(3, snapshotTimestamp_);
@@ -5254,7 +6866,7 @@ public final class DRAgent {
         output.writeFixed64(4, instanceIdHash_);
       }
       if (((bitField0_ & 0x00000010) == 0x00000010)) {
-        output.writeBytes(5, getVersionBytes());
+        com.google.protobuf.GeneratedMessageV3.writeString(output, 5, version_);
       }
       for (int i = 0; i < nodeInfo_.size(); i++) {
         output.writeMessage(6, nodeInfo_.get(i));
@@ -5269,33 +6881,38 @@ public final class DRAgent {
         output.writeInt32(9, status_);
       }
       if (((bitField0_ & 0x00000080) == 0x00000080)) {
-        output.writeEnum(10, type_.getNumber());
+        output.writeEnum(10, type_);
       }
       if (((bitField0_ & 0x00000100) == 0x00000100)) {
         output.writeFixed64(11, catalogCRC_);
       }
       if (((bitField0_ & 0x00000200) == 0x00000200)) {
-        output.writeBytes(12, getCatalogSignatureBytes());
+        com.google.protobuf.GeneratedMessageV3.writeString(output, 12, catalogSignature_);
       }
       if (((bitField0_ & 0x00000400) == 0x00000400)) {
-        output.writeBytes(13, getFailureCauseBytes());
+        com.google.protobuf.GeneratedMessageV3.writeString(output, 13, failureCause_);
       }
-      getUnknownFields().writeTo(output);
+      if (((bitField0_ & 0x00000800) == 0x00000800)) {
+        output.writeBool(14, isEndOfStream_);
+      }
+      if (((bitField0_ & 0x00001000) == 0x00001000)) {
+        output.writeInt32(15, protocolVersion_);
+      }
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(1, id_);
+          .computeMessageSize(1, getId());
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeEnumSize(2, mode_.getNumber());
+          .computeEnumSize(2, mode_);
       }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
         size += com.google.protobuf.CodedOutputStream
@@ -5306,8 +6923,7 @@ public final class DRAgent {
           .computeFixed64Size(4, instanceIdHash_);
       }
       if (((bitField0_ & 0x00000010) == 0x00000010)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(5, getVersionBytes());
+        size += com.google.protobuf.GeneratedMessageV3.computeStringSize(5, version_);
       }
       for (int i = 0; i < nodeInfo_.size(); i++) {
         size += com.google.protobuf.CodedOutputStream
@@ -5327,30 +6943,188 @@ public final class DRAgent {
       }
       if (((bitField0_ & 0x00000080) == 0x00000080)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeEnumSize(10, type_.getNumber());
+          .computeEnumSize(10, type_);
       }
       if (((bitField0_ & 0x00000100) == 0x00000100)) {
         size += com.google.protobuf.CodedOutputStream
           .computeFixed64Size(11, catalogCRC_);
       }
       if (((bitField0_ & 0x00000200) == 0x00000200)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(12, getCatalogSignatureBytes());
+        size += com.google.protobuf.GeneratedMessageV3.computeStringSize(12, catalogSignature_);
       }
       if (((bitField0_ & 0x00000400) == 0x00000400)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(13, getFailureCauseBytes());
+        size += com.google.protobuf.GeneratedMessageV3.computeStringSize(13, failureCause_);
       }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      if (((bitField0_ & 0x00000800) == 0x00000800)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeBoolSize(14, isEndOfStream_);
+      }
+      if (((bitField0_ & 0x00001000) == 0x00001000)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeInt32Size(15, protocolVersion_);
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.Response)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.Response other = (org.voltdb.pmsg.DRAgent.Response) obj;
+
+      boolean result = true;
+      result = result && (hasId() == other.hasId());
+      if (hasId()) {
+        result = result && getId()
+            .equals(other.getId());
+      }
+      result = result && (hasMode() == other.hasMode());
+      if (hasMode()) {
+        result = result && mode_ == other.mode_;
+      }
+      result = result && (hasSnapshotTimestamp() == other.hasSnapshotTimestamp());
+      if (hasSnapshotTimestamp()) {
+        result = result && (getSnapshotTimestamp()
+            == other.getSnapshotTimestamp());
+      }
+      result = result && (hasInstanceIdHash() == other.hasInstanceIdHash());
+      if (hasInstanceIdHash()) {
+        result = result && (getInstanceIdHash()
+            == other.getInstanceIdHash());
+      }
+      result = result && (hasVersion() == other.hasVersion());
+      if (hasVersion()) {
+        result = result && getVersion()
+            .equals(other.getVersion());
+      }
+      result = result && getNodeInfoList()
+          .equals(other.getNodeInfoList());
+      result = result && (hasGlobalPartitionCount() == other.hasGlobalPartitionCount());
+      if (hasGlobalPartitionCount()) {
+        result = result && (getGlobalPartitionCount()
+            == other.getGlobalPartitionCount());
+      }
+      result = result && getPartitionInfoList()
+          .equals(other.getPartitionInfoList());
+      result = result && (hasStatus() == other.hasStatus());
+      if (hasStatus()) {
+        result = result && (getStatus()
+            == other.getStatus());
+      }
+      result = result && (hasType() == other.hasType());
+      if (hasType()) {
+        result = result && type_ == other.type_;
+      }
+      result = result && (hasCatalogCRC() == other.hasCatalogCRC());
+      if (hasCatalogCRC()) {
+        result = result && (getCatalogCRC()
+            == other.getCatalogCRC());
+      }
+      result = result && (hasCatalogSignature() == other.hasCatalogSignature());
+      if (hasCatalogSignature()) {
+        result = result && getCatalogSignature()
+            .equals(other.getCatalogSignature());
+      }
+      result = result && (hasFailureCause() == other.hasFailureCause());
+      if (hasFailureCause()) {
+        result = result && getFailureCause()
+            .equals(other.getFailureCause());
+      }
+      result = result && (hasIsEndOfStream() == other.hasIsEndOfStream());
+      if (hasIsEndOfStream()) {
+        result = result && (getIsEndOfStream()
+            == other.getIsEndOfStream());
+      }
+      result = result && (hasProtocolVersion() == other.hasProtocolVersion());
+      if (hasProtocolVersion()) {
+        result = result && (getProtocolVersion()
+            == other.getProtocolVersion());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasId()) {
+        hash = (37 * hash) + ID_FIELD_NUMBER;
+        hash = (53 * hash) + getId().hashCode();
+      }
+      if (hasMode()) {
+        hash = (37 * hash) + MODE_FIELD_NUMBER;
+        hash = (53 * hash) + mode_;
+      }
+      if (hasSnapshotTimestamp()) {
+        hash = (37 * hash) + SNAPSHOTTIMESTAMP_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getSnapshotTimestamp());
+      }
+      if (hasInstanceIdHash()) {
+        hash = (37 * hash) + INSTANCEIDHASH_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getInstanceIdHash());
+      }
+      if (hasVersion()) {
+        hash = (37 * hash) + VERSION_FIELD_NUMBER;
+        hash = (53 * hash) + getVersion().hashCode();
+      }
+      if (getNodeInfoCount() > 0) {
+        hash = (37 * hash) + NODEINFO_FIELD_NUMBER;
+        hash = (53 * hash) + getNodeInfoList().hashCode();
+      }
+      if (hasGlobalPartitionCount()) {
+        hash = (37 * hash) + GLOBALPARTITIONCOUNT_FIELD_NUMBER;
+        hash = (53 * hash) + getGlobalPartitionCount();
+      }
+      if (getPartitionInfoCount() > 0) {
+        hash = (37 * hash) + PARTITIONINFO_FIELD_NUMBER;
+        hash = (53 * hash) + getPartitionInfoList().hashCode();
+      }
+      if (hasStatus()) {
+        hash = (37 * hash) + STATUS_FIELD_NUMBER;
+        hash = (53 * hash) + getStatus();
+      }
+      if (hasType()) {
+        hash = (37 * hash) + TYPE_FIELD_NUMBER;
+        hash = (53 * hash) + type_;
+      }
+      if (hasCatalogCRC()) {
+        hash = (37 * hash) + CATALOGCRC_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getCatalogCRC());
+      }
+      if (hasCatalogSignature()) {
+        hash = (37 * hash) + CATALOGSIGNATURE_FIELD_NUMBER;
+        hash = (53 * hash) + getCatalogSignature().hashCode();
+      }
+      if (hasFailureCause()) {
+        hash = (37 * hash) + FAILURECAUSE_FIELD_NUMBER;
+        hash = (53 * hash) + getFailureCause().hashCode();
+      }
+      if (hasIsEndOfStream()) {
+        hash = (37 * hash) + ISENDOFSTREAM_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getIsEndOfStream());
+      }
+      if (hasProtocolVersion()) {
+        hash = (37 * hash) + PROTOCOLVERSION_FIELD_NUMBER;
+        hash = (53 * hash) + getProtocolVersion();
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.Response parseFrom(
@@ -5376,46 +7150,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.Response parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Response parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Response parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Response parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.Response parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.Response parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Response prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.Response prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -5423,14 +7208,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.Response}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.ResponseOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.Response)
+        org.voltdb.pmsg.DRAgent.ResponseOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Response_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_Response_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -5443,30 +7229,27 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
           getIdFieldBuilder();
           getNodeInfoFieldBuilder();
           getPartitionInfoFieldBuilder();
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
         if (idBuilder_ == null) {
-          id_ = org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance();
+          id_ = null;
         } else {
           idBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000001);
-        mode_ = org.voltdb.pmsg.DRAgent.Response.ReplicationMode.IDLE;
+        mode_ = 1;
         bitField0_ = (bitField0_ & ~0x00000002);
         snapshotTimestamp_ = 0L;
         bitField0_ = (bitField0_ & ~0x00000004);
@@ -5490,7 +7273,7 @@ public final class DRAgent {
         }
         status_ = 0;
         bitField0_ = (bitField0_ & ~0x00000100);
-        type_ = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK;
+        type_ = 1;
         bitField0_ = (bitField0_ & ~0x00000200);
         catalogCRC_ = 0L;
         bitField0_ = (bitField0_ & ~0x00000400);
@@ -5498,11 +7281,11 @@ public final class DRAgent {
         bitField0_ = (bitField0_ & ~0x00000800);
         failureCause_ = "";
         bitField0_ = (bitField0_ & ~0x00001000);
+        isEndOfStream_ = false;
+        bitField0_ = (bitField0_ & ~0x00002000);
+        protocolVersion_ = 0;
+        bitField0_ = (bitField0_ & ~0x00004000);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -5592,11 +7375,45 @@ public final class DRAgent {
           to_bitField0_ |= 0x00000400;
         }
         result.failureCause_ = failureCause_;
+        if (((from_bitField0_ & 0x00002000) == 0x00002000)) {
+          to_bitField0_ |= 0x00000800;
+        }
+        result.isEndOfStream_ = isEndOfStream_;
+        if (((from_bitField0_ & 0x00004000) == 0x00004000)) {
+          to_bitField0_ |= 0x00001000;
+        }
+        result.protocolVersion_ = protocolVersion_;
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.Response) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.Response)other);
@@ -5644,7 +7461,7 @@ public final class DRAgent {
               nodeInfo_ = other.nodeInfo_;
               bitField0_ = (bitField0_ & ~0x00000020);
               nodeInfoBuilder_ = 
-                com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders ?
+                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
                    getNodeInfoFieldBuilder() : null;
             } else {
               nodeInfoBuilder_.addAllMessages(other.nodeInfo_);
@@ -5673,7 +7490,7 @@ public final class DRAgent {
               partitionInfo_ = other.partitionInfo_;
               bitField0_ = (bitField0_ & ~0x00000080);
               partitionInfoBuilder_ = 
-                com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders ?
+                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
                    getPartitionInfoFieldBuilder() : null;
             } else {
               partitionInfoBuilder_.addAllMessages(other.partitionInfo_);
@@ -5699,17 +7516,22 @@ public final class DRAgent {
           failureCause_ = other.failureCause_;
           onChanged();
         }
-        this.mergeUnknownFields(other.getUnknownFields());
+        if (other.hasIsEndOfStream()) {
+          setIsEndOfStream(other.getIsEndOfStream());
+        }
+        if (other.hasProtocolVersion()) {
+          setProtocolVersion(other.getProtocolVersion());
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
       public final boolean isInitialized() {
         if (!hasId()) {
-          
           return false;
         }
         if (!getId().isInitialized()) {
-          
           return false;
         }
         return true;
@@ -5724,7 +7546,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.Response) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -5734,9 +7556,8 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // required .pmsg.UUID id = 1;
-      private org.voltdb.pmsg.DRAgent.UUID id_ = org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
+      private org.voltdb.pmsg.DRAgent.UUID id_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.UUID, org.voltdb.pmsg.DRAgent.UUID.Builder, org.voltdb.pmsg.DRAgent.UUIDOrBuilder> idBuilder_;
       /**
        * <code>required .pmsg.UUID id = 1;</code>
@@ -5749,7 +7570,7 @@ public final class DRAgent {
        */
       public org.voltdb.pmsg.DRAgent.UUID getId() {
         if (idBuilder_ == null) {
-          return id_;
+          return id_ == null ? org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
         } else {
           return idBuilder_.getMessage();
         }
@@ -5790,6 +7611,7 @@ public final class DRAgent {
       public Builder mergeId(org.voltdb.pmsg.DRAgent.UUID value) {
         if (idBuilder_ == null) {
           if (((bitField0_ & 0x00000001) == 0x00000001) &&
+              id_ != null &&
               id_ != org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance()) {
             id_ =
               org.voltdb.pmsg.DRAgent.UUID.newBuilder(id_).mergeFrom(value).buildPartial();
@@ -5808,7 +7630,7 @@ public final class DRAgent {
        */
       public Builder clearId() {
         if (idBuilder_ == null) {
-          id_ = org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance();
+          id_ = null;
           onChanged();
         } else {
           idBuilder_.clear();
@@ -5831,19 +7653,20 @@ public final class DRAgent {
         if (idBuilder_ != null) {
           return idBuilder_.getMessageOrBuilder();
         } else {
-          return id_;
+          return id_ == null ?
+              org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
         }
       }
       /**
        * <code>required .pmsg.UUID id = 1;</code>
        */
-      private com.google.protobuf.SingleFieldBuilder<
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.UUID, org.voltdb.pmsg.DRAgent.UUID.Builder, org.voltdb.pmsg.DRAgent.UUIDOrBuilder> 
           getIdFieldBuilder() {
         if (idBuilder_ == null) {
-          idBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+          idBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.UUID, org.voltdb.pmsg.DRAgent.UUID.Builder, org.voltdb.pmsg.DRAgent.UUIDOrBuilder>(
-                  id_,
+                  getId(),
                   getParentForChildren(),
                   isClean());
           id_ = null;
@@ -5851,8 +7674,7 @@ public final class DRAgent {
         return idBuilder_;
       }
 
-      // optional .pmsg.Response.ReplicationMode mode = 2;
-      private org.voltdb.pmsg.DRAgent.Response.ReplicationMode mode_ = org.voltdb.pmsg.DRAgent.Response.ReplicationMode.IDLE;
+      private int mode_ = 1;
       /**
        * <code>optional .pmsg.Response.ReplicationMode mode = 2;</code>
        */
@@ -5863,7 +7685,8 @@ public final class DRAgent {
        * <code>optional .pmsg.Response.ReplicationMode mode = 2;</code>
        */
       public org.voltdb.pmsg.DRAgent.Response.ReplicationMode getMode() {
-        return mode_;
+        org.voltdb.pmsg.DRAgent.Response.ReplicationMode result = org.voltdb.pmsg.DRAgent.Response.ReplicationMode.valueOf(mode_);
+        return result == null ? org.voltdb.pmsg.DRAgent.Response.ReplicationMode.IDLE : result;
       }
       /**
        * <code>optional .pmsg.Response.ReplicationMode mode = 2;</code>
@@ -5873,7 +7696,7 @@ public final class DRAgent {
           throw new NullPointerException();
         }
         bitField0_ |= 0x00000002;
-        mode_ = value;
+        mode_ = value.getNumber();
         onChanged();
         return this;
       }
@@ -5882,12 +7705,11 @@ public final class DRAgent {
        */
       public Builder clearMode() {
         bitField0_ = (bitField0_ & ~0x00000002);
-        mode_ = org.voltdb.pmsg.DRAgent.Response.ReplicationMode.IDLE;
+        mode_ = 1;
         onChanged();
         return this;
       }
 
-      // optional fixed64 snapshotTimestamp = 3;
       private long snapshotTimestamp_ ;
       /**
        * <code>optional fixed64 snapshotTimestamp = 3;</code>
@@ -5920,7 +7742,6 @@ public final class DRAgent {
         return this;
       }
 
-      // optional fixed64 instanceIdHash = 4;
       private long instanceIdHash_ ;
       /**
        * <code>optional fixed64 instanceIdHash = 4;</code>
@@ -5953,7 +7774,6 @@ public final class DRAgent {
         return this;
       }
 
-      // optional string version = 5;
       private java.lang.Object version_ = "";
       /**
        * <code>optional string version = 5;</code>
@@ -5967,9 +7787,12 @@ public final class DRAgent {
       public java.lang.String getVersion() {
         java.lang.Object ref = version_;
         if (!(ref instanceof java.lang.String)) {
-          java.lang.String s = ((com.google.protobuf.ByteString) ref)
-              .toStringUtf8();
-          version_ = s;
+          com.google.protobuf.ByteString bs =
+              (com.google.protobuf.ByteString) ref;
+          java.lang.String s = bs.toStringUtf8();
+          if (bs.isValidUtf8()) {
+            version_ = s;
+          }
           return s;
         } else {
           return (java.lang.String) ref;
@@ -6027,7 +7850,6 @@ public final class DRAgent {
         return this;
       }
 
-      // repeated .pmsg.NodeInfo nodeInfo = 6;
       private java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo> nodeInfo_ =
         java.util.Collections.emptyList();
       private void ensureNodeInfoIsMutable() {
@@ -6037,16 +7859,16 @@ public final class DRAgent {
          }
       }
 
-      private com.google.protobuf.RepeatedFieldBuilder<
+      private com.google.protobuf.RepeatedFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.NodeInfo, org.voltdb.pmsg.DRAgent.NodeInfo.Builder, org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> nodeInfoBuilder_;
 
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo> getNodeInfoList() {
         if (nodeInfoBuilder_ == null) {
@@ -6056,12 +7878,12 @@ public final class DRAgent {
         }
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public int getNodeInfoCount() {
         if (nodeInfoBuilder_ == null) {
@@ -6071,12 +7893,12 @@ public final class DRAgent {
         }
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public org.voltdb.pmsg.DRAgent.NodeInfo getNodeInfo(int index) {
         if (nodeInfoBuilder_ == null) {
@@ -6086,12 +7908,12 @@ public final class DRAgent {
         }
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public Builder setNodeInfo(
           int index, org.voltdb.pmsg.DRAgent.NodeInfo value) {
@@ -6108,12 +7930,12 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public Builder setNodeInfo(
           int index, org.voltdb.pmsg.DRAgent.NodeInfo.Builder builderForValue) {
@@ -6127,12 +7949,12 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public Builder addNodeInfo(org.voltdb.pmsg.DRAgent.NodeInfo value) {
         if (nodeInfoBuilder_ == null) {
@@ -6148,12 +7970,12 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public Builder addNodeInfo(
           int index, org.voltdb.pmsg.DRAgent.NodeInfo value) {
@@ -6170,12 +7992,12 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public Builder addNodeInfo(
           org.voltdb.pmsg.DRAgent.NodeInfo.Builder builderForValue) {
@@ -6189,12 +8011,12 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public Builder addNodeInfo(
           int index, org.voltdb.pmsg.DRAgent.NodeInfo.Builder builderForValue) {
@@ -6208,18 +8030,19 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public Builder addAllNodeInfo(
           java.lang.Iterable<? extends org.voltdb.pmsg.DRAgent.NodeInfo> values) {
         if (nodeInfoBuilder_ == null) {
           ensureNodeInfoIsMutable();
-          super.addAll(values, nodeInfo_);
+          com.google.protobuf.AbstractMessageLite.Builder.addAll(
+              values, nodeInfo_);
           onChanged();
         } else {
           nodeInfoBuilder_.addAllMessages(values);
@@ -6227,12 +8050,12 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public Builder clearNodeInfo() {
         if (nodeInfoBuilder_ == null) {
@@ -6245,12 +8068,12 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public Builder removeNodeInfo(int index) {
         if (nodeInfoBuilder_ == null) {
@@ -6263,24 +8086,24 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public org.voltdb.pmsg.DRAgent.NodeInfo.Builder getNodeInfoBuilder(
           int index) {
         return getNodeInfoFieldBuilder().getBuilder(index);
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder getNodeInfoOrBuilder(
           int index) {
@@ -6290,12 +8113,12 @@ public final class DRAgent {
         }
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public java.util.List<? extends org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> 
            getNodeInfoOrBuilderList() {
@@ -6306,24 +8129,24 @@ public final class DRAgent {
         }
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public org.voltdb.pmsg.DRAgent.NodeInfo.Builder addNodeInfoBuilder() {
         return getNodeInfoFieldBuilder().addBuilder(
             org.voltdb.pmsg.DRAgent.NodeInfo.getDefaultInstance());
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public org.voltdb.pmsg.DRAgent.NodeInfo.Builder addNodeInfoBuilder(
           int index) {
@@ -6331,22 +8154,22 @@ public final class DRAgent {
             index, org.voltdb.pmsg.DRAgent.NodeInfo.getDefaultInstance());
       }
       /**
-       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
-       *
        * <pre>
        * all known nodes globally
        *  first entry is self
        * </pre>
+       *
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
        */
       public java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo.Builder> 
            getNodeInfoBuilderList() {
         return getNodeInfoFieldBuilder().getBuilderList();
       }
-      private com.google.protobuf.RepeatedFieldBuilder<
+      private com.google.protobuf.RepeatedFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.NodeInfo, org.voltdb.pmsg.DRAgent.NodeInfo.Builder, org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> 
           getNodeInfoFieldBuilder() {
         if (nodeInfoBuilder_ == null) {
-          nodeInfoBuilder_ = new com.google.protobuf.RepeatedFieldBuilder<
+          nodeInfoBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.NodeInfo, org.voltdb.pmsg.DRAgent.NodeInfo.Builder, org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder>(
                   nodeInfo_,
                   ((bitField0_ & 0x00000020) == 0x00000020),
@@ -6357,7 +8180,6 @@ public final class DRAgent {
         return nodeInfoBuilder_;
       }
 
-      // optional int32 globalPartitionCount = 7;
       private int globalPartitionCount_ ;
       /**
        * <code>optional int32 globalPartitionCount = 7;</code>
@@ -6390,7 +8212,6 @@ public final class DRAgent {
         return this;
       }
 
-      // repeated .pmsg.PartitionInfo partitionInfo = 8;
       private java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo> partitionInfo_ =
         java.util.Collections.emptyList();
       private void ensurePartitionInfoIsMutable() {
@@ -6400,15 +8221,15 @@ public final class DRAgent {
          }
       }
 
-      private com.google.protobuf.RepeatedFieldBuilder<
+      private com.google.protobuf.RepeatedFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.PartitionInfo, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder, org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder> partitionInfoBuilder_;
 
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo> getPartitionInfoList() {
         if (partitionInfoBuilder_ == null) {
@@ -6418,11 +8239,11 @@ public final class DRAgent {
         }
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public int getPartitionInfoCount() {
         if (partitionInfoBuilder_ == null) {
@@ -6432,11 +8253,11 @@ public final class DRAgent {
         }
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public org.voltdb.pmsg.DRAgent.PartitionInfo getPartitionInfo(int index) {
         if (partitionInfoBuilder_ == null) {
@@ -6446,11 +8267,11 @@ public final class DRAgent {
         }
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public Builder setPartitionInfo(
           int index, org.voltdb.pmsg.DRAgent.PartitionInfo value) {
@@ -6467,11 +8288,11 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public Builder setPartitionInfo(
           int index, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder builderForValue) {
@@ -6485,11 +8306,11 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public Builder addPartitionInfo(org.voltdb.pmsg.DRAgent.PartitionInfo value) {
         if (partitionInfoBuilder_ == null) {
@@ -6505,11 +8326,11 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public Builder addPartitionInfo(
           int index, org.voltdb.pmsg.DRAgent.PartitionInfo value) {
@@ -6526,11 +8347,11 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public Builder addPartitionInfo(
           org.voltdb.pmsg.DRAgent.PartitionInfo.Builder builderForValue) {
@@ -6544,11 +8365,11 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public Builder addPartitionInfo(
           int index, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder builderForValue) {
@@ -6562,17 +8383,18 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public Builder addAllPartitionInfo(
           java.lang.Iterable<? extends org.voltdb.pmsg.DRAgent.PartitionInfo> values) {
         if (partitionInfoBuilder_ == null) {
           ensurePartitionInfoIsMutable();
-          super.addAll(values, partitionInfo_);
+          com.google.protobuf.AbstractMessageLite.Builder.addAll(
+              values, partitionInfo_);
           onChanged();
         } else {
           partitionInfoBuilder_.addAllMessages(values);
@@ -6580,11 +8402,11 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public Builder clearPartitionInfo() {
         if (partitionInfoBuilder_ == null) {
@@ -6597,11 +8419,11 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public Builder removePartitionInfo(int index) {
         if (partitionInfoBuilder_ == null) {
@@ -6614,22 +8436,22 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public org.voltdb.pmsg.DRAgent.PartitionInfo.Builder getPartitionInfoBuilder(
           int index) {
         return getPartitionInfoFieldBuilder().getBuilder(index);
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder getPartitionInfoOrBuilder(
           int index) {
@@ -6639,11 +8461,11 @@ public final class DRAgent {
         }
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public java.util.List<? extends org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder> 
            getPartitionInfoOrBuilderList() {
@@ -6654,22 +8476,22 @@ public final class DRAgent {
         }
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public org.voltdb.pmsg.DRAgent.PartitionInfo.Builder addPartitionInfoBuilder() {
         return getPartitionInfoFieldBuilder().addBuilder(
             org.voltdb.pmsg.DRAgent.PartitionInfo.getDefaultInstance());
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public org.voltdb.pmsg.DRAgent.PartitionInfo.Builder addPartitionInfoBuilder(
           int index) {
@@ -6677,21 +8499,21 @@ public final class DRAgent {
             index, org.voltdb.pmsg.DRAgent.PartitionInfo.getDefaultInstance());
       }
       /**
-       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
-       *
        * <pre>
        * local partitions
        * </pre>
+       *
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 8;</code>
        */
       public java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo.Builder> 
            getPartitionInfoBuilderList() {
         return getPartitionInfoFieldBuilder().getBuilderList();
       }
-      private com.google.protobuf.RepeatedFieldBuilder<
+      private com.google.protobuf.RepeatedFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.PartitionInfo, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder, org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder> 
           getPartitionInfoFieldBuilder() {
         if (partitionInfoBuilder_ == null) {
-          partitionInfoBuilder_ = new com.google.protobuf.RepeatedFieldBuilder<
+          partitionInfoBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.PartitionInfo, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder, org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder>(
                   partitionInfo_,
                   ((bitField0_ & 0x00000080) == 0x00000080),
@@ -6702,34 +8524,33 @@ public final class DRAgent {
         return partitionInfoBuilder_;
       }
 
-      // optional int32 status = 9 [default = 0];
       private int status_ ;
       /**
-       * <code>optional int32 status = 9 [default = 0];</code>
-       *
        * <pre>
        * status. 0 means ok
        * </pre>
+       *
+       * <code>optional int32 status = 9 [default = 0];</code>
        */
       public boolean hasStatus() {
         return ((bitField0_ & 0x00000100) == 0x00000100);
       }
       /**
-       * <code>optional int32 status = 9 [default = 0];</code>
-       *
        * <pre>
        * status. 0 means ok
        * </pre>
+       *
+       * <code>optional int32 status = 9 [default = 0];</code>
        */
       public int getStatus() {
         return status_;
       }
       /**
-       * <code>optional int32 status = 9 [default = 0];</code>
-       *
        * <pre>
        * status. 0 means ok
        * </pre>
+       *
+       * <code>optional int32 status = 9 [default = 0];</code>
        */
       public Builder setStatus(int value) {
         bitField0_ |= 0x00000100;
@@ -6738,11 +8559,11 @@ public final class DRAgent {
         return this;
       }
       /**
-       * <code>optional int32 status = 9 [default = 0];</code>
-       *
        * <pre>
        * status. 0 means ok
        * </pre>
+       *
+       * <code>optional int32 status = 9 [default = 0];</code>
        */
       public Builder clearStatus() {
         bitField0_ = (bitField0_ & ~0x00000100);
@@ -6751,8 +8572,7 @@ public final class DRAgent {
         return this;
       }
 
-      // optional .pmsg.CtrlEnvelope.Type type = 10;
-      private org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type type_ = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK;
+      private int type_ = 1;
       /**
        * <code>optional .pmsg.CtrlEnvelope.Type type = 10;</code>
        */
@@ -6763,7 +8583,8 @@ public final class DRAgent {
        * <code>optional .pmsg.CtrlEnvelope.Type type = 10;</code>
        */
       public org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type getType() {
-        return type_;
+        org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type result = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.valueOf(type_);
+        return result == null ? org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK : result;
       }
       /**
        * <code>optional .pmsg.CtrlEnvelope.Type type = 10;</code>
@@ -6773,7 +8594,7 @@ public final class DRAgent {
           throw new NullPointerException();
         }
         bitField0_ |= 0x00000200;
-        type_ = value;
+        type_ = value.getNumber();
         onChanged();
         return this;
       }
@@ -6782,12 +8603,11 @@ public final class DRAgent {
        */
       public Builder clearType() {
         bitField0_ = (bitField0_ & ~0x00000200);
-        type_ = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK;
+        type_ = 1;
         onChanged();
         return this;
       }
 
-      // optional fixed64 catalogCRC = 11;
       private long catalogCRC_ ;
       /**
        * <code>optional fixed64 catalogCRC = 11;</code>
@@ -6820,7 +8640,6 @@ public final class DRAgent {
         return this;
       }
 
-      // optional string catalogSignature = 12;
       private java.lang.Object catalogSignature_ = "";
       /**
        * <code>optional string catalogSignature = 12;</code>
@@ -6834,9 +8653,12 @@ public final class DRAgent {
       public java.lang.String getCatalogSignature() {
         java.lang.Object ref = catalogSignature_;
         if (!(ref instanceof java.lang.String)) {
-          java.lang.String s = ((com.google.protobuf.ByteString) ref)
-              .toStringUtf8();
-          catalogSignature_ = s;
+          com.google.protobuf.ByteString bs =
+              (com.google.protobuf.ByteString) ref;
+          java.lang.String s = bs.toStringUtf8();
+          if (bs.isValidUtf8()) {
+            catalogSignature_ = s;
+          }
           return s;
         } else {
           return (java.lang.String) ref;
@@ -6894,7 +8716,6 @@ public final class DRAgent {
         return this;
       }
 
-      // optional string failureCause = 13;
       private java.lang.Object failureCause_ = "";
       /**
        * <code>optional string failureCause = 13;</code>
@@ -6908,9 +8729,12 @@ public final class DRAgent {
       public java.lang.String getFailureCause() {
         java.lang.Object ref = failureCause_;
         if (!(ref instanceof java.lang.String)) {
-          java.lang.String s = ((com.google.protobuf.ByteString) ref)
-              .toStringUtf8();
-          failureCause_ = s;
+          com.google.protobuf.ByteString bs =
+              (com.google.protobuf.ByteString) ref;
+          java.lang.String s = bs.toStringUtf8();
+          if (bs.isValidUtf8()) {
+            failureCause_ = s;
+          }
           return s;
         } else {
           return (java.lang.String) ref;
@@ -6968,88 +8792,245 @@ public final class DRAgent {
         return this;
       }
 
+      private boolean isEndOfStream_ ;
+      /**
+       * <code>optional bool isEndOfStream = 14;</code>
+       */
+      public boolean hasIsEndOfStream() {
+        return ((bitField0_ & 0x00002000) == 0x00002000);
+      }
+      /**
+       * <code>optional bool isEndOfStream = 14;</code>
+       */
+      public boolean getIsEndOfStream() {
+        return isEndOfStream_;
+      }
+      /**
+       * <code>optional bool isEndOfStream = 14;</code>
+       */
+      public Builder setIsEndOfStream(boolean value) {
+        bitField0_ |= 0x00002000;
+        isEndOfStream_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional bool isEndOfStream = 14;</code>
+       */
+      public Builder clearIsEndOfStream() {
+        bitField0_ = (bitField0_ & ~0x00002000);
+        isEndOfStream_ = false;
+        onChanged();
+        return this;
+      }
+
+      private int protocolVersion_ ;
+      /**
+       * <code>optional int32 protocolVersion = 15;</code>
+       */
+      public boolean hasProtocolVersion() {
+        return ((bitField0_ & 0x00004000) == 0x00004000);
+      }
+      /**
+       * <code>optional int32 protocolVersion = 15;</code>
+       */
+      public int getProtocolVersion() {
+        return protocolVersion_;
+      }
+      /**
+       * <code>optional int32 protocolVersion = 15;</code>
+       */
+      public Builder setProtocolVersion(int value) {
+        bitField0_ |= 0x00004000;
+        protocolVersion_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional int32 protocolVersion = 15;</code>
+       */
+      public Builder clearProtocolVersion() {
+        bitField0_ = (bitField0_ & ~0x00004000);
+        protocolVersion_ = 0;
+        onChanged();
+        return this;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
+
       // @@protoc_insertion_point(builder_scope:pmsg.Response)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.Response)
+    private static final org.voltdb.pmsg.DRAgent.Response DEFAULT_INSTANCE;
     static {
-      defaultInstance = new Response(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.Response();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.Response)
+    public static org.voltdb.pmsg.DRAgent.Response getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<Response>
+        PARSER = new com.google.protobuf.AbstractParser<Response>() {
+      public Response parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new Response(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<Response> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<Response> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.Response getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface NodeInfoOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface CtrlProtoResponseOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.CtrlProtoResponse)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional string hostname = 1;
     /**
-     * <code>optional string hostname = 1;</code>
+     * <code>required .pmsg.UUID id = 1;</code>
      */
-    boolean hasHostname();
+    boolean hasId();
     /**
-     * <code>optional string hostname = 1;</code>
+     * <code>required .pmsg.UUID id = 1;</code>
      */
-    java.lang.String getHostname();
+    org.voltdb.pmsg.DRAgent.UUID getId();
     /**
-     * <code>optional string hostname = 1;</code>
+     * <code>required .pmsg.UUID id = 1;</code>
+     */
+    org.voltdb.pmsg.DRAgent.UUIDOrBuilder getIdOrBuilder();
+
+    /**
+     * <code>optional .pmsg.CtrlEnvelope.Type type = 2;</code>
+     */
+    boolean hasType();
+    /**
+     * <code>optional .pmsg.CtrlEnvelope.Type type = 2;</code>
+     */
+    org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type getType();
+
+    /**
+     * <pre>
+     * status. 0 means ok
+     * </pre>
+     *
+     * <code>optional int32 status = 3 [default = 0];</code>
+     */
+    boolean hasStatus();
+    /**
+     * <pre>
+     * status. 0 means ok
+     * </pre>
+     *
+     * <code>optional int32 status = 3 [default = 0];</code>
+     */
+    int getStatus();
+
+    /**
+     * <code>optional string failureCause = 4;</code>
+     */
+    boolean hasFailureCause();
+    /**
+     * <code>optional string failureCause = 4;</code>
+     */
+    java.lang.String getFailureCause();
+    /**
+     * <code>optional string failureCause = 4;</code>
      */
     com.google.protobuf.ByteString
-        getHostnameBytes();
+        getFailureCauseBytes();
 
-    // optional int32 drport = 2;
     /**
-     * <code>optional int32 drport = 2;</code>
+     * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
      */
-    boolean hasDrport();
+    boolean hasConnectResponse();
     /**
-     * <code>optional int32 drport = 2;</code>
+     * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
      */
-    int getDrport();
+    org.voltdb.pmsg.DRAgent.ConnectResponse getConnectResponse();
+    /**
+     * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+     */
+    org.voltdb.pmsg.DRAgent.ConnectResponseOrBuilder getConnectResponseOrBuilder();
 
-    // optional fixed64 catalogCRC = 3;
     /**
-     * <code>optional fixed64 catalogCRC = 3;</code>
+     * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
      */
-    boolean hasCatalogCRC();
+    boolean hasQueryResponse();
     /**
-     * <code>optional fixed64 catalogCRC = 3;</code>
+     * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
      */
-    long getCatalogCRC();
+    org.voltdb.pmsg.DRAgent.QueryResponse getQueryResponse();
+    /**
+     * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+     */
+    org.voltdb.pmsg.DRAgent.QueryResponseOrBuilder getQueryResponseOrBuilder();
+
+    /**
+     * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+     */
+    boolean hasAckResponse();
+    /**
+     * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+     */
+    org.voltdb.pmsg.DRAgent.AckResponse getAckResponse();
+    /**
+     * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+     */
+    org.voltdb.pmsg.DRAgent.AckResponseOrBuilder getAckResponseOrBuilder();
   }
   /**
-   * Protobuf type {@code pmsg.NodeInfo}
+   * <pre>
+   * More structured Response object for use with VoltDB 7.0 and higher.
+   * </pre>
+   *
+   * Protobuf type {@code pmsg.CtrlProtoResponse}
    */
-  public static final class NodeInfo extends
-      com.google.protobuf.GeneratedMessage
-      implements NodeInfoOrBuilder {
-    // Use NodeInfo.newBuilder() to construct.
-    private NodeInfo(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+  public  static final class CtrlProtoResponse extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.CtrlProtoResponse)
+      CtrlProtoResponseOrBuilder {
+    // Use CtrlProtoResponse.newBuilder() to construct.
+    private CtrlProtoResponse(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private NodeInfo(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final NodeInfo defaultInstance;
-    public static NodeInfo getDefaultInstance() {
-      return defaultInstance;
+    private CtrlProtoResponse() {
+      type_ = 1;
+      status_ = 0;
+      failureCause_ = "";
     }
 
-    public NodeInfo getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
-    private NodeInfo(
+    private CtrlProtoResponse(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -7069,18 +9050,77 @@ public final class DRAgent {
               break;
             }
             case 10: {
+              org.voltdb.pmsg.DRAgent.UUID.Builder subBuilder = null;
+              if (((bitField0_ & 0x00000001) == 0x00000001)) {
+                subBuilder = id_.toBuilder();
+              }
+              id_ = input.readMessage(org.voltdb.pmsg.DRAgent.UUID.PARSER, extensionRegistry);
+              if (subBuilder != null) {
+                subBuilder.mergeFrom(id_);
+                id_ = subBuilder.buildPartial();
+              }
               bitField0_ |= 0x00000001;
-              hostname_ = input.readBytes();
               break;
             }
             case 16: {
-              bitField0_ |= 0x00000002;
-              drport_ = input.readInt32();
+              int rawValue = input.readEnum();
+              org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type value = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.valueOf(rawValue);
+              if (value == null) {
+                unknownFields.mergeVarintField(2, rawValue);
+              } else {
+                bitField0_ |= 0x00000002;
+                type_ = rawValue;
+              }
               break;
             }
-            case 25: {
+            case 24: {
               bitField0_ |= 0x00000004;
-              catalogCRC_ = input.readFixed64();
+              status_ = input.readInt32();
+              break;
+            }
+            case 34: {
+              com.google.protobuf.ByteString bs = input.readBytes();
+              bitField0_ |= 0x00000008;
+              failureCause_ = bs;
+              break;
+            }
+            case 42: {
+              org.voltdb.pmsg.DRAgent.ConnectResponse.Builder subBuilder = null;
+              if (((bitField0_ & 0x00000010) == 0x00000010)) {
+                subBuilder = connectResponse_.toBuilder();
+              }
+              connectResponse_ = input.readMessage(org.voltdb.pmsg.DRAgent.ConnectResponse.PARSER, extensionRegistry);
+              if (subBuilder != null) {
+                subBuilder.mergeFrom(connectResponse_);
+                connectResponse_ = subBuilder.buildPartial();
+              }
+              bitField0_ |= 0x00000010;
+              break;
+            }
+            case 50: {
+              org.voltdb.pmsg.DRAgent.QueryResponse.Builder subBuilder = null;
+              if (((bitField0_ & 0x00000020) == 0x00000020)) {
+                subBuilder = queryResponse_.toBuilder();
+              }
+              queryResponse_ = input.readMessage(org.voltdb.pmsg.DRAgent.QueryResponse.PARSER, extensionRegistry);
+              if (subBuilder != null) {
+                subBuilder.mergeFrom(queryResponse_);
+                queryResponse_ = subBuilder.buildPartial();
+              }
+              bitField0_ |= 0x00000020;
+              break;
+            }
+            case 58: {
+              org.voltdb.pmsg.DRAgent.AckResponse.Builder subBuilder = null;
+              if (((bitField0_ & 0x00000040) == 0x00000040)) {
+                subBuilder = ackResponse_.toBuilder();
+              }
+              ackResponse_ = input.readMessage(org.voltdb.pmsg.DRAgent.AckResponse.PARSER, extensionRegistry);
+              if (subBuilder != null) {
+                subBuilder.mergeFrom(ackResponse_);
+                ackResponse_ = subBuilder.buildPartial();
+              }
+              bitField0_ |= 0x00000040;
               break;
             }
           }
@@ -7089,7 +9129,5554 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
+      } finally {
+        this.unknownFields = unknownFields.build();
+        makeExtensionsImmutable();
+      }
+    }
+    public static final com.google.protobuf.Descriptors.Descriptor
+        getDescriptor() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_CtrlProtoResponse_descriptor;
+    }
+
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+        internalGetFieldAccessorTable() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_CtrlProtoResponse_fieldAccessorTable
+          .ensureFieldAccessorsInitialized(
+              org.voltdb.pmsg.DRAgent.CtrlProtoResponse.class, org.voltdb.pmsg.DRAgent.CtrlProtoResponse.Builder.class);
+    }
+
+    private int bitField0_;
+    public static final int ID_FIELD_NUMBER = 1;
+    private org.voltdb.pmsg.DRAgent.UUID id_;
+    /**
+     * <code>required .pmsg.UUID id = 1;</code>
+     */
+    public boolean hasId() {
+      return ((bitField0_ & 0x00000001) == 0x00000001);
+    }
+    /**
+     * <code>required .pmsg.UUID id = 1;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.UUID getId() {
+      return id_ == null ? org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
+    }
+    /**
+     * <code>required .pmsg.UUID id = 1;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.UUIDOrBuilder getIdOrBuilder() {
+      return id_ == null ? org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
+    }
+
+    public static final int TYPE_FIELD_NUMBER = 2;
+    private int type_;
+    /**
+     * <code>optional .pmsg.CtrlEnvelope.Type type = 2;</code>
+     */
+    public boolean hasType() {
+      return ((bitField0_ & 0x00000002) == 0x00000002);
+    }
+    /**
+     * <code>optional .pmsg.CtrlEnvelope.Type type = 2;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type getType() {
+      org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type result = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.valueOf(type_);
+      return result == null ? org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK : result;
+    }
+
+    public static final int STATUS_FIELD_NUMBER = 3;
+    private int status_;
+    /**
+     * <pre>
+     * status. 0 means ok
+     * </pre>
+     *
+     * <code>optional int32 status = 3 [default = 0];</code>
+     */
+    public boolean hasStatus() {
+      return ((bitField0_ & 0x00000004) == 0x00000004);
+    }
+    /**
+     * <pre>
+     * status. 0 means ok
+     * </pre>
+     *
+     * <code>optional int32 status = 3 [default = 0];</code>
+     */
+    public int getStatus() {
+      return status_;
+    }
+
+    public static final int FAILURECAUSE_FIELD_NUMBER = 4;
+    private volatile java.lang.Object failureCause_;
+    /**
+     * <code>optional string failureCause = 4;</code>
+     */
+    public boolean hasFailureCause() {
+      return ((bitField0_ & 0x00000008) == 0x00000008);
+    }
+    /**
+     * <code>optional string failureCause = 4;</code>
+     */
+    public java.lang.String getFailureCause() {
+      java.lang.Object ref = failureCause_;
+      if (ref instanceof java.lang.String) {
+        return (java.lang.String) ref;
+      } else {
+        com.google.protobuf.ByteString bs = 
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        if (bs.isValidUtf8()) {
+          failureCause_ = s;
+        }
+        return s;
+      }
+    }
+    /**
+     * <code>optional string failureCause = 4;</code>
+     */
+    public com.google.protobuf.ByteString
+        getFailureCauseBytes() {
+      java.lang.Object ref = failureCause_;
+      if (ref instanceof java.lang.String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        failureCause_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+
+    public static final int CONNECTRESPONSE_FIELD_NUMBER = 5;
+    private org.voltdb.pmsg.DRAgent.ConnectResponse connectResponse_;
+    /**
+     * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+     */
+    public boolean hasConnectResponse() {
+      return ((bitField0_ & 0x00000010) == 0x00000010);
+    }
+    /**
+     * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.ConnectResponse getConnectResponse() {
+      return connectResponse_ == null ? org.voltdb.pmsg.DRAgent.ConnectResponse.getDefaultInstance() : connectResponse_;
+    }
+    /**
+     * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.ConnectResponseOrBuilder getConnectResponseOrBuilder() {
+      return connectResponse_ == null ? org.voltdb.pmsg.DRAgent.ConnectResponse.getDefaultInstance() : connectResponse_;
+    }
+
+    public static final int QUERYRESPONSE_FIELD_NUMBER = 6;
+    private org.voltdb.pmsg.DRAgent.QueryResponse queryResponse_;
+    /**
+     * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+     */
+    public boolean hasQueryResponse() {
+      return ((bitField0_ & 0x00000020) == 0x00000020);
+    }
+    /**
+     * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.QueryResponse getQueryResponse() {
+      return queryResponse_ == null ? org.voltdb.pmsg.DRAgent.QueryResponse.getDefaultInstance() : queryResponse_;
+    }
+    /**
+     * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.QueryResponseOrBuilder getQueryResponseOrBuilder() {
+      return queryResponse_ == null ? org.voltdb.pmsg.DRAgent.QueryResponse.getDefaultInstance() : queryResponse_;
+    }
+
+    public static final int ACKRESPONSE_FIELD_NUMBER = 7;
+    private org.voltdb.pmsg.DRAgent.AckResponse ackResponse_;
+    /**
+     * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+     */
+    public boolean hasAckResponse() {
+      return ((bitField0_ & 0x00000040) == 0x00000040);
+    }
+    /**
+     * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.AckResponse getAckResponse() {
+      return ackResponse_ == null ? org.voltdb.pmsg.DRAgent.AckResponse.getDefaultInstance() : ackResponse_;
+    }
+    /**
+     * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.AckResponseOrBuilder getAckResponseOrBuilder() {
+      return ackResponse_ == null ? org.voltdb.pmsg.DRAgent.AckResponse.getDefaultInstance() : ackResponse_;
+    }
+
+    private byte memoizedIsInitialized = -1;
+    public final boolean isInitialized() {
+      byte isInitialized = memoizedIsInitialized;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
+
+      if (!hasId()) {
+        memoizedIsInitialized = 0;
+        return false;
+      }
+      if (!getId().isInitialized()) {
+        memoizedIsInitialized = 0;
+        return false;
+      }
+      if (hasConnectResponse()) {
+        if (!getConnectResponse().isInitialized()) {
+          memoizedIsInitialized = 0;
+          return false;
+        }
+      }
+      if (hasQueryResponse()) {
+        if (!getQueryResponse().isInitialized()) {
+          memoizedIsInitialized = 0;
+          return false;
+        }
+      }
+      memoizedIsInitialized = 1;
+      return true;
+    }
+
+    public void writeTo(com.google.protobuf.CodedOutputStream output)
+                        throws java.io.IOException {
+      if (((bitField0_ & 0x00000001) == 0x00000001)) {
+        output.writeMessage(1, getId());
+      }
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
+        output.writeEnum(2, type_);
+      }
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        output.writeInt32(3, status_);
+      }
+      if (((bitField0_ & 0x00000008) == 0x00000008)) {
+        com.google.protobuf.GeneratedMessageV3.writeString(output, 4, failureCause_);
+      }
+      if (((bitField0_ & 0x00000010) == 0x00000010)) {
+        output.writeMessage(5, getConnectResponse());
+      }
+      if (((bitField0_ & 0x00000020) == 0x00000020)) {
+        output.writeMessage(6, getQueryResponse());
+      }
+      if (((bitField0_ & 0x00000040) == 0x00000040)) {
+        output.writeMessage(7, getAckResponse());
+      }
+      unknownFields.writeTo(output);
+    }
+
+    public int getSerializedSize() {
+      int size = memoizedSize;
+      if (size != -1) return size;
+
+      size = 0;
+      if (((bitField0_ & 0x00000001) == 0x00000001)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(1, getId());
+      }
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeEnumSize(2, type_);
+      }
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeInt32Size(3, status_);
+      }
+      if (((bitField0_ & 0x00000008) == 0x00000008)) {
+        size += com.google.protobuf.GeneratedMessageV3.computeStringSize(4, failureCause_);
+      }
+      if (((bitField0_ & 0x00000010) == 0x00000010)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(5, getConnectResponse());
+      }
+      if (((bitField0_ & 0x00000020) == 0x00000020)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(6, getQueryResponse());
+      }
+      if (((bitField0_ & 0x00000040) == 0x00000040)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(7, getAckResponse());
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
+      return size;
+    }
+
+    private static final long serialVersionUID = 0L;
+    @java.lang.Override
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.CtrlProtoResponse)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.CtrlProtoResponse other = (org.voltdb.pmsg.DRAgent.CtrlProtoResponse) obj;
+
+      boolean result = true;
+      result = result && (hasId() == other.hasId());
+      if (hasId()) {
+        result = result && getId()
+            .equals(other.getId());
+      }
+      result = result && (hasType() == other.hasType());
+      if (hasType()) {
+        result = result && type_ == other.type_;
+      }
+      result = result && (hasStatus() == other.hasStatus());
+      if (hasStatus()) {
+        result = result && (getStatus()
+            == other.getStatus());
+      }
+      result = result && (hasFailureCause() == other.hasFailureCause());
+      if (hasFailureCause()) {
+        result = result && getFailureCause()
+            .equals(other.getFailureCause());
+      }
+      result = result && (hasConnectResponse() == other.hasConnectResponse());
+      if (hasConnectResponse()) {
+        result = result && getConnectResponse()
+            .equals(other.getConnectResponse());
+      }
+      result = result && (hasQueryResponse() == other.hasQueryResponse());
+      if (hasQueryResponse()) {
+        result = result && getQueryResponse()
+            .equals(other.getQueryResponse());
+      }
+      result = result && (hasAckResponse() == other.hasAckResponse());
+      if (hasAckResponse()) {
+        result = result && getAckResponse()
+            .equals(other.getAckResponse());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasId()) {
+        hash = (37 * hash) + ID_FIELD_NUMBER;
+        hash = (53 * hash) + getId().hashCode();
+      }
+      if (hasType()) {
+        hash = (37 * hash) + TYPE_FIELD_NUMBER;
+        hash = (53 * hash) + type_;
+      }
+      if (hasStatus()) {
+        hash = (37 * hash) + STATUS_FIELD_NUMBER;
+        hash = (53 * hash) + getStatus();
+      }
+      if (hasFailureCause()) {
+        hash = (37 * hash) + FAILURECAUSE_FIELD_NUMBER;
+        hash = (53 * hash) + getFailureCause().hashCode();
+      }
+      if (hasConnectResponse()) {
+        hash = (37 * hash) + CONNECTRESPONSE_FIELD_NUMBER;
+        hash = (53 * hash) + getConnectResponse().hashCode();
+      }
+      if (hasQueryResponse()) {
+        hash = (37 * hash) + QUERYRESPONSE_FIELD_NUMBER;
+        hash = (53 * hash) + getQueryResponse().hashCode();
+      }
+      if (hasAckResponse()) {
+        hash = (37 * hash) + ACKRESPONSE_FIELD_NUMBER;
+        hash = (53 * hash) + getAckResponse().hashCode();
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
+    }
+
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+
+    public Builder newBuilderForType() { return newBuilder(); }
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
+    }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.CtrlProtoResponse prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
+
+    @java.lang.Override
+    protected Builder newBuilderForType(
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+      Builder builder = new Builder(parent);
+      return builder;
+    }
+    /**
+     * <pre>
+     * More structured Response object for use with VoltDB 7.0 and higher.
+     * </pre>
+     *
+     * Protobuf type {@code pmsg.CtrlProtoResponse}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.CtrlProtoResponse)
+        org.voltdb.pmsg.DRAgent.CtrlProtoResponseOrBuilder {
+      public static final com.google.protobuf.Descriptors.Descriptor
+          getDescriptor() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_CtrlProtoResponse_descriptor;
+      }
+
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+          internalGetFieldAccessorTable() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_CtrlProtoResponse_fieldAccessorTable
+            .ensureFieldAccessorsInitialized(
+                org.voltdb.pmsg.DRAgent.CtrlProtoResponse.class, org.voltdb.pmsg.DRAgent.CtrlProtoResponse.Builder.class);
+      }
+
+      // Construct using org.voltdb.pmsg.DRAgent.CtrlProtoResponse.newBuilder()
+      private Builder() {
+        maybeForceBuilderInitialization();
+      }
+
+      private Builder(
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+        super(parent);
+        maybeForceBuilderInitialization();
+      }
+      private void maybeForceBuilderInitialization() {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
+          getIdFieldBuilder();
+          getConnectResponseFieldBuilder();
+          getQueryResponseFieldBuilder();
+          getAckResponseFieldBuilder();
+        }
+      }
+      public Builder clear() {
+        super.clear();
+        if (idBuilder_ == null) {
+          id_ = null;
+        } else {
+          idBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000001);
+        type_ = 1;
+        bitField0_ = (bitField0_ & ~0x00000002);
+        status_ = 0;
+        bitField0_ = (bitField0_ & ~0x00000004);
+        failureCause_ = "";
+        bitField0_ = (bitField0_ & ~0x00000008);
+        if (connectResponseBuilder_ == null) {
+          connectResponse_ = null;
+        } else {
+          connectResponseBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000010);
+        if (queryResponseBuilder_ == null) {
+          queryResponse_ = null;
+        } else {
+          queryResponseBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000020);
+        if (ackResponseBuilder_ == null) {
+          ackResponse_ = null;
+        } else {
+          ackResponseBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000040);
+        return this;
+      }
+
+      public com.google.protobuf.Descriptors.Descriptor
+          getDescriptorForType() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_CtrlProtoResponse_descriptor;
+      }
+
+      public org.voltdb.pmsg.DRAgent.CtrlProtoResponse getDefaultInstanceForType() {
+        return org.voltdb.pmsg.DRAgent.CtrlProtoResponse.getDefaultInstance();
+      }
+
+      public org.voltdb.pmsg.DRAgent.CtrlProtoResponse build() {
+        org.voltdb.pmsg.DRAgent.CtrlProtoResponse result = buildPartial();
+        if (!result.isInitialized()) {
+          throw newUninitializedMessageException(result);
+        }
+        return result;
+      }
+
+      public org.voltdb.pmsg.DRAgent.CtrlProtoResponse buildPartial() {
+        org.voltdb.pmsg.DRAgent.CtrlProtoResponse result = new org.voltdb.pmsg.DRAgent.CtrlProtoResponse(this);
+        int from_bitField0_ = bitField0_;
+        int to_bitField0_ = 0;
+        if (((from_bitField0_ & 0x00000001) == 0x00000001)) {
+          to_bitField0_ |= 0x00000001;
+        }
+        if (idBuilder_ == null) {
+          result.id_ = id_;
+        } else {
+          result.id_ = idBuilder_.build();
+        }
+        if (((from_bitField0_ & 0x00000002) == 0x00000002)) {
+          to_bitField0_ |= 0x00000002;
+        }
+        result.type_ = type_;
+        if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
+          to_bitField0_ |= 0x00000004;
+        }
+        result.status_ = status_;
+        if (((from_bitField0_ & 0x00000008) == 0x00000008)) {
+          to_bitField0_ |= 0x00000008;
+        }
+        result.failureCause_ = failureCause_;
+        if (((from_bitField0_ & 0x00000010) == 0x00000010)) {
+          to_bitField0_ |= 0x00000010;
+        }
+        if (connectResponseBuilder_ == null) {
+          result.connectResponse_ = connectResponse_;
+        } else {
+          result.connectResponse_ = connectResponseBuilder_.build();
+        }
+        if (((from_bitField0_ & 0x00000020) == 0x00000020)) {
+          to_bitField0_ |= 0x00000020;
+        }
+        if (queryResponseBuilder_ == null) {
+          result.queryResponse_ = queryResponse_;
+        } else {
+          result.queryResponse_ = queryResponseBuilder_.build();
+        }
+        if (((from_bitField0_ & 0x00000040) == 0x00000040)) {
+          to_bitField0_ |= 0x00000040;
+        }
+        if (ackResponseBuilder_ == null) {
+          result.ackResponse_ = ackResponse_;
+        } else {
+          result.ackResponse_ = ackResponseBuilder_.build();
+        }
+        result.bitField0_ = to_bitField0_;
+        onBuilt();
+        return result;
+      }
+
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
+      public Builder mergeFrom(com.google.protobuf.Message other) {
+        if (other instanceof org.voltdb.pmsg.DRAgent.CtrlProtoResponse) {
+          return mergeFrom((org.voltdb.pmsg.DRAgent.CtrlProtoResponse)other);
+        } else {
+          super.mergeFrom(other);
+          return this;
+        }
+      }
+
+      public Builder mergeFrom(org.voltdb.pmsg.DRAgent.CtrlProtoResponse other) {
+        if (other == org.voltdb.pmsg.DRAgent.CtrlProtoResponse.getDefaultInstance()) return this;
+        if (other.hasId()) {
+          mergeId(other.getId());
+        }
+        if (other.hasType()) {
+          setType(other.getType());
+        }
+        if (other.hasStatus()) {
+          setStatus(other.getStatus());
+        }
+        if (other.hasFailureCause()) {
+          bitField0_ |= 0x00000008;
+          failureCause_ = other.failureCause_;
+          onChanged();
+        }
+        if (other.hasConnectResponse()) {
+          mergeConnectResponse(other.getConnectResponse());
+        }
+        if (other.hasQueryResponse()) {
+          mergeQueryResponse(other.getQueryResponse());
+        }
+        if (other.hasAckResponse()) {
+          mergeAckResponse(other.getAckResponse());
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
+        return this;
+      }
+
+      public final boolean isInitialized() {
+        if (!hasId()) {
+          return false;
+        }
+        if (!getId().isInitialized()) {
+          return false;
+        }
+        if (hasConnectResponse()) {
+          if (!getConnectResponse().isInitialized()) {
+            return false;
+          }
+        }
+        if (hasQueryResponse()) {
+          if (!getQueryResponse().isInitialized()) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      public Builder mergeFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws java.io.IOException {
+        org.voltdb.pmsg.DRAgent.CtrlProtoResponse parsedMessage = null;
+        try {
+          parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
+        } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+          parsedMessage = (org.voltdb.pmsg.DRAgent.CtrlProtoResponse) e.getUnfinishedMessage();
+          throw e.unwrapIOException();
+        } finally {
+          if (parsedMessage != null) {
+            mergeFrom(parsedMessage);
+          }
+        }
+        return this;
+      }
+      private int bitField0_;
+
+      private org.voltdb.pmsg.DRAgent.UUID id_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.UUID, org.voltdb.pmsg.DRAgent.UUID.Builder, org.voltdb.pmsg.DRAgent.UUIDOrBuilder> idBuilder_;
+      /**
+       * <code>required .pmsg.UUID id = 1;</code>
+       */
+      public boolean hasId() {
+        return ((bitField0_ & 0x00000001) == 0x00000001);
+      }
+      /**
+       * <code>required .pmsg.UUID id = 1;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.UUID getId() {
+        if (idBuilder_ == null) {
+          return id_ == null ? org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
+        } else {
+          return idBuilder_.getMessage();
+        }
+      }
+      /**
+       * <code>required .pmsg.UUID id = 1;</code>
+       */
+      public Builder setId(org.voltdb.pmsg.DRAgent.UUID value) {
+        if (idBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          id_ = value;
+          onChanged();
+        } else {
+          idBuilder_.setMessage(value);
+        }
+        bitField0_ |= 0x00000001;
+        return this;
+      }
+      /**
+       * <code>required .pmsg.UUID id = 1;</code>
+       */
+      public Builder setId(
+          org.voltdb.pmsg.DRAgent.UUID.Builder builderForValue) {
+        if (idBuilder_ == null) {
+          id_ = builderForValue.build();
+          onChanged();
+        } else {
+          idBuilder_.setMessage(builderForValue.build());
+        }
+        bitField0_ |= 0x00000001;
+        return this;
+      }
+      /**
+       * <code>required .pmsg.UUID id = 1;</code>
+       */
+      public Builder mergeId(org.voltdb.pmsg.DRAgent.UUID value) {
+        if (idBuilder_ == null) {
+          if (((bitField0_ & 0x00000001) == 0x00000001) &&
+              id_ != null &&
+              id_ != org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance()) {
+            id_ =
+              org.voltdb.pmsg.DRAgent.UUID.newBuilder(id_).mergeFrom(value).buildPartial();
+          } else {
+            id_ = value;
+          }
+          onChanged();
+        } else {
+          idBuilder_.mergeFrom(value);
+        }
+        bitField0_ |= 0x00000001;
+        return this;
+      }
+      /**
+       * <code>required .pmsg.UUID id = 1;</code>
+       */
+      public Builder clearId() {
+        if (idBuilder_ == null) {
+          id_ = null;
+          onChanged();
+        } else {
+          idBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000001);
+        return this;
+      }
+      /**
+       * <code>required .pmsg.UUID id = 1;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.UUID.Builder getIdBuilder() {
+        bitField0_ |= 0x00000001;
+        onChanged();
+        return getIdFieldBuilder().getBuilder();
+      }
+      /**
+       * <code>required .pmsg.UUID id = 1;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.UUIDOrBuilder getIdOrBuilder() {
+        if (idBuilder_ != null) {
+          return idBuilder_.getMessageOrBuilder();
+        } else {
+          return id_ == null ?
+              org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
+        }
+      }
+      /**
+       * <code>required .pmsg.UUID id = 1;</code>
+       */
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.UUID, org.voltdb.pmsg.DRAgent.UUID.Builder, org.voltdb.pmsg.DRAgent.UUIDOrBuilder> 
+          getIdFieldBuilder() {
+        if (idBuilder_ == null) {
+          idBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.UUID, org.voltdb.pmsg.DRAgent.UUID.Builder, org.voltdb.pmsg.DRAgent.UUIDOrBuilder>(
+                  getId(),
+                  getParentForChildren(),
+                  isClean());
+          id_ = null;
+        }
+        return idBuilder_;
+      }
+
+      private int type_ = 1;
+      /**
+       * <code>optional .pmsg.CtrlEnvelope.Type type = 2;</code>
+       */
+      public boolean hasType() {
+        return ((bitField0_ & 0x00000002) == 0x00000002);
+      }
+      /**
+       * <code>optional .pmsg.CtrlEnvelope.Type type = 2;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type getType() {
+        org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type result = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.valueOf(type_);
+        return result == null ? org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK : result;
+      }
+      /**
+       * <code>optional .pmsg.CtrlEnvelope.Type type = 2;</code>
+       */
+      public Builder setType(org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type value) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        bitField0_ |= 0x00000002;
+        type_ = value.getNumber();
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.CtrlEnvelope.Type type = 2;</code>
+       */
+      public Builder clearType() {
+        bitField0_ = (bitField0_ & ~0x00000002);
+        type_ = 1;
+        onChanged();
+        return this;
+      }
+
+      private int status_ ;
+      /**
+       * <pre>
+       * status. 0 means ok
+       * </pre>
+       *
+       * <code>optional int32 status = 3 [default = 0];</code>
+       */
+      public boolean hasStatus() {
+        return ((bitField0_ & 0x00000004) == 0x00000004);
+      }
+      /**
+       * <pre>
+       * status. 0 means ok
+       * </pre>
+       *
+       * <code>optional int32 status = 3 [default = 0];</code>
+       */
+      public int getStatus() {
+        return status_;
+      }
+      /**
+       * <pre>
+       * status. 0 means ok
+       * </pre>
+       *
+       * <code>optional int32 status = 3 [default = 0];</code>
+       */
+      public Builder setStatus(int value) {
+        bitField0_ |= 0x00000004;
+        status_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <pre>
+       * status. 0 means ok
+       * </pre>
+       *
+       * <code>optional int32 status = 3 [default = 0];</code>
+       */
+      public Builder clearStatus() {
+        bitField0_ = (bitField0_ & ~0x00000004);
+        status_ = 0;
+        onChanged();
+        return this;
+      }
+
+      private java.lang.Object failureCause_ = "";
+      /**
+       * <code>optional string failureCause = 4;</code>
+       */
+      public boolean hasFailureCause() {
+        return ((bitField0_ & 0x00000008) == 0x00000008);
+      }
+      /**
+       * <code>optional string failureCause = 4;</code>
+       */
+      public java.lang.String getFailureCause() {
+        java.lang.Object ref = failureCause_;
+        if (!(ref instanceof java.lang.String)) {
+          com.google.protobuf.ByteString bs =
+              (com.google.protobuf.ByteString) ref;
+          java.lang.String s = bs.toStringUtf8();
+          if (bs.isValidUtf8()) {
+            failureCause_ = s;
+          }
+          return s;
+        } else {
+          return (java.lang.String) ref;
+        }
+      }
+      /**
+       * <code>optional string failureCause = 4;</code>
+       */
+      public com.google.protobuf.ByteString
+          getFailureCauseBytes() {
+        java.lang.Object ref = failureCause_;
+        if (ref instanceof String) {
+          com.google.protobuf.ByteString b = 
+              com.google.protobuf.ByteString.copyFromUtf8(
+                  (java.lang.String) ref);
+          failureCause_ = b;
+          return b;
+        } else {
+          return (com.google.protobuf.ByteString) ref;
+        }
+      }
+      /**
+       * <code>optional string failureCause = 4;</code>
+       */
+      public Builder setFailureCause(
+          java.lang.String value) {
+        if (value == null) {
+    throw new NullPointerException();
+  }
+  bitField0_ |= 0x00000008;
+        failureCause_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional string failureCause = 4;</code>
+       */
+      public Builder clearFailureCause() {
+        bitField0_ = (bitField0_ & ~0x00000008);
+        failureCause_ = getDefaultInstance().getFailureCause();
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional string failureCause = 4;</code>
+       */
+      public Builder setFailureCauseBytes(
+          com.google.protobuf.ByteString value) {
+        if (value == null) {
+    throw new NullPointerException();
+  }
+  bitField0_ |= 0x00000008;
+        failureCause_ = value;
+        onChanged();
+        return this;
+      }
+
+      private org.voltdb.pmsg.DRAgent.ConnectResponse connectResponse_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.ConnectResponse, org.voltdb.pmsg.DRAgent.ConnectResponse.Builder, org.voltdb.pmsg.DRAgent.ConnectResponseOrBuilder> connectResponseBuilder_;
+      /**
+       * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+       */
+      public boolean hasConnectResponse() {
+        return ((bitField0_ & 0x00000010) == 0x00000010);
+      }
+      /**
+       * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ConnectResponse getConnectResponse() {
+        if (connectResponseBuilder_ == null) {
+          return connectResponse_ == null ? org.voltdb.pmsg.DRAgent.ConnectResponse.getDefaultInstance() : connectResponse_;
+        } else {
+          return connectResponseBuilder_.getMessage();
+        }
+      }
+      /**
+       * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+       */
+      public Builder setConnectResponse(org.voltdb.pmsg.DRAgent.ConnectResponse value) {
+        if (connectResponseBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          connectResponse_ = value;
+          onChanged();
+        } else {
+          connectResponseBuilder_.setMessage(value);
+        }
+        bitField0_ |= 0x00000010;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+       */
+      public Builder setConnectResponse(
+          org.voltdb.pmsg.DRAgent.ConnectResponse.Builder builderForValue) {
+        if (connectResponseBuilder_ == null) {
+          connectResponse_ = builderForValue.build();
+          onChanged();
+        } else {
+          connectResponseBuilder_.setMessage(builderForValue.build());
+        }
+        bitField0_ |= 0x00000010;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+       */
+      public Builder mergeConnectResponse(org.voltdb.pmsg.DRAgent.ConnectResponse value) {
+        if (connectResponseBuilder_ == null) {
+          if (((bitField0_ & 0x00000010) == 0x00000010) &&
+              connectResponse_ != null &&
+              connectResponse_ != org.voltdb.pmsg.DRAgent.ConnectResponse.getDefaultInstance()) {
+            connectResponse_ =
+              org.voltdb.pmsg.DRAgent.ConnectResponse.newBuilder(connectResponse_).mergeFrom(value).buildPartial();
+          } else {
+            connectResponse_ = value;
+          }
+          onChanged();
+        } else {
+          connectResponseBuilder_.mergeFrom(value);
+        }
+        bitField0_ |= 0x00000010;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+       */
+      public Builder clearConnectResponse() {
+        if (connectResponseBuilder_ == null) {
+          connectResponse_ = null;
+          onChanged();
+        } else {
+          connectResponseBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000010);
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ConnectResponse.Builder getConnectResponseBuilder() {
+        bitField0_ |= 0x00000010;
+        onChanged();
+        return getConnectResponseFieldBuilder().getBuilder();
+      }
+      /**
+       * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ConnectResponseOrBuilder getConnectResponseOrBuilder() {
+        if (connectResponseBuilder_ != null) {
+          return connectResponseBuilder_.getMessageOrBuilder();
+        } else {
+          return connectResponse_ == null ?
+              org.voltdb.pmsg.DRAgent.ConnectResponse.getDefaultInstance() : connectResponse_;
+        }
+      }
+      /**
+       * <code>optional .pmsg.ConnectResponse connectResponse = 5;</code>
+       */
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.ConnectResponse, org.voltdb.pmsg.DRAgent.ConnectResponse.Builder, org.voltdb.pmsg.DRAgent.ConnectResponseOrBuilder> 
+          getConnectResponseFieldBuilder() {
+        if (connectResponseBuilder_ == null) {
+          connectResponseBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.ConnectResponse, org.voltdb.pmsg.DRAgent.ConnectResponse.Builder, org.voltdb.pmsg.DRAgent.ConnectResponseOrBuilder>(
+                  getConnectResponse(),
+                  getParentForChildren(),
+                  isClean());
+          connectResponse_ = null;
+        }
+        return connectResponseBuilder_;
+      }
+
+      private org.voltdb.pmsg.DRAgent.QueryResponse queryResponse_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.QueryResponse, org.voltdb.pmsg.DRAgent.QueryResponse.Builder, org.voltdb.pmsg.DRAgent.QueryResponseOrBuilder> queryResponseBuilder_;
+      /**
+       * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+       */
+      public boolean hasQueryResponse() {
+        return ((bitField0_ & 0x00000020) == 0x00000020);
+      }
+      /**
+       * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.QueryResponse getQueryResponse() {
+        if (queryResponseBuilder_ == null) {
+          return queryResponse_ == null ? org.voltdb.pmsg.DRAgent.QueryResponse.getDefaultInstance() : queryResponse_;
+        } else {
+          return queryResponseBuilder_.getMessage();
+        }
+      }
+      /**
+       * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+       */
+      public Builder setQueryResponse(org.voltdb.pmsg.DRAgent.QueryResponse value) {
+        if (queryResponseBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          queryResponse_ = value;
+          onChanged();
+        } else {
+          queryResponseBuilder_.setMessage(value);
+        }
+        bitField0_ |= 0x00000020;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+       */
+      public Builder setQueryResponse(
+          org.voltdb.pmsg.DRAgent.QueryResponse.Builder builderForValue) {
+        if (queryResponseBuilder_ == null) {
+          queryResponse_ = builderForValue.build();
+          onChanged();
+        } else {
+          queryResponseBuilder_.setMessage(builderForValue.build());
+        }
+        bitField0_ |= 0x00000020;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+       */
+      public Builder mergeQueryResponse(org.voltdb.pmsg.DRAgent.QueryResponse value) {
+        if (queryResponseBuilder_ == null) {
+          if (((bitField0_ & 0x00000020) == 0x00000020) &&
+              queryResponse_ != null &&
+              queryResponse_ != org.voltdb.pmsg.DRAgent.QueryResponse.getDefaultInstance()) {
+            queryResponse_ =
+              org.voltdb.pmsg.DRAgent.QueryResponse.newBuilder(queryResponse_).mergeFrom(value).buildPartial();
+          } else {
+            queryResponse_ = value;
+          }
+          onChanged();
+        } else {
+          queryResponseBuilder_.mergeFrom(value);
+        }
+        bitField0_ |= 0x00000020;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+       */
+      public Builder clearQueryResponse() {
+        if (queryResponseBuilder_ == null) {
+          queryResponse_ = null;
+          onChanged();
+        } else {
+          queryResponseBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000020);
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.QueryResponse.Builder getQueryResponseBuilder() {
+        bitField0_ |= 0x00000020;
+        onChanged();
+        return getQueryResponseFieldBuilder().getBuilder();
+      }
+      /**
+       * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.QueryResponseOrBuilder getQueryResponseOrBuilder() {
+        if (queryResponseBuilder_ != null) {
+          return queryResponseBuilder_.getMessageOrBuilder();
+        } else {
+          return queryResponse_ == null ?
+              org.voltdb.pmsg.DRAgent.QueryResponse.getDefaultInstance() : queryResponse_;
+        }
+      }
+      /**
+       * <code>optional .pmsg.QueryResponse queryResponse = 6;</code>
+       */
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.QueryResponse, org.voltdb.pmsg.DRAgent.QueryResponse.Builder, org.voltdb.pmsg.DRAgent.QueryResponseOrBuilder> 
+          getQueryResponseFieldBuilder() {
+        if (queryResponseBuilder_ == null) {
+          queryResponseBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.QueryResponse, org.voltdb.pmsg.DRAgent.QueryResponse.Builder, org.voltdb.pmsg.DRAgent.QueryResponseOrBuilder>(
+                  getQueryResponse(),
+                  getParentForChildren(),
+                  isClean());
+          queryResponse_ = null;
+        }
+        return queryResponseBuilder_;
+      }
+
+      private org.voltdb.pmsg.DRAgent.AckResponse ackResponse_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.AckResponse, org.voltdb.pmsg.DRAgent.AckResponse.Builder, org.voltdb.pmsg.DRAgent.AckResponseOrBuilder> ackResponseBuilder_;
+      /**
+       * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+       */
+      public boolean hasAckResponse() {
+        return ((bitField0_ & 0x00000040) == 0x00000040);
+      }
+      /**
+       * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.AckResponse getAckResponse() {
+        if (ackResponseBuilder_ == null) {
+          return ackResponse_ == null ? org.voltdb.pmsg.DRAgent.AckResponse.getDefaultInstance() : ackResponse_;
+        } else {
+          return ackResponseBuilder_.getMessage();
+        }
+      }
+      /**
+       * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+       */
+      public Builder setAckResponse(org.voltdb.pmsg.DRAgent.AckResponse value) {
+        if (ackResponseBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ackResponse_ = value;
+          onChanged();
+        } else {
+          ackResponseBuilder_.setMessage(value);
+        }
+        bitField0_ |= 0x00000040;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+       */
+      public Builder setAckResponse(
+          org.voltdb.pmsg.DRAgent.AckResponse.Builder builderForValue) {
+        if (ackResponseBuilder_ == null) {
+          ackResponse_ = builderForValue.build();
+          onChanged();
+        } else {
+          ackResponseBuilder_.setMessage(builderForValue.build());
+        }
+        bitField0_ |= 0x00000040;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+       */
+      public Builder mergeAckResponse(org.voltdb.pmsg.DRAgent.AckResponse value) {
+        if (ackResponseBuilder_ == null) {
+          if (((bitField0_ & 0x00000040) == 0x00000040) &&
+              ackResponse_ != null &&
+              ackResponse_ != org.voltdb.pmsg.DRAgent.AckResponse.getDefaultInstance()) {
+            ackResponse_ =
+              org.voltdb.pmsg.DRAgent.AckResponse.newBuilder(ackResponse_).mergeFrom(value).buildPartial();
+          } else {
+            ackResponse_ = value;
+          }
+          onChanged();
+        } else {
+          ackResponseBuilder_.mergeFrom(value);
+        }
+        bitField0_ |= 0x00000040;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+       */
+      public Builder clearAckResponse() {
+        if (ackResponseBuilder_ == null) {
+          ackResponse_ = null;
+          onChanged();
+        } else {
+          ackResponseBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000040);
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.AckResponse.Builder getAckResponseBuilder() {
+        bitField0_ |= 0x00000040;
+        onChanged();
+        return getAckResponseFieldBuilder().getBuilder();
+      }
+      /**
+       * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.AckResponseOrBuilder getAckResponseOrBuilder() {
+        if (ackResponseBuilder_ != null) {
+          return ackResponseBuilder_.getMessageOrBuilder();
+        } else {
+          return ackResponse_ == null ?
+              org.voltdb.pmsg.DRAgent.AckResponse.getDefaultInstance() : ackResponse_;
+        }
+      }
+      /**
+       * <code>optional .pmsg.AckResponse ackResponse = 7;</code>
+       */
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.AckResponse, org.voltdb.pmsg.DRAgent.AckResponse.Builder, org.voltdb.pmsg.DRAgent.AckResponseOrBuilder> 
+          getAckResponseFieldBuilder() {
+        if (ackResponseBuilder_ == null) {
+          ackResponseBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.AckResponse, org.voltdb.pmsg.DRAgent.AckResponse.Builder, org.voltdb.pmsg.DRAgent.AckResponseOrBuilder>(
+                  getAckResponse(),
+                  getParentForChildren(),
+                  isClean());
+          ackResponse_ = null;
+        }
+        return ackResponseBuilder_;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
+
+      // @@protoc_insertion_point(builder_scope:pmsg.CtrlProtoResponse)
+    }
+
+    // @@protoc_insertion_point(class_scope:pmsg.CtrlProtoResponse)
+    private static final org.voltdb.pmsg.DRAgent.CtrlProtoResponse DEFAULT_INSTANCE;
+    static {
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.CtrlProtoResponse();
+    }
+
+    public static org.voltdb.pmsg.DRAgent.CtrlProtoResponse getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<CtrlProtoResponse>
+        PARSER = new com.google.protobuf.AbstractParser<CtrlProtoResponse>() {
+      public CtrlProtoResponse parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new CtrlProtoResponse(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<CtrlProtoResponse> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<CtrlProtoResponse> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.CtrlProtoResponse getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
+  }
+
+  public interface AckResponseOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.AckResponse)
+      com.google.protobuf.MessageOrBuilder {
+
+    /**
+     * <code>optional bool isEndOfStream = 1;</code>
+     */
+    boolean hasIsEndOfStream();
+    /**
+     * <code>optional bool isEndOfStream = 1;</code>
+     */
+    boolean getIsEndOfStream();
+  }
+  /**
+   * Protobuf type {@code pmsg.AckResponse}
+   */
+  public  static final class AckResponse extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.AckResponse)
+      AckResponseOrBuilder {
+    // Use AckResponse.newBuilder() to construct.
+    private AckResponse(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
+      super(builder);
+    }
+    private AckResponse() {
+      isEndOfStream_ = false;
+    }
+
+    @java.lang.Override
+    public final com.google.protobuf.UnknownFieldSet
+    getUnknownFields() {
+      return this.unknownFields;
+    }
+    private AckResponse(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      this();
+      int mutable_bitField0_ = 0;
+      com.google.protobuf.UnknownFieldSet.Builder unknownFields =
+          com.google.protobuf.UnknownFieldSet.newBuilder();
+      try {
+        boolean done = false;
+        while (!done) {
+          int tag = input.readTag();
+          switch (tag) {
+            case 0:
+              done = true;
+              break;
+            default: {
+              if (!parseUnknownField(input, unknownFields,
+                                     extensionRegistry, tag)) {
+                done = true;
+              }
+              break;
+            }
+            case 8: {
+              bitField0_ |= 0x00000001;
+              isEndOfStream_ = input.readBool();
+              break;
+            }
+          }
+        }
+      } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+        throw e.setUnfinishedMessage(this);
+      } catch (java.io.IOException e) {
+        throw new com.google.protobuf.InvalidProtocolBufferException(
+            e).setUnfinishedMessage(this);
+      } finally {
+        this.unknownFields = unknownFields.build();
+        makeExtensionsImmutable();
+      }
+    }
+    public static final com.google.protobuf.Descriptors.Descriptor
+        getDescriptor() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_AckResponse_descriptor;
+    }
+
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+        internalGetFieldAccessorTable() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_AckResponse_fieldAccessorTable
+          .ensureFieldAccessorsInitialized(
+              org.voltdb.pmsg.DRAgent.AckResponse.class, org.voltdb.pmsg.DRAgent.AckResponse.Builder.class);
+    }
+
+    private int bitField0_;
+    public static final int ISENDOFSTREAM_FIELD_NUMBER = 1;
+    private boolean isEndOfStream_;
+    /**
+     * <code>optional bool isEndOfStream = 1;</code>
+     */
+    public boolean hasIsEndOfStream() {
+      return ((bitField0_ & 0x00000001) == 0x00000001);
+    }
+    /**
+     * <code>optional bool isEndOfStream = 1;</code>
+     */
+    public boolean getIsEndOfStream() {
+      return isEndOfStream_;
+    }
+
+    private byte memoizedIsInitialized = -1;
+    public final boolean isInitialized() {
+      byte isInitialized = memoizedIsInitialized;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
+
+      memoizedIsInitialized = 1;
+      return true;
+    }
+
+    public void writeTo(com.google.protobuf.CodedOutputStream output)
+                        throws java.io.IOException {
+      if (((bitField0_ & 0x00000001) == 0x00000001)) {
+        output.writeBool(1, isEndOfStream_);
+      }
+      unknownFields.writeTo(output);
+    }
+
+    public int getSerializedSize() {
+      int size = memoizedSize;
+      if (size != -1) return size;
+
+      size = 0;
+      if (((bitField0_ & 0x00000001) == 0x00000001)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeBoolSize(1, isEndOfStream_);
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
+      return size;
+    }
+
+    private static final long serialVersionUID = 0L;
+    @java.lang.Override
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.AckResponse)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.AckResponse other = (org.voltdb.pmsg.DRAgent.AckResponse) obj;
+
+      boolean result = true;
+      result = result && (hasIsEndOfStream() == other.hasIsEndOfStream());
+      if (hasIsEndOfStream()) {
+        result = result && (getIsEndOfStream()
+            == other.getIsEndOfStream());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasIsEndOfStream()) {
+        hash = (37 * hash) + ISENDOFSTREAM_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getIsEndOfStream());
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
+    }
+
+    public static org.voltdb.pmsg.DRAgent.AckResponse parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.AckResponse parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.AckResponse parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.AckResponse parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.AckResponse parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.AckResponse parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.AckResponse parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.AckResponse parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.AckResponse parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.AckResponse parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+
+    public Builder newBuilderForType() { return newBuilder(); }
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
+    }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.AckResponse prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
+
+    @java.lang.Override
+    protected Builder newBuilderForType(
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+      Builder builder = new Builder(parent);
+      return builder;
+    }
+    /**
+     * Protobuf type {@code pmsg.AckResponse}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.AckResponse)
+        org.voltdb.pmsg.DRAgent.AckResponseOrBuilder {
+      public static final com.google.protobuf.Descriptors.Descriptor
+          getDescriptor() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_AckResponse_descriptor;
+      }
+
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+          internalGetFieldAccessorTable() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_AckResponse_fieldAccessorTable
+            .ensureFieldAccessorsInitialized(
+                org.voltdb.pmsg.DRAgent.AckResponse.class, org.voltdb.pmsg.DRAgent.AckResponse.Builder.class);
+      }
+
+      // Construct using org.voltdb.pmsg.DRAgent.AckResponse.newBuilder()
+      private Builder() {
+        maybeForceBuilderInitialization();
+      }
+
+      private Builder(
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+        super(parent);
+        maybeForceBuilderInitialization();
+      }
+      private void maybeForceBuilderInitialization() {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
+        }
+      }
+      public Builder clear() {
+        super.clear();
+        isEndOfStream_ = false;
+        bitField0_ = (bitField0_ & ~0x00000001);
+        return this;
+      }
+
+      public com.google.protobuf.Descriptors.Descriptor
+          getDescriptorForType() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_AckResponse_descriptor;
+      }
+
+      public org.voltdb.pmsg.DRAgent.AckResponse getDefaultInstanceForType() {
+        return org.voltdb.pmsg.DRAgent.AckResponse.getDefaultInstance();
+      }
+
+      public org.voltdb.pmsg.DRAgent.AckResponse build() {
+        org.voltdb.pmsg.DRAgent.AckResponse result = buildPartial();
+        if (!result.isInitialized()) {
+          throw newUninitializedMessageException(result);
+        }
+        return result;
+      }
+
+      public org.voltdb.pmsg.DRAgent.AckResponse buildPartial() {
+        org.voltdb.pmsg.DRAgent.AckResponse result = new org.voltdb.pmsg.DRAgent.AckResponse(this);
+        int from_bitField0_ = bitField0_;
+        int to_bitField0_ = 0;
+        if (((from_bitField0_ & 0x00000001) == 0x00000001)) {
+          to_bitField0_ |= 0x00000001;
+        }
+        result.isEndOfStream_ = isEndOfStream_;
+        result.bitField0_ = to_bitField0_;
+        onBuilt();
+        return result;
+      }
+
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
+      public Builder mergeFrom(com.google.protobuf.Message other) {
+        if (other instanceof org.voltdb.pmsg.DRAgent.AckResponse) {
+          return mergeFrom((org.voltdb.pmsg.DRAgent.AckResponse)other);
+        } else {
+          super.mergeFrom(other);
+          return this;
+        }
+      }
+
+      public Builder mergeFrom(org.voltdb.pmsg.DRAgent.AckResponse other) {
+        if (other == org.voltdb.pmsg.DRAgent.AckResponse.getDefaultInstance()) return this;
+        if (other.hasIsEndOfStream()) {
+          setIsEndOfStream(other.getIsEndOfStream());
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
+        return this;
+      }
+
+      public final boolean isInitialized() {
+        return true;
+      }
+
+      public Builder mergeFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws java.io.IOException {
+        org.voltdb.pmsg.DRAgent.AckResponse parsedMessage = null;
+        try {
+          parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
+        } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+          parsedMessage = (org.voltdb.pmsg.DRAgent.AckResponse) e.getUnfinishedMessage();
+          throw e.unwrapIOException();
+        } finally {
+          if (parsedMessage != null) {
+            mergeFrom(parsedMessage);
+          }
+        }
+        return this;
+      }
+      private int bitField0_;
+
+      private boolean isEndOfStream_ ;
+      /**
+       * <code>optional bool isEndOfStream = 1;</code>
+       */
+      public boolean hasIsEndOfStream() {
+        return ((bitField0_ & 0x00000001) == 0x00000001);
+      }
+      /**
+       * <code>optional bool isEndOfStream = 1;</code>
+       */
+      public boolean getIsEndOfStream() {
+        return isEndOfStream_;
+      }
+      /**
+       * <code>optional bool isEndOfStream = 1;</code>
+       */
+      public Builder setIsEndOfStream(boolean value) {
+        bitField0_ |= 0x00000001;
+        isEndOfStream_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional bool isEndOfStream = 1;</code>
+       */
+      public Builder clearIsEndOfStream() {
+        bitField0_ = (bitField0_ & ~0x00000001);
+        isEndOfStream_ = false;
+        onChanged();
+        return this;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
+
+      // @@protoc_insertion_point(builder_scope:pmsg.AckResponse)
+    }
+
+    // @@protoc_insertion_point(class_scope:pmsg.AckResponse)
+    private static final org.voltdb.pmsg.DRAgent.AckResponse DEFAULT_INSTANCE;
+    static {
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.AckResponse();
+    }
+
+    public static org.voltdb.pmsg.DRAgent.AckResponse getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<AckResponse>
+        PARSER = new com.google.protobuf.AbstractParser<AckResponse>() {
+      public AckResponse parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new AckResponse(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<AckResponse> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<AckResponse> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.AckResponse getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
+  }
+
+  public interface ConnectResponseOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.ConnectResponse)
+      com.google.protobuf.MessageOrBuilder {
+
+    /**
+     * <code>optional fixed64 catalogCRC = 1;</code>
+     */
+    boolean hasCatalogCRC();
+    /**
+     * <code>optional fixed64 catalogCRC = 1;</code>
+     */
+    long getCatalogCRC();
+
+    /**
+     * <code>optional string catalogSignature = 2;</code>
+     */
+    boolean hasCatalogSignature();
+    /**
+     * <code>optional string catalogSignature = 2;</code>
+     */
+    java.lang.String getCatalogSignature();
+    /**
+     * <code>optional string catalogSignature = 2;</code>
+     */
+    com.google.protobuf.ByteString
+        getCatalogSignatureBytes();
+
+    /**
+     * <code>optional int32 protocolVersion = 3;</code>
+     */
+    boolean hasProtocolVersion();
+    /**
+     * <code>optional int32 protocolVersion = 3;</code>
+     */
+    int getProtocolVersion();
+
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+     */
+    java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> 
+        getClusterInfoList();
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+     */
+    org.voltdb.pmsg.DRAgent.ClusterInfo getClusterInfo(int index);
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+     */
+    int getClusterInfoCount();
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+     */
+    java.util.List<? extends org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+        getClusterInfoOrBuilderList();
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+     */
+    org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder getClusterInfoOrBuilder(
+        int index);
+  }
+  /**
+   * Protobuf type {@code pmsg.ConnectResponse}
+   */
+  public  static final class ConnectResponse extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.ConnectResponse)
+      ConnectResponseOrBuilder {
+    // Use ConnectResponse.newBuilder() to construct.
+    private ConnectResponse(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
+      super(builder);
+    }
+    private ConnectResponse() {
+      catalogCRC_ = 0L;
+      catalogSignature_ = "";
+      protocolVersion_ = 0;
+      clusterInfo_ = java.util.Collections.emptyList();
+    }
+
+    @java.lang.Override
+    public final com.google.protobuf.UnknownFieldSet
+    getUnknownFields() {
+      return this.unknownFields;
+    }
+    private ConnectResponse(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      this();
+      int mutable_bitField0_ = 0;
+      com.google.protobuf.UnknownFieldSet.Builder unknownFields =
+          com.google.protobuf.UnknownFieldSet.newBuilder();
+      try {
+        boolean done = false;
+        while (!done) {
+          int tag = input.readTag();
+          switch (tag) {
+            case 0:
+              done = true;
+              break;
+            default: {
+              if (!parseUnknownField(input, unknownFields,
+                                     extensionRegistry, tag)) {
+                done = true;
+              }
+              break;
+            }
+            case 9: {
+              bitField0_ |= 0x00000001;
+              catalogCRC_ = input.readFixed64();
+              break;
+            }
+            case 18: {
+              com.google.protobuf.ByteString bs = input.readBytes();
+              bitField0_ |= 0x00000002;
+              catalogSignature_ = bs;
+              break;
+            }
+            case 24: {
+              bitField0_ |= 0x00000004;
+              protocolVersion_ = input.readInt32();
+              break;
+            }
+            case 34: {
+              if (!((mutable_bitField0_ & 0x00000008) == 0x00000008)) {
+                clusterInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.ClusterInfo>();
+                mutable_bitField0_ |= 0x00000008;
+              }
+              clusterInfo_.add(
+                  input.readMessage(org.voltdb.pmsg.DRAgent.ClusterInfo.PARSER, extensionRegistry));
+              break;
+            }
+          }
+        }
+      } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+        throw e.setUnfinishedMessage(this);
+      } catch (java.io.IOException e) {
+        throw new com.google.protobuf.InvalidProtocolBufferException(
+            e).setUnfinishedMessage(this);
+      } finally {
+        if (((mutable_bitField0_ & 0x00000008) == 0x00000008)) {
+          clusterInfo_ = java.util.Collections.unmodifiableList(clusterInfo_);
+        }
+        this.unknownFields = unknownFields.build();
+        makeExtensionsImmutable();
+      }
+    }
+    public static final com.google.protobuf.Descriptors.Descriptor
+        getDescriptor() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_ConnectResponse_descriptor;
+    }
+
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+        internalGetFieldAccessorTable() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_ConnectResponse_fieldAccessorTable
+          .ensureFieldAccessorsInitialized(
+              org.voltdb.pmsg.DRAgent.ConnectResponse.class, org.voltdb.pmsg.DRAgent.ConnectResponse.Builder.class);
+    }
+
+    private int bitField0_;
+    public static final int CATALOGCRC_FIELD_NUMBER = 1;
+    private long catalogCRC_;
+    /**
+     * <code>optional fixed64 catalogCRC = 1;</code>
+     */
+    public boolean hasCatalogCRC() {
+      return ((bitField0_ & 0x00000001) == 0x00000001);
+    }
+    /**
+     * <code>optional fixed64 catalogCRC = 1;</code>
+     */
+    public long getCatalogCRC() {
+      return catalogCRC_;
+    }
+
+    public static final int CATALOGSIGNATURE_FIELD_NUMBER = 2;
+    private volatile java.lang.Object catalogSignature_;
+    /**
+     * <code>optional string catalogSignature = 2;</code>
+     */
+    public boolean hasCatalogSignature() {
+      return ((bitField0_ & 0x00000002) == 0x00000002);
+    }
+    /**
+     * <code>optional string catalogSignature = 2;</code>
+     */
+    public java.lang.String getCatalogSignature() {
+      java.lang.Object ref = catalogSignature_;
+      if (ref instanceof java.lang.String) {
+        return (java.lang.String) ref;
+      } else {
+        com.google.protobuf.ByteString bs = 
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        if (bs.isValidUtf8()) {
+          catalogSignature_ = s;
+        }
+        return s;
+      }
+    }
+    /**
+     * <code>optional string catalogSignature = 2;</code>
+     */
+    public com.google.protobuf.ByteString
+        getCatalogSignatureBytes() {
+      java.lang.Object ref = catalogSignature_;
+      if (ref instanceof java.lang.String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        catalogSignature_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+
+    public static final int PROTOCOLVERSION_FIELD_NUMBER = 3;
+    private int protocolVersion_;
+    /**
+     * <code>optional int32 protocolVersion = 3;</code>
+     */
+    public boolean hasProtocolVersion() {
+      return ((bitField0_ & 0x00000004) == 0x00000004);
+    }
+    /**
+     * <code>optional int32 protocolVersion = 3;</code>
+     */
+    public int getProtocolVersion() {
+      return protocolVersion_;
+    }
+
+    public static final int CLUSTERINFO_FIELD_NUMBER = 4;
+    private java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> clusterInfo_;
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+     */
+    public java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> getClusterInfoList() {
+      return clusterInfo_;
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+     */
+    public java.util.List<? extends org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+        getClusterInfoOrBuilderList() {
+      return clusterInfo_;
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+     */
+    public int getClusterInfoCount() {
+      return clusterInfo_.size();
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.ClusterInfo getClusterInfo(int index) {
+      return clusterInfo_.get(index);
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder getClusterInfoOrBuilder(
+        int index) {
+      return clusterInfo_.get(index);
+    }
+
+    private byte memoizedIsInitialized = -1;
+    public final boolean isInitialized() {
+      byte isInitialized = memoizedIsInitialized;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
+
+      for (int i = 0; i < getClusterInfoCount(); i++) {
+        if (!getClusterInfo(i).isInitialized()) {
+          memoizedIsInitialized = 0;
+          return false;
+        }
+      }
+      memoizedIsInitialized = 1;
+      return true;
+    }
+
+    public void writeTo(com.google.protobuf.CodedOutputStream output)
+                        throws java.io.IOException {
+      if (((bitField0_ & 0x00000001) == 0x00000001)) {
+        output.writeFixed64(1, catalogCRC_);
+      }
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
+        com.google.protobuf.GeneratedMessageV3.writeString(output, 2, catalogSignature_);
+      }
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        output.writeInt32(3, protocolVersion_);
+      }
+      for (int i = 0; i < clusterInfo_.size(); i++) {
+        output.writeMessage(4, clusterInfo_.get(i));
+      }
+      unknownFields.writeTo(output);
+    }
+
+    public int getSerializedSize() {
+      int size = memoizedSize;
+      if (size != -1) return size;
+
+      size = 0;
+      if (((bitField0_ & 0x00000001) == 0x00000001)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeFixed64Size(1, catalogCRC_);
+      }
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
+        size += com.google.protobuf.GeneratedMessageV3.computeStringSize(2, catalogSignature_);
+      }
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeInt32Size(3, protocolVersion_);
+      }
+      for (int i = 0; i < clusterInfo_.size(); i++) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(4, clusterInfo_.get(i));
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
+      return size;
+    }
+
+    private static final long serialVersionUID = 0L;
+    @java.lang.Override
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.ConnectResponse)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.ConnectResponse other = (org.voltdb.pmsg.DRAgent.ConnectResponse) obj;
+
+      boolean result = true;
+      result = result && (hasCatalogCRC() == other.hasCatalogCRC());
+      if (hasCatalogCRC()) {
+        result = result && (getCatalogCRC()
+            == other.getCatalogCRC());
+      }
+      result = result && (hasCatalogSignature() == other.hasCatalogSignature());
+      if (hasCatalogSignature()) {
+        result = result && getCatalogSignature()
+            .equals(other.getCatalogSignature());
+      }
+      result = result && (hasProtocolVersion() == other.hasProtocolVersion());
+      if (hasProtocolVersion()) {
+        result = result && (getProtocolVersion()
+            == other.getProtocolVersion());
+      }
+      result = result && getClusterInfoList()
+          .equals(other.getClusterInfoList());
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasCatalogCRC()) {
+        hash = (37 * hash) + CATALOGCRC_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getCatalogCRC());
+      }
+      if (hasCatalogSignature()) {
+        hash = (37 * hash) + CATALOGSIGNATURE_FIELD_NUMBER;
+        hash = (53 * hash) + getCatalogSignature().hashCode();
+      }
+      if (hasProtocolVersion()) {
+        hash = (37 * hash) + PROTOCOLVERSION_FIELD_NUMBER;
+        hash = (53 * hash) + getProtocolVersion();
+      }
+      if (getClusterInfoCount() > 0) {
+        hash = (37 * hash) + CLUSTERINFO_FIELD_NUMBER;
+        hash = (53 * hash) + getClusterInfoList().hashCode();
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
+    }
+
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+
+    public Builder newBuilderForType() { return newBuilder(); }
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
+    }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.ConnectResponse prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
+
+    @java.lang.Override
+    protected Builder newBuilderForType(
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+      Builder builder = new Builder(parent);
+      return builder;
+    }
+    /**
+     * Protobuf type {@code pmsg.ConnectResponse}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.ConnectResponse)
+        org.voltdb.pmsg.DRAgent.ConnectResponseOrBuilder {
+      public static final com.google.protobuf.Descriptors.Descriptor
+          getDescriptor() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_ConnectResponse_descriptor;
+      }
+
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+          internalGetFieldAccessorTable() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_ConnectResponse_fieldAccessorTable
+            .ensureFieldAccessorsInitialized(
+                org.voltdb.pmsg.DRAgent.ConnectResponse.class, org.voltdb.pmsg.DRAgent.ConnectResponse.Builder.class);
+      }
+
+      // Construct using org.voltdb.pmsg.DRAgent.ConnectResponse.newBuilder()
+      private Builder() {
+        maybeForceBuilderInitialization();
+      }
+
+      private Builder(
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+        super(parent);
+        maybeForceBuilderInitialization();
+      }
+      private void maybeForceBuilderInitialization() {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
+          getClusterInfoFieldBuilder();
+        }
+      }
+      public Builder clear() {
+        super.clear();
+        catalogCRC_ = 0L;
+        bitField0_ = (bitField0_ & ~0x00000001);
+        catalogSignature_ = "";
+        bitField0_ = (bitField0_ & ~0x00000002);
+        protocolVersion_ = 0;
+        bitField0_ = (bitField0_ & ~0x00000004);
+        if (clusterInfoBuilder_ == null) {
+          clusterInfo_ = java.util.Collections.emptyList();
+          bitField0_ = (bitField0_ & ~0x00000008);
+        } else {
+          clusterInfoBuilder_.clear();
+        }
+        return this;
+      }
+
+      public com.google.protobuf.Descriptors.Descriptor
+          getDescriptorForType() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_ConnectResponse_descriptor;
+      }
+
+      public org.voltdb.pmsg.DRAgent.ConnectResponse getDefaultInstanceForType() {
+        return org.voltdb.pmsg.DRAgent.ConnectResponse.getDefaultInstance();
+      }
+
+      public org.voltdb.pmsg.DRAgent.ConnectResponse build() {
+        org.voltdb.pmsg.DRAgent.ConnectResponse result = buildPartial();
+        if (!result.isInitialized()) {
+          throw newUninitializedMessageException(result);
+        }
+        return result;
+      }
+
+      public org.voltdb.pmsg.DRAgent.ConnectResponse buildPartial() {
+        org.voltdb.pmsg.DRAgent.ConnectResponse result = new org.voltdb.pmsg.DRAgent.ConnectResponse(this);
+        int from_bitField0_ = bitField0_;
+        int to_bitField0_ = 0;
+        if (((from_bitField0_ & 0x00000001) == 0x00000001)) {
+          to_bitField0_ |= 0x00000001;
+        }
+        result.catalogCRC_ = catalogCRC_;
+        if (((from_bitField0_ & 0x00000002) == 0x00000002)) {
+          to_bitField0_ |= 0x00000002;
+        }
+        result.catalogSignature_ = catalogSignature_;
+        if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
+          to_bitField0_ |= 0x00000004;
+        }
+        result.protocolVersion_ = protocolVersion_;
+        if (clusterInfoBuilder_ == null) {
+          if (((bitField0_ & 0x00000008) == 0x00000008)) {
+            clusterInfo_ = java.util.Collections.unmodifiableList(clusterInfo_);
+            bitField0_ = (bitField0_ & ~0x00000008);
+          }
+          result.clusterInfo_ = clusterInfo_;
+        } else {
+          result.clusterInfo_ = clusterInfoBuilder_.build();
+        }
+        result.bitField0_ = to_bitField0_;
+        onBuilt();
+        return result;
+      }
+
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
+      public Builder mergeFrom(com.google.protobuf.Message other) {
+        if (other instanceof org.voltdb.pmsg.DRAgent.ConnectResponse) {
+          return mergeFrom((org.voltdb.pmsg.DRAgent.ConnectResponse)other);
+        } else {
+          super.mergeFrom(other);
+          return this;
+        }
+      }
+
+      public Builder mergeFrom(org.voltdb.pmsg.DRAgent.ConnectResponse other) {
+        if (other == org.voltdb.pmsg.DRAgent.ConnectResponse.getDefaultInstance()) return this;
+        if (other.hasCatalogCRC()) {
+          setCatalogCRC(other.getCatalogCRC());
+        }
+        if (other.hasCatalogSignature()) {
+          bitField0_ |= 0x00000002;
+          catalogSignature_ = other.catalogSignature_;
+          onChanged();
+        }
+        if (other.hasProtocolVersion()) {
+          setProtocolVersion(other.getProtocolVersion());
+        }
+        if (clusterInfoBuilder_ == null) {
+          if (!other.clusterInfo_.isEmpty()) {
+            if (clusterInfo_.isEmpty()) {
+              clusterInfo_ = other.clusterInfo_;
+              bitField0_ = (bitField0_ & ~0x00000008);
+            } else {
+              ensureClusterInfoIsMutable();
+              clusterInfo_.addAll(other.clusterInfo_);
+            }
+            onChanged();
+          }
+        } else {
+          if (!other.clusterInfo_.isEmpty()) {
+            if (clusterInfoBuilder_.isEmpty()) {
+              clusterInfoBuilder_.dispose();
+              clusterInfoBuilder_ = null;
+              clusterInfo_ = other.clusterInfo_;
+              bitField0_ = (bitField0_ & ~0x00000008);
+              clusterInfoBuilder_ = 
+                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
+                   getClusterInfoFieldBuilder() : null;
+            } else {
+              clusterInfoBuilder_.addAllMessages(other.clusterInfo_);
+            }
+          }
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
+        return this;
+      }
+
+      public final boolean isInitialized() {
+        for (int i = 0; i < getClusterInfoCount(); i++) {
+          if (!getClusterInfo(i).isInitialized()) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      public Builder mergeFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws java.io.IOException {
+        org.voltdb.pmsg.DRAgent.ConnectResponse parsedMessage = null;
+        try {
+          parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
+        } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+          parsedMessage = (org.voltdb.pmsg.DRAgent.ConnectResponse) e.getUnfinishedMessage();
+          throw e.unwrapIOException();
+        } finally {
+          if (parsedMessage != null) {
+            mergeFrom(parsedMessage);
+          }
+        }
+        return this;
+      }
+      private int bitField0_;
+
+      private long catalogCRC_ ;
+      /**
+       * <code>optional fixed64 catalogCRC = 1;</code>
+       */
+      public boolean hasCatalogCRC() {
+        return ((bitField0_ & 0x00000001) == 0x00000001);
+      }
+      /**
+       * <code>optional fixed64 catalogCRC = 1;</code>
+       */
+      public long getCatalogCRC() {
+        return catalogCRC_;
+      }
+      /**
+       * <code>optional fixed64 catalogCRC = 1;</code>
+       */
+      public Builder setCatalogCRC(long value) {
+        bitField0_ |= 0x00000001;
+        catalogCRC_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional fixed64 catalogCRC = 1;</code>
+       */
+      public Builder clearCatalogCRC() {
+        bitField0_ = (bitField0_ & ~0x00000001);
+        catalogCRC_ = 0L;
+        onChanged();
+        return this;
+      }
+
+      private java.lang.Object catalogSignature_ = "";
+      /**
+       * <code>optional string catalogSignature = 2;</code>
+       */
+      public boolean hasCatalogSignature() {
+        return ((bitField0_ & 0x00000002) == 0x00000002);
+      }
+      /**
+       * <code>optional string catalogSignature = 2;</code>
+       */
+      public java.lang.String getCatalogSignature() {
+        java.lang.Object ref = catalogSignature_;
+        if (!(ref instanceof java.lang.String)) {
+          com.google.protobuf.ByteString bs =
+              (com.google.protobuf.ByteString) ref;
+          java.lang.String s = bs.toStringUtf8();
+          if (bs.isValidUtf8()) {
+            catalogSignature_ = s;
+          }
+          return s;
+        } else {
+          return (java.lang.String) ref;
+        }
+      }
+      /**
+       * <code>optional string catalogSignature = 2;</code>
+       */
+      public com.google.protobuf.ByteString
+          getCatalogSignatureBytes() {
+        java.lang.Object ref = catalogSignature_;
+        if (ref instanceof String) {
+          com.google.protobuf.ByteString b = 
+              com.google.protobuf.ByteString.copyFromUtf8(
+                  (java.lang.String) ref);
+          catalogSignature_ = b;
+          return b;
+        } else {
+          return (com.google.protobuf.ByteString) ref;
+        }
+      }
+      /**
+       * <code>optional string catalogSignature = 2;</code>
+       */
+      public Builder setCatalogSignature(
+          java.lang.String value) {
+        if (value == null) {
+    throw new NullPointerException();
+  }
+  bitField0_ |= 0x00000002;
+        catalogSignature_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional string catalogSignature = 2;</code>
+       */
+      public Builder clearCatalogSignature() {
+        bitField0_ = (bitField0_ & ~0x00000002);
+        catalogSignature_ = getDefaultInstance().getCatalogSignature();
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional string catalogSignature = 2;</code>
+       */
+      public Builder setCatalogSignatureBytes(
+          com.google.protobuf.ByteString value) {
+        if (value == null) {
+    throw new NullPointerException();
+  }
+  bitField0_ |= 0x00000002;
+        catalogSignature_ = value;
+        onChanged();
+        return this;
+      }
+
+      private int protocolVersion_ ;
+      /**
+       * <code>optional int32 protocolVersion = 3;</code>
+       */
+      public boolean hasProtocolVersion() {
+        return ((bitField0_ & 0x00000004) == 0x00000004);
+      }
+      /**
+       * <code>optional int32 protocolVersion = 3;</code>
+       */
+      public int getProtocolVersion() {
+        return protocolVersion_;
+      }
+      /**
+       * <code>optional int32 protocolVersion = 3;</code>
+       */
+      public Builder setProtocolVersion(int value) {
+        bitField0_ |= 0x00000004;
+        protocolVersion_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional int32 protocolVersion = 3;</code>
+       */
+      public Builder clearProtocolVersion() {
+        bitField0_ = (bitField0_ & ~0x00000004);
+        protocolVersion_ = 0;
+        onChanged();
+        return this;
+      }
+
+      private java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> clusterInfo_ =
+        java.util.Collections.emptyList();
+      private void ensureClusterInfoIsMutable() {
+        if (!((bitField0_ & 0x00000008) == 0x00000008)) {
+          clusterInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.ClusterInfo>(clusterInfo_);
+          bitField0_ |= 0x00000008;
+         }
+      }
+
+      private com.google.protobuf.RepeatedFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.ClusterInfo, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder, org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> clusterInfoBuilder_;
+
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> getClusterInfoList() {
+        if (clusterInfoBuilder_ == null) {
+          return java.util.Collections.unmodifiableList(clusterInfo_);
+        } else {
+          return clusterInfoBuilder_.getMessageList();
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public int getClusterInfoCount() {
+        if (clusterInfoBuilder_ == null) {
+          return clusterInfo_.size();
+        } else {
+          return clusterInfoBuilder_.getCount();
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo getClusterInfo(int index) {
+        if (clusterInfoBuilder_ == null) {
+          return clusterInfo_.get(index);
+        } else {
+          return clusterInfoBuilder_.getMessage(index);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public Builder setClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo value) {
+        if (clusterInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureClusterInfoIsMutable();
+          clusterInfo_.set(index, value);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.setMessage(index, value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public Builder setClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder builderForValue) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.set(index, builderForValue.build());
+          onChanged();
+        } else {
+          clusterInfoBuilder_.setMessage(index, builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public Builder addClusterInfo(org.voltdb.pmsg.DRAgent.ClusterInfo value) {
+        if (clusterInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(value);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public Builder addClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo value) {
+        if (clusterInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(index, value);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(index, value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public Builder addClusterInfo(
+          org.voltdb.pmsg.DRAgent.ClusterInfo.Builder builderForValue) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(builderForValue.build());
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public Builder addClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder builderForValue) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(index, builderForValue.build());
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(index, builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public Builder addAllClusterInfo(
+          java.lang.Iterable<? extends org.voltdb.pmsg.DRAgent.ClusterInfo> values) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          com.google.protobuf.AbstractMessageLite.Builder.addAll(
+              values, clusterInfo_);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addAllMessages(values);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public Builder clearClusterInfo() {
+        if (clusterInfoBuilder_ == null) {
+          clusterInfo_ = java.util.Collections.emptyList();
+          bitField0_ = (bitField0_ & ~0x00000008);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.clear();
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public Builder removeClusterInfo(int index) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.remove(index);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.remove(index);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo.Builder getClusterInfoBuilder(
+          int index) {
+        return getClusterInfoFieldBuilder().getBuilder(index);
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder getClusterInfoOrBuilder(
+          int index) {
+        if (clusterInfoBuilder_ == null) {
+          return clusterInfo_.get(index);  } else {
+          return clusterInfoBuilder_.getMessageOrBuilder(index);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public java.util.List<? extends org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+           getClusterInfoOrBuilderList() {
+        if (clusterInfoBuilder_ != null) {
+          return clusterInfoBuilder_.getMessageOrBuilderList();
+        } else {
+          return java.util.Collections.unmodifiableList(clusterInfo_);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo.Builder addClusterInfoBuilder() {
+        return getClusterInfoFieldBuilder().addBuilder(
+            org.voltdb.pmsg.DRAgent.ClusterInfo.getDefaultInstance());
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo.Builder addClusterInfoBuilder(
+          int index) {
+        return getClusterInfoFieldBuilder().addBuilder(
+            index, org.voltdb.pmsg.DRAgent.ClusterInfo.getDefaultInstance());
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 4;</code>
+       */
+      public java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo.Builder> 
+           getClusterInfoBuilderList() {
+        return getClusterInfoFieldBuilder().getBuilderList();
+      }
+      private com.google.protobuf.RepeatedFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.ClusterInfo, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder, org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+          getClusterInfoFieldBuilder() {
+        if (clusterInfoBuilder_ == null) {
+          clusterInfoBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.ClusterInfo, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder, org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder>(
+                  clusterInfo_,
+                  ((bitField0_ & 0x00000008) == 0x00000008),
+                  getParentForChildren(),
+                  isClean());
+          clusterInfo_ = null;
+        }
+        return clusterInfoBuilder_;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
+
+      // @@protoc_insertion_point(builder_scope:pmsg.ConnectResponse)
+    }
+
+    // @@protoc_insertion_point(class_scope:pmsg.ConnectResponse)
+    private static final org.voltdb.pmsg.DRAgent.ConnectResponse DEFAULT_INSTANCE;
+    static {
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.ConnectResponse();
+    }
+
+    public static org.voltdb.pmsg.DRAgent.ConnectResponse getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<ConnectResponse>
+        PARSER = new com.google.protobuf.AbstractParser<ConnectResponse>() {
+      public ConnectResponse parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new ConnectResponse(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<ConnectResponse> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<ConnectResponse> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.ConnectResponse getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
+  }
+
+  public interface QueryResponseOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.QueryResponse)
+      com.google.protobuf.MessageOrBuilder {
+
+    /**
+     * <code>optional bool includeMesh = 1 [default = false];</code>
+     */
+    boolean hasIncludeMesh();
+    /**
+     * <code>optional bool includeMesh = 1 [default = false];</code>
+     */
+    boolean getIncludeMesh();
+
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+     */
+    java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> 
+        getClusterInfoList();
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+     */
+    org.voltdb.pmsg.DRAgent.ClusterInfo getClusterInfo(int index);
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+     */
+    int getClusterInfoCount();
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+     */
+    java.util.List<? extends org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+        getClusterInfoOrBuilderList();
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+     */
+    org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder getClusterInfoOrBuilder(
+        int index);
+
+    /**
+     * <code>optional fixed64 hashinatorSignature = 3;</code>
+     */
+    boolean hasHashinatorSignature();
+    /**
+     * <code>optional fixed64 hashinatorSignature = 3;</code>
+     */
+    long getHashinatorSignature();
+  }
+  /**
+   * Protobuf type {@code pmsg.QueryResponse}
+   */
+  public  static final class QueryResponse extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.QueryResponse)
+      QueryResponseOrBuilder {
+    // Use QueryResponse.newBuilder() to construct.
+    private QueryResponse(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
+      super(builder);
+    }
+    private QueryResponse() {
+      includeMesh_ = false;
+      clusterInfo_ = java.util.Collections.emptyList();
+      hashinatorSignature_ = 0L;
+    }
+
+    @java.lang.Override
+    public final com.google.protobuf.UnknownFieldSet
+    getUnknownFields() {
+      return this.unknownFields;
+    }
+    private QueryResponse(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      this();
+      int mutable_bitField0_ = 0;
+      com.google.protobuf.UnknownFieldSet.Builder unknownFields =
+          com.google.protobuf.UnknownFieldSet.newBuilder();
+      try {
+        boolean done = false;
+        while (!done) {
+          int tag = input.readTag();
+          switch (tag) {
+            case 0:
+              done = true;
+              break;
+            default: {
+              if (!parseUnknownField(input, unknownFields,
+                                     extensionRegistry, tag)) {
+                done = true;
+              }
+              break;
+            }
+            case 8: {
+              bitField0_ |= 0x00000001;
+              includeMesh_ = input.readBool();
+              break;
+            }
+            case 18: {
+              if (!((mutable_bitField0_ & 0x00000002) == 0x00000002)) {
+                clusterInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.ClusterInfo>();
+                mutable_bitField0_ |= 0x00000002;
+              }
+              clusterInfo_.add(
+                  input.readMessage(org.voltdb.pmsg.DRAgent.ClusterInfo.PARSER, extensionRegistry));
+              break;
+            }
+            case 25: {
+              bitField0_ |= 0x00000002;
+              hashinatorSignature_ = input.readFixed64();
+              break;
+            }
+          }
+        }
+      } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+        throw e.setUnfinishedMessage(this);
+      } catch (java.io.IOException e) {
+        throw new com.google.protobuf.InvalidProtocolBufferException(
+            e).setUnfinishedMessage(this);
+      } finally {
+        if (((mutable_bitField0_ & 0x00000002) == 0x00000002)) {
+          clusterInfo_ = java.util.Collections.unmodifiableList(clusterInfo_);
+        }
+        this.unknownFields = unknownFields.build();
+        makeExtensionsImmutable();
+      }
+    }
+    public static final com.google.protobuf.Descriptors.Descriptor
+        getDescriptor() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_QueryResponse_descriptor;
+    }
+
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+        internalGetFieldAccessorTable() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_QueryResponse_fieldAccessorTable
+          .ensureFieldAccessorsInitialized(
+              org.voltdb.pmsg.DRAgent.QueryResponse.class, org.voltdb.pmsg.DRAgent.QueryResponse.Builder.class);
+    }
+
+    private int bitField0_;
+    public static final int INCLUDEMESH_FIELD_NUMBER = 1;
+    private boolean includeMesh_;
+    /**
+     * <code>optional bool includeMesh = 1 [default = false];</code>
+     */
+    public boolean hasIncludeMesh() {
+      return ((bitField0_ & 0x00000001) == 0x00000001);
+    }
+    /**
+     * <code>optional bool includeMesh = 1 [default = false];</code>
+     */
+    public boolean getIncludeMesh() {
+      return includeMesh_;
+    }
+
+    public static final int CLUSTERINFO_FIELD_NUMBER = 2;
+    private java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> clusterInfo_;
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+     */
+    public java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> getClusterInfoList() {
+      return clusterInfo_;
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+     */
+    public java.util.List<? extends org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+        getClusterInfoOrBuilderList() {
+      return clusterInfo_;
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+     */
+    public int getClusterInfoCount() {
+      return clusterInfo_.size();
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.ClusterInfo getClusterInfo(int index) {
+      return clusterInfo_.get(index);
+    }
+    /**
+     * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder getClusterInfoOrBuilder(
+        int index) {
+      return clusterInfo_.get(index);
+    }
+
+    public static final int HASHINATORSIGNATURE_FIELD_NUMBER = 3;
+    private long hashinatorSignature_;
+    /**
+     * <code>optional fixed64 hashinatorSignature = 3;</code>
+     */
+    public boolean hasHashinatorSignature() {
+      return ((bitField0_ & 0x00000002) == 0x00000002);
+    }
+    /**
+     * <code>optional fixed64 hashinatorSignature = 3;</code>
+     */
+    public long getHashinatorSignature() {
+      return hashinatorSignature_;
+    }
+
+    private byte memoizedIsInitialized = -1;
+    public final boolean isInitialized() {
+      byte isInitialized = memoizedIsInitialized;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
+
+      for (int i = 0; i < getClusterInfoCount(); i++) {
+        if (!getClusterInfo(i).isInitialized()) {
+          memoizedIsInitialized = 0;
+          return false;
+        }
+      }
+      memoizedIsInitialized = 1;
+      return true;
+    }
+
+    public void writeTo(com.google.protobuf.CodedOutputStream output)
+                        throws java.io.IOException {
+      if (((bitField0_ & 0x00000001) == 0x00000001)) {
+        output.writeBool(1, includeMesh_);
+      }
+      for (int i = 0; i < clusterInfo_.size(); i++) {
+        output.writeMessage(2, clusterInfo_.get(i));
+      }
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
+        output.writeFixed64(3, hashinatorSignature_);
+      }
+      unknownFields.writeTo(output);
+    }
+
+    public int getSerializedSize() {
+      int size = memoizedSize;
+      if (size != -1) return size;
+
+      size = 0;
+      if (((bitField0_ & 0x00000001) == 0x00000001)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeBoolSize(1, includeMesh_);
+      }
+      for (int i = 0; i < clusterInfo_.size(); i++) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(2, clusterInfo_.get(i));
+      }
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeFixed64Size(3, hashinatorSignature_);
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
+      return size;
+    }
+
+    private static final long serialVersionUID = 0L;
+    @java.lang.Override
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.QueryResponse)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.QueryResponse other = (org.voltdb.pmsg.DRAgent.QueryResponse) obj;
+
+      boolean result = true;
+      result = result && (hasIncludeMesh() == other.hasIncludeMesh());
+      if (hasIncludeMesh()) {
+        result = result && (getIncludeMesh()
+            == other.getIncludeMesh());
+      }
+      result = result && getClusterInfoList()
+          .equals(other.getClusterInfoList());
+      result = result && (hasHashinatorSignature() == other.hasHashinatorSignature());
+      if (hasHashinatorSignature()) {
+        result = result && (getHashinatorSignature()
+            == other.getHashinatorSignature());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasIncludeMesh()) {
+        hash = (37 * hash) + INCLUDEMESH_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getIncludeMesh());
+      }
+      if (getClusterInfoCount() > 0) {
+        hash = (37 * hash) + CLUSTERINFO_FIELD_NUMBER;
+        hash = (53 * hash) + getClusterInfoList().hashCode();
+      }
+      if (hasHashinatorSignature()) {
+        hash = (37 * hash) + HASHINATORSIGNATURE_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getHashinatorSignature());
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
+    }
+
+    public static org.voltdb.pmsg.DRAgent.QueryResponse parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.QueryResponse parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.QueryResponse parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.QueryResponse parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.QueryResponse parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.QueryResponse parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.QueryResponse parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.QueryResponse parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.QueryResponse parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.QueryResponse parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+
+    public Builder newBuilderForType() { return newBuilder(); }
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
+    }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.QueryResponse prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
+
+    @java.lang.Override
+    protected Builder newBuilderForType(
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+      Builder builder = new Builder(parent);
+      return builder;
+    }
+    /**
+     * Protobuf type {@code pmsg.QueryResponse}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.QueryResponse)
+        org.voltdb.pmsg.DRAgent.QueryResponseOrBuilder {
+      public static final com.google.protobuf.Descriptors.Descriptor
+          getDescriptor() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_QueryResponse_descriptor;
+      }
+
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+          internalGetFieldAccessorTable() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_QueryResponse_fieldAccessorTable
+            .ensureFieldAccessorsInitialized(
+                org.voltdb.pmsg.DRAgent.QueryResponse.class, org.voltdb.pmsg.DRAgent.QueryResponse.Builder.class);
+      }
+
+      // Construct using org.voltdb.pmsg.DRAgent.QueryResponse.newBuilder()
+      private Builder() {
+        maybeForceBuilderInitialization();
+      }
+
+      private Builder(
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+        super(parent);
+        maybeForceBuilderInitialization();
+      }
+      private void maybeForceBuilderInitialization() {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
+          getClusterInfoFieldBuilder();
+        }
+      }
+      public Builder clear() {
+        super.clear();
+        includeMesh_ = false;
+        bitField0_ = (bitField0_ & ~0x00000001);
+        if (clusterInfoBuilder_ == null) {
+          clusterInfo_ = java.util.Collections.emptyList();
+          bitField0_ = (bitField0_ & ~0x00000002);
+        } else {
+          clusterInfoBuilder_.clear();
+        }
+        hashinatorSignature_ = 0L;
+        bitField0_ = (bitField0_ & ~0x00000004);
+        return this;
+      }
+
+      public com.google.protobuf.Descriptors.Descriptor
+          getDescriptorForType() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_QueryResponse_descriptor;
+      }
+
+      public org.voltdb.pmsg.DRAgent.QueryResponse getDefaultInstanceForType() {
+        return org.voltdb.pmsg.DRAgent.QueryResponse.getDefaultInstance();
+      }
+
+      public org.voltdb.pmsg.DRAgent.QueryResponse build() {
+        org.voltdb.pmsg.DRAgent.QueryResponse result = buildPartial();
+        if (!result.isInitialized()) {
+          throw newUninitializedMessageException(result);
+        }
+        return result;
+      }
+
+      public org.voltdb.pmsg.DRAgent.QueryResponse buildPartial() {
+        org.voltdb.pmsg.DRAgent.QueryResponse result = new org.voltdb.pmsg.DRAgent.QueryResponse(this);
+        int from_bitField0_ = bitField0_;
+        int to_bitField0_ = 0;
+        if (((from_bitField0_ & 0x00000001) == 0x00000001)) {
+          to_bitField0_ |= 0x00000001;
+        }
+        result.includeMesh_ = includeMesh_;
+        if (clusterInfoBuilder_ == null) {
+          if (((bitField0_ & 0x00000002) == 0x00000002)) {
+            clusterInfo_ = java.util.Collections.unmodifiableList(clusterInfo_);
+            bitField0_ = (bitField0_ & ~0x00000002);
+          }
+          result.clusterInfo_ = clusterInfo_;
+        } else {
+          result.clusterInfo_ = clusterInfoBuilder_.build();
+        }
+        if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
+          to_bitField0_ |= 0x00000002;
+        }
+        result.hashinatorSignature_ = hashinatorSignature_;
+        result.bitField0_ = to_bitField0_;
+        onBuilt();
+        return result;
+      }
+
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
+      public Builder mergeFrom(com.google.protobuf.Message other) {
+        if (other instanceof org.voltdb.pmsg.DRAgent.QueryResponse) {
+          return mergeFrom((org.voltdb.pmsg.DRAgent.QueryResponse)other);
+        } else {
+          super.mergeFrom(other);
+          return this;
+        }
+      }
+
+      public Builder mergeFrom(org.voltdb.pmsg.DRAgent.QueryResponse other) {
+        if (other == org.voltdb.pmsg.DRAgent.QueryResponse.getDefaultInstance()) return this;
+        if (other.hasIncludeMesh()) {
+          setIncludeMesh(other.getIncludeMesh());
+        }
+        if (clusterInfoBuilder_ == null) {
+          if (!other.clusterInfo_.isEmpty()) {
+            if (clusterInfo_.isEmpty()) {
+              clusterInfo_ = other.clusterInfo_;
+              bitField0_ = (bitField0_ & ~0x00000002);
+            } else {
+              ensureClusterInfoIsMutable();
+              clusterInfo_.addAll(other.clusterInfo_);
+            }
+            onChanged();
+          }
+        } else {
+          if (!other.clusterInfo_.isEmpty()) {
+            if (clusterInfoBuilder_.isEmpty()) {
+              clusterInfoBuilder_.dispose();
+              clusterInfoBuilder_ = null;
+              clusterInfo_ = other.clusterInfo_;
+              bitField0_ = (bitField0_ & ~0x00000002);
+              clusterInfoBuilder_ = 
+                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
+                   getClusterInfoFieldBuilder() : null;
+            } else {
+              clusterInfoBuilder_.addAllMessages(other.clusterInfo_);
+            }
+          }
+        }
+        if (other.hasHashinatorSignature()) {
+          setHashinatorSignature(other.getHashinatorSignature());
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
+        return this;
+      }
+
+      public final boolean isInitialized() {
+        for (int i = 0; i < getClusterInfoCount(); i++) {
+          if (!getClusterInfo(i).isInitialized()) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      public Builder mergeFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws java.io.IOException {
+        org.voltdb.pmsg.DRAgent.QueryResponse parsedMessage = null;
+        try {
+          parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
+        } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+          parsedMessage = (org.voltdb.pmsg.DRAgent.QueryResponse) e.getUnfinishedMessage();
+          throw e.unwrapIOException();
+        } finally {
+          if (parsedMessage != null) {
+            mergeFrom(parsedMessage);
+          }
+        }
+        return this;
+      }
+      private int bitField0_;
+
+      private boolean includeMesh_ ;
+      /**
+       * <code>optional bool includeMesh = 1 [default = false];</code>
+       */
+      public boolean hasIncludeMesh() {
+        return ((bitField0_ & 0x00000001) == 0x00000001);
+      }
+      /**
+       * <code>optional bool includeMesh = 1 [default = false];</code>
+       */
+      public boolean getIncludeMesh() {
+        return includeMesh_;
+      }
+      /**
+       * <code>optional bool includeMesh = 1 [default = false];</code>
+       */
+      public Builder setIncludeMesh(boolean value) {
+        bitField0_ |= 0x00000001;
+        includeMesh_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional bool includeMesh = 1 [default = false];</code>
+       */
+      public Builder clearIncludeMesh() {
+        bitField0_ = (bitField0_ & ~0x00000001);
+        includeMesh_ = false;
+        onChanged();
+        return this;
+      }
+
+      private java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> clusterInfo_ =
+        java.util.Collections.emptyList();
+      private void ensureClusterInfoIsMutable() {
+        if (!((bitField0_ & 0x00000002) == 0x00000002)) {
+          clusterInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.ClusterInfo>(clusterInfo_);
+          bitField0_ |= 0x00000002;
+         }
+      }
+
+      private com.google.protobuf.RepeatedFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.ClusterInfo, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder, org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> clusterInfoBuilder_;
+
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo> getClusterInfoList() {
+        if (clusterInfoBuilder_ == null) {
+          return java.util.Collections.unmodifiableList(clusterInfo_);
+        } else {
+          return clusterInfoBuilder_.getMessageList();
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public int getClusterInfoCount() {
+        if (clusterInfoBuilder_ == null) {
+          return clusterInfo_.size();
+        } else {
+          return clusterInfoBuilder_.getCount();
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo getClusterInfo(int index) {
+        if (clusterInfoBuilder_ == null) {
+          return clusterInfo_.get(index);
+        } else {
+          return clusterInfoBuilder_.getMessage(index);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public Builder setClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo value) {
+        if (clusterInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureClusterInfoIsMutable();
+          clusterInfo_.set(index, value);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.setMessage(index, value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public Builder setClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder builderForValue) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.set(index, builderForValue.build());
+          onChanged();
+        } else {
+          clusterInfoBuilder_.setMessage(index, builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public Builder addClusterInfo(org.voltdb.pmsg.DRAgent.ClusterInfo value) {
+        if (clusterInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(value);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public Builder addClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo value) {
+        if (clusterInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(index, value);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(index, value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public Builder addClusterInfo(
+          org.voltdb.pmsg.DRAgent.ClusterInfo.Builder builderForValue) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(builderForValue.build());
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public Builder addClusterInfo(
+          int index, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder builderForValue) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.add(index, builderForValue.build());
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addMessage(index, builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public Builder addAllClusterInfo(
+          java.lang.Iterable<? extends org.voltdb.pmsg.DRAgent.ClusterInfo> values) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          com.google.protobuf.AbstractMessageLite.Builder.addAll(
+              values, clusterInfo_);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.addAllMessages(values);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public Builder clearClusterInfo() {
+        if (clusterInfoBuilder_ == null) {
+          clusterInfo_ = java.util.Collections.emptyList();
+          bitField0_ = (bitField0_ & ~0x00000002);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.clear();
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public Builder removeClusterInfo(int index) {
+        if (clusterInfoBuilder_ == null) {
+          ensureClusterInfoIsMutable();
+          clusterInfo_.remove(index);
+          onChanged();
+        } else {
+          clusterInfoBuilder_.remove(index);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo.Builder getClusterInfoBuilder(
+          int index) {
+        return getClusterInfoFieldBuilder().getBuilder(index);
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder getClusterInfoOrBuilder(
+          int index) {
+        if (clusterInfoBuilder_ == null) {
+          return clusterInfo_.get(index);  } else {
+          return clusterInfoBuilder_.getMessageOrBuilder(index);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public java.util.List<? extends org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+           getClusterInfoOrBuilderList() {
+        if (clusterInfoBuilder_ != null) {
+          return clusterInfoBuilder_.getMessageOrBuilderList();
+        } else {
+          return java.util.Collections.unmodifiableList(clusterInfo_);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo.Builder addClusterInfoBuilder() {
+        return getClusterInfoFieldBuilder().addBuilder(
+            org.voltdb.pmsg.DRAgent.ClusterInfo.getDefaultInstance());
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.ClusterInfo.Builder addClusterInfoBuilder(
+          int index) {
+        return getClusterInfoFieldBuilder().addBuilder(
+            index, org.voltdb.pmsg.DRAgent.ClusterInfo.getDefaultInstance());
+      }
+      /**
+       * <code>repeated .pmsg.ClusterInfo clusterInfo = 2;</code>
+       */
+      public java.util.List<org.voltdb.pmsg.DRAgent.ClusterInfo.Builder> 
+           getClusterInfoBuilderList() {
+        return getClusterInfoFieldBuilder().getBuilderList();
+      }
+      private com.google.protobuf.RepeatedFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.ClusterInfo, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder, org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder> 
+          getClusterInfoFieldBuilder() {
+        if (clusterInfoBuilder_ == null) {
+          clusterInfoBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.ClusterInfo, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder, org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder>(
+                  clusterInfo_,
+                  ((bitField0_ & 0x00000002) == 0x00000002),
+                  getParentForChildren(),
+                  isClean());
+          clusterInfo_ = null;
+        }
+        return clusterInfoBuilder_;
+      }
+
+      private long hashinatorSignature_ ;
+      /**
+       * <code>optional fixed64 hashinatorSignature = 3;</code>
+       */
+      public boolean hasHashinatorSignature() {
+        return ((bitField0_ & 0x00000004) == 0x00000004);
+      }
+      /**
+       * <code>optional fixed64 hashinatorSignature = 3;</code>
+       */
+      public long getHashinatorSignature() {
+        return hashinatorSignature_;
+      }
+      /**
+       * <code>optional fixed64 hashinatorSignature = 3;</code>
+       */
+      public Builder setHashinatorSignature(long value) {
+        bitField0_ |= 0x00000004;
+        hashinatorSignature_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional fixed64 hashinatorSignature = 3;</code>
+       */
+      public Builder clearHashinatorSignature() {
+        bitField0_ = (bitField0_ & ~0x00000004);
+        hashinatorSignature_ = 0L;
+        onChanged();
+        return this;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
+
+      // @@protoc_insertion_point(builder_scope:pmsg.QueryResponse)
+    }
+
+    // @@protoc_insertion_point(class_scope:pmsg.QueryResponse)
+    private static final org.voltdb.pmsg.DRAgent.QueryResponse DEFAULT_INSTANCE;
+    static {
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.QueryResponse();
+    }
+
+    public static org.voltdb.pmsg.DRAgent.QueryResponse getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<QueryResponse>
+        PARSER = new com.google.protobuf.AbstractParser<QueryResponse>() {
+      public QueryResponse parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new QueryResponse(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<QueryResponse> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<QueryResponse> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.QueryResponse getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
+  }
+
+  public interface ClusterInfoOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.ClusterInfo)
+      com.google.protobuf.MessageOrBuilder {
+
+    /**
+     * <code>required int32 clusterId = 1;</code>
+     */
+    boolean hasClusterId();
+    /**
+     * <code>required int32 clusterId = 1;</code>
+     */
+    int getClusterId();
+
+    /**
+     * <code>required fixed64 creationId = 2;</code>
+     */
+    boolean hasCreationId();
+    /**
+     * <code>required fixed64 creationId = 2;</code>
+     */
+    long getCreationId();
+
+    /**
+     * <code>optional fixed64 recoveryId = 3;</code>
+     */
+    boolean hasRecoveryId();
+    /**
+     * <code>optional fixed64 recoveryId = 3;</code>
+     */
+    long getRecoveryId();
+
+    /**
+     * <code>optional int32 protocolVersion = 4;</code>
+     */
+    boolean hasProtocolVersion();
+    /**
+     * <code>optional int32 protocolVersion = 4;</code>
+     */
+    int getProtocolVersion();
+
+    /**
+     * <code>optional int32 globalPartitionCount = 5;</code>
+     */
+    boolean hasGlobalPartitionCount();
+    /**
+     * <code>optional int32 globalPartitionCount = 5;</code>
+     */
+    int getGlobalPartitionCount();
+
+    /**
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+     */
+    java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo> 
+        getNodeInfoList();
+    /**
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+     */
+    org.voltdb.pmsg.DRAgent.NodeInfo getNodeInfo(int index);
+    /**
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+     */
+    int getNodeInfoCount();
+    /**
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+     */
+    java.util.List<? extends org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> 
+        getNodeInfoOrBuilderList();
+    /**
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+     */
+    org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder getNodeInfoOrBuilder(
+        int index);
+
+    /**
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+     */
+    java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo> 
+        getPartitionInfoList();
+    /**
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+     */
+    org.voltdb.pmsg.DRAgent.PartitionInfo getPartitionInfo(int index);
+    /**
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+     */
+    int getPartitionInfoCount();
+    /**
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+     */
+    java.util.List<? extends org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder> 
+        getPartitionInfoOrBuilderList();
+    /**
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+     */
+    org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder getPartitionInfoOrBuilder(
+        int index);
+  }
+  /**
+   * Protobuf type {@code pmsg.ClusterInfo}
+   */
+  public  static final class ClusterInfo extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.ClusterInfo)
+      ClusterInfoOrBuilder {
+    // Use ClusterInfo.newBuilder() to construct.
+    private ClusterInfo(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
+      super(builder);
+    }
+    private ClusterInfo() {
+      clusterId_ = 0;
+      creationId_ = 0L;
+      recoveryId_ = 0L;
+      protocolVersion_ = 0;
+      globalPartitionCount_ = 0;
+      nodeInfo_ = java.util.Collections.emptyList();
+      partitionInfo_ = java.util.Collections.emptyList();
+    }
+
+    @java.lang.Override
+    public final com.google.protobuf.UnknownFieldSet
+    getUnknownFields() {
+      return this.unknownFields;
+    }
+    private ClusterInfo(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      this();
+      int mutable_bitField0_ = 0;
+      com.google.protobuf.UnknownFieldSet.Builder unknownFields =
+          com.google.protobuf.UnknownFieldSet.newBuilder();
+      try {
+        boolean done = false;
+        while (!done) {
+          int tag = input.readTag();
+          switch (tag) {
+            case 0:
+              done = true;
+              break;
+            default: {
+              if (!parseUnknownField(input, unknownFields,
+                                     extensionRegistry, tag)) {
+                done = true;
+              }
+              break;
+            }
+            case 8: {
+              bitField0_ |= 0x00000001;
+              clusterId_ = input.readInt32();
+              break;
+            }
+            case 17: {
+              bitField0_ |= 0x00000002;
+              creationId_ = input.readFixed64();
+              break;
+            }
+            case 25: {
+              bitField0_ |= 0x00000004;
+              recoveryId_ = input.readFixed64();
+              break;
+            }
+            case 32: {
+              bitField0_ |= 0x00000008;
+              protocolVersion_ = input.readInt32();
+              break;
+            }
+            case 40: {
+              bitField0_ |= 0x00000010;
+              globalPartitionCount_ = input.readInt32();
+              break;
+            }
+            case 50: {
+              if (!((mutable_bitField0_ & 0x00000020) == 0x00000020)) {
+                nodeInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.NodeInfo>();
+                mutable_bitField0_ |= 0x00000020;
+              }
+              nodeInfo_.add(
+                  input.readMessage(org.voltdb.pmsg.DRAgent.NodeInfo.PARSER, extensionRegistry));
+              break;
+            }
+            case 58: {
+              if (!((mutable_bitField0_ & 0x00000040) == 0x00000040)) {
+                partitionInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.PartitionInfo>();
+                mutable_bitField0_ |= 0x00000040;
+              }
+              partitionInfo_.add(
+                  input.readMessage(org.voltdb.pmsg.DRAgent.PartitionInfo.PARSER, extensionRegistry));
+              break;
+            }
+          }
+        }
+      } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+        throw e.setUnfinishedMessage(this);
+      } catch (java.io.IOException e) {
+        throw new com.google.protobuf.InvalidProtocolBufferException(
+            e).setUnfinishedMessage(this);
+      } finally {
+        if (((mutable_bitField0_ & 0x00000020) == 0x00000020)) {
+          nodeInfo_ = java.util.Collections.unmodifiableList(nodeInfo_);
+        }
+        if (((mutable_bitField0_ & 0x00000040) == 0x00000040)) {
+          partitionInfo_ = java.util.Collections.unmodifiableList(partitionInfo_);
+        }
+        this.unknownFields = unknownFields.build();
+        makeExtensionsImmutable();
+      }
+    }
+    public static final com.google.protobuf.Descriptors.Descriptor
+        getDescriptor() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_ClusterInfo_descriptor;
+    }
+
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+        internalGetFieldAccessorTable() {
+      return org.voltdb.pmsg.DRAgent.internal_static_pmsg_ClusterInfo_fieldAccessorTable
+          .ensureFieldAccessorsInitialized(
+              org.voltdb.pmsg.DRAgent.ClusterInfo.class, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder.class);
+    }
+
+    private int bitField0_;
+    public static final int CLUSTERID_FIELD_NUMBER = 1;
+    private int clusterId_;
+    /**
+     * <code>required int32 clusterId = 1;</code>
+     */
+    public boolean hasClusterId() {
+      return ((bitField0_ & 0x00000001) == 0x00000001);
+    }
+    /**
+     * <code>required int32 clusterId = 1;</code>
+     */
+    public int getClusterId() {
+      return clusterId_;
+    }
+
+    public static final int CREATIONID_FIELD_NUMBER = 2;
+    private long creationId_;
+    /**
+     * <code>required fixed64 creationId = 2;</code>
+     */
+    public boolean hasCreationId() {
+      return ((bitField0_ & 0x00000002) == 0x00000002);
+    }
+    /**
+     * <code>required fixed64 creationId = 2;</code>
+     */
+    public long getCreationId() {
+      return creationId_;
+    }
+
+    public static final int RECOVERYID_FIELD_NUMBER = 3;
+    private long recoveryId_;
+    /**
+     * <code>optional fixed64 recoveryId = 3;</code>
+     */
+    public boolean hasRecoveryId() {
+      return ((bitField0_ & 0x00000004) == 0x00000004);
+    }
+    /**
+     * <code>optional fixed64 recoveryId = 3;</code>
+     */
+    public long getRecoveryId() {
+      return recoveryId_;
+    }
+
+    public static final int PROTOCOLVERSION_FIELD_NUMBER = 4;
+    private int protocolVersion_;
+    /**
+     * <code>optional int32 protocolVersion = 4;</code>
+     */
+    public boolean hasProtocolVersion() {
+      return ((bitField0_ & 0x00000008) == 0x00000008);
+    }
+    /**
+     * <code>optional int32 protocolVersion = 4;</code>
+     */
+    public int getProtocolVersion() {
+      return protocolVersion_;
+    }
+
+    public static final int GLOBALPARTITIONCOUNT_FIELD_NUMBER = 5;
+    private int globalPartitionCount_;
+    /**
+     * <code>optional int32 globalPartitionCount = 5;</code>
+     */
+    public boolean hasGlobalPartitionCount() {
+      return ((bitField0_ & 0x00000010) == 0x00000010);
+    }
+    /**
+     * <code>optional int32 globalPartitionCount = 5;</code>
+     */
+    public int getGlobalPartitionCount() {
+      return globalPartitionCount_;
+    }
+
+    public static final int NODEINFO_FIELD_NUMBER = 6;
+    private java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo> nodeInfo_;
+    /**
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+     */
+    public java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo> getNodeInfoList() {
+      return nodeInfo_;
+    }
+    /**
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+     */
+    public java.util.List<? extends org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> 
+        getNodeInfoOrBuilderList() {
+      return nodeInfo_;
+    }
+    /**
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+     */
+    public int getNodeInfoCount() {
+      return nodeInfo_.size();
+    }
+    /**
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.NodeInfo getNodeInfo(int index) {
+      return nodeInfo_.get(index);
+    }
+    /**
+     * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder getNodeInfoOrBuilder(
+        int index) {
+      return nodeInfo_.get(index);
+    }
+
+    public static final int PARTITIONINFO_FIELD_NUMBER = 7;
+    private java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo> partitionInfo_;
+    /**
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+     */
+    public java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo> getPartitionInfoList() {
+      return partitionInfo_;
+    }
+    /**
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+     */
+    public java.util.List<? extends org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder> 
+        getPartitionInfoOrBuilderList() {
+      return partitionInfo_;
+    }
+    /**
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+     */
+    public int getPartitionInfoCount() {
+      return partitionInfo_.size();
+    }
+    /**
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.PartitionInfo getPartitionInfo(int index) {
+      return partitionInfo_.get(index);
+    }
+    /**
+     * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder getPartitionInfoOrBuilder(
+        int index) {
+      return partitionInfo_.get(index);
+    }
+
+    private byte memoizedIsInitialized = -1;
+    public final boolean isInitialized() {
+      byte isInitialized = memoizedIsInitialized;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
+
+      if (!hasClusterId()) {
+        memoizedIsInitialized = 0;
+        return false;
+      }
+      if (!hasCreationId()) {
+        memoizedIsInitialized = 0;
+        return false;
+      }
+      memoizedIsInitialized = 1;
+      return true;
+    }
+
+    public void writeTo(com.google.protobuf.CodedOutputStream output)
+                        throws java.io.IOException {
+      if (((bitField0_ & 0x00000001) == 0x00000001)) {
+        output.writeInt32(1, clusterId_);
+      }
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
+        output.writeFixed64(2, creationId_);
+      }
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        output.writeFixed64(3, recoveryId_);
+      }
+      if (((bitField0_ & 0x00000008) == 0x00000008)) {
+        output.writeInt32(4, protocolVersion_);
+      }
+      if (((bitField0_ & 0x00000010) == 0x00000010)) {
+        output.writeInt32(5, globalPartitionCount_);
+      }
+      for (int i = 0; i < nodeInfo_.size(); i++) {
+        output.writeMessage(6, nodeInfo_.get(i));
+      }
+      for (int i = 0; i < partitionInfo_.size(); i++) {
+        output.writeMessage(7, partitionInfo_.get(i));
+      }
+      unknownFields.writeTo(output);
+    }
+
+    public int getSerializedSize() {
+      int size = memoizedSize;
+      if (size != -1) return size;
+
+      size = 0;
+      if (((bitField0_ & 0x00000001) == 0x00000001)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeInt32Size(1, clusterId_);
+      }
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeFixed64Size(2, creationId_);
+      }
+      if (((bitField0_ & 0x00000004) == 0x00000004)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeFixed64Size(3, recoveryId_);
+      }
+      if (((bitField0_ & 0x00000008) == 0x00000008)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeInt32Size(4, protocolVersion_);
+      }
+      if (((bitField0_ & 0x00000010) == 0x00000010)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeInt32Size(5, globalPartitionCount_);
+      }
+      for (int i = 0; i < nodeInfo_.size(); i++) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(6, nodeInfo_.get(i));
+      }
+      for (int i = 0; i < partitionInfo_.size(); i++) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(7, partitionInfo_.get(i));
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
+      return size;
+    }
+
+    private static final long serialVersionUID = 0L;
+    @java.lang.Override
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.ClusterInfo)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.ClusterInfo other = (org.voltdb.pmsg.DRAgent.ClusterInfo) obj;
+
+      boolean result = true;
+      result = result && (hasClusterId() == other.hasClusterId());
+      if (hasClusterId()) {
+        result = result && (getClusterId()
+            == other.getClusterId());
+      }
+      result = result && (hasCreationId() == other.hasCreationId());
+      if (hasCreationId()) {
+        result = result && (getCreationId()
+            == other.getCreationId());
+      }
+      result = result && (hasRecoveryId() == other.hasRecoveryId());
+      if (hasRecoveryId()) {
+        result = result && (getRecoveryId()
+            == other.getRecoveryId());
+      }
+      result = result && (hasProtocolVersion() == other.hasProtocolVersion());
+      if (hasProtocolVersion()) {
+        result = result && (getProtocolVersion()
+            == other.getProtocolVersion());
+      }
+      result = result && (hasGlobalPartitionCount() == other.hasGlobalPartitionCount());
+      if (hasGlobalPartitionCount()) {
+        result = result && (getGlobalPartitionCount()
+            == other.getGlobalPartitionCount());
+      }
+      result = result && getNodeInfoList()
+          .equals(other.getNodeInfoList());
+      result = result && getPartitionInfoList()
+          .equals(other.getPartitionInfoList());
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasClusterId()) {
+        hash = (37 * hash) + CLUSTERID_FIELD_NUMBER;
+        hash = (53 * hash) + getClusterId();
+      }
+      if (hasCreationId()) {
+        hash = (37 * hash) + CREATIONID_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getCreationId());
+      }
+      if (hasRecoveryId()) {
+        hash = (37 * hash) + RECOVERYID_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getRecoveryId());
+      }
+      if (hasProtocolVersion()) {
+        hash = (37 * hash) + PROTOCOLVERSION_FIELD_NUMBER;
+        hash = (53 * hash) + getProtocolVersion();
+      }
+      if (hasGlobalPartitionCount()) {
+        hash = (37 * hash) + GLOBALPARTITIONCOUNT_FIELD_NUMBER;
+        hash = (53 * hash) + getGlobalPartitionCount();
+      }
+      if (getNodeInfoCount() > 0) {
+        hash = (37 * hash) + NODEINFO_FIELD_NUMBER;
+        hash = (53 * hash) + getNodeInfoList().hashCode();
+      }
+      if (getPartitionInfoCount() > 0) {
+        hash = (37 * hash) + PARTITIONINFO_FIELD_NUMBER;
+        hash = (53 * hash) + getPartitionInfoList().hashCode();
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
+    }
+
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data);
+    }
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return PARSER.parseFrom(data, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
+    }
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
+    }
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
+    }
+
+    public Builder newBuilderForType() { return newBuilder(); }
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
+    }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.ClusterInfo prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
+
+    @java.lang.Override
+    protected Builder newBuilderForType(
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+      Builder builder = new Builder(parent);
+      return builder;
+    }
+    /**
+     * Protobuf type {@code pmsg.ClusterInfo}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.ClusterInfo)
+        org.voltdb.pmsg.DRAgent.ClusterInfoOrBuilder {
+      public static final com.google.protobuf.Descriptors.Descriptor
+          getDescriptor() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_ClusterInfo_descriptor;
+      }
+
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+          internalGetFieldAccessorTable() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_ClusterInfo_fieldAccessorTable
+            .ensureFieldAccessorsInitialized(
+                org.voltdb.pmsg.DRAgent.ClusterInfo.class, org.voltdb.pmsg.DRAgent.ClusterInfo.Builder.class);
+      }
+
+      // Construct using org.voltdb.pmsg.DRAgent.ClusterInfo.newBuilder()
+      private Builder() {
+        maybeForceBuilderInitialization();
+      }
+
+      private Builder(
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+        super(parent);
+        maybeForceBuilderInitialization();
+      }
+      private void maybeForceBuilderInitialization() {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
+          getNodeInfoFieldBuilder();
+          getPartitionInfoFieldBuilder();
+        }
+      }
+      public Builder clear() {
+        super.clear();
+        clusterId_ = 0;
+        bitField0_ = (bitField0_ & ~0x00000001);
+        creationId_ = 0L;
+        bitField0_ = (bitField0_ & ~0x00000002);
+        recoveryId_ = 0L;
+        bitField0_ = (bitField0_ & ~0x00000004);
+        protocolVersion_ = 0;
+        bitField0_ = (bitField0_ & ~0x00000008);
+        globalPartitionCount_ = 0;
+        bitField0_ = (bitField0_ & ~0x00000010);
+        if (nodeInfoBuilder_ == null) {
+          nodeInfo_ = java.util.Collections.emptyList();
+          bitField0_ = (bitField0_ & ~0x00000020);
+        } else {
+          nodeInfoBuilder_.clear();
+        }
+        if (partitionInfoBuilder_ == null) {
+          partitionInfo_ = java.util.Collections.emptyList();
+          bitField0_ = (bitField0_ & ~0x00000040);
+        } else {
+          partitionInfoBuilder_.clear();
+        }
+        return this;
+      }
+
+      public com.google.protobuf.Descriptors.Descriptor
+          getDescriptorForType() {
+        return org.voltdb.pmsg.DRAgent.internal_static_pmsg_ClusterInfo_descriptor;
+      }
+
+      public org.voltdb.pmsg.DRAgent.ClusterInfo getDefaultInstanceForType() {
+        return org.voltdb.pmsg.DRAgent.ClusterInfo.getDefaultInstance();
+      }
+
+      public org.voltdb.pmsg.DRAgent.ClusterInfo build() {
+        org.voltdb.pmsg.DRAgent.ClusterInfo result = buildPartial();
+        if (!result.isInitialized()) {
+          throw newUninitializedMessageException(result);
+        }
+        return result;
+      }
+
+      public org.voltdb.pmsg.DRAgent.ClusterInfo buildPartial() {
+        org.voltdb.pmsg.DRAgent.ClusterInfo result = new org.voltdb.pmsg.DRAgent.ClusterInfo(this);
+        int from_bitField0_ = bitField0_;
+        int to_bitField0_ = 0;
+        if (((from_bitField0_ & 0x00000001) == 0x00000001)) {
+          to_bitField0_ |= 0x00000001;
+        }
+        result.clusterId_ = clusterId_;
+        if (((from_bitField0_ & 0x00000002) == 0x00000002)) {
+          to_bitField0_ |= 0x00000002;
+        }
+        result.creationId_ = creationId_;
+        if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
+          to_bitField0_ |= 0x00000004;
+        }
+        result.recoveryId_ = recoveryId_;
+        if (((from_bitField0_ & 0x00000008) == 0x00000008)) {
+          to_bitField0_ |= 0x00000008;
+        }
+        result.protocolVersion_ = protocolVersion_;
+        if (((from_bitField0_ & 0x00000010) == 0x00000010)) {
+          to_bitField0_ |= 0x00000010;
+        }
+        result.globalPartitionCount_ = globalPartitionCount_;
+        if (nodeInfoBuilder_ == null) {
+          if (((bitField0_ & 0x00000020) == 0x00000020)) {
+            nodeInfo_ = java.util.Collections.unmodifiableList(nodeInfo_);
+            bitField0_ = (bitField0_ & ~0x00000020);
+          }
+          result.nodeInfo_ = nodeInfo_;
+        } else {
+          result.nodeInfo_ = nodeInfoBuilder_.build();
+        }
+        if (partitionInfoBuilder_ == null) {
+          if (((bitField0_ & 0x00000040) == 0x00000040)) {
+            partitionInfo_ = java.util.Collections.unmodifiableList(partitionInfo_);
+            bitField0_ = (bitField0_ & ~0x00000040);
+          }
+          result.partitionInfo_ = partitionInfo_;
+        } else {
+          result.partitionInfo_ = partitionInfoBuilder_.build();
+        }
+        result.bitField0_ = to_bitField0_;
+        onBuilt();
+        return result;
+      }
+
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
+      public Builder mergeFrom(com.google.protobuf.Message other) {
+        if (other instanceof org.voltdb.pmsg.DRAgent.ClusterInfo) {
+          return mergeFrom((org.voltdb.pmsg.DRAgent.ClusterInfo)other);
+        } else {
+          super.mergeFrom(other);
+          return this;
+        }
+      }
+
+      public Builder mergeFrom(org.voltdb.pmsg.DRAgent.ClusterInfo other) {
+        if (other == org.voltdb.pmsg.DRAgent.ClusterInfo.getDefaultInstance()) return this;
+        if (other.hasClusterId()) {
+          setClusterId(other.getClusterId());
+        }
+        if (other.hasCreationId()) {
+          setCreationId(other.getCreationId());
+        }
+        if (other.hasRecoveryId()) {
+          setRecoveryId(other.getRecoveryId());
+        }
+        if (other.hasProtocolVersion()) {
+          setProtocolVersion(other.getProtocolVersion());
+        }
+        if (other.hasGlobalPartitionCount()) {
+          setGlobalPartitionCount(other.getGlobalPartitionCount());
+        }
+        if (nodeInfoBuilder_ == null) {
+          if (!other.nodeInfo_.isEmpty()) {
+            if (nodeInfo_.isEmpty()) {
+              nodeInfo_ = other.nodeInfo_;
+              bitField0_ = (bitField0_ & ~0x00000020);
+            } else {
+              ensureNodeInfoIsMutable();
+              nodeInfo_.addAll(other.nodeInfo_);
+            }
+            onChanged();
+          }
+        } else {
+          if (!other.nodeInfo_.isEmpty()) {
+            if (nodeInfoBuilder_.isEmpty()) {
+              nodeInfoBuilder_.dispose();
+              nodeInfoBuilder_ = null;
+              nodeInfo_ = other.nodeInfo_;
+              bitField0_ = (bitField0_ & ~0x00000020);
+              nodeInfoBuilder_ = 
+                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
+                   getNodeInfoFieldBuilder() : null;
+            } else {
+              nodeInfoBuilder_.addAllMessages(other.nodeInfo_);
+            }
+          }
+        }
+        if (partitionInfoBuilder_ == null) {
+          if (!other.partitionInfo_.isEmpty()) {
+            if (partitionInfo_.isEmpty()) {
+              partitionInfo_ = other.partitionInfo_;
+              bitField0_ = (bitField0_ & ~0x00000040);
+            } else {
+              ensurePartitionInfoIsMutable();
+              partitionInfo_.addAll(other.partitionInfo_);
+            }
+            onChanged();
+          }
+        } else {
+          if (!other.partitionInfo_.isEmpty()) {
+            if (partitionInfoBuilder_.isEmpty()) {
+              partitionInfoBuilder_.dispose();
+              partitionInfoBuilder_ = null;
+              partitionInfo_ = other.partitionInfo_;
+              bitField0_ = (bitField0_ & ~0x00000040);
+              partitionInfoBuilder_ = 
+                com.google.protobuf.GeneratedMessageV3.alwaysUseFieldBuilders ?
+                   getPartitionInfoFieldBuilder() : null;
+            } else {
+              partitionInfoBuilder_.addAllMessages(other.partitionInfo_);
+            }
+          }
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
+        return this;
+      }
+
+      public final boolean isInitialized() {
+        if (!hasClusterId()) {
+          return false;
+        }
+        if (!hasCreationId()) {
+          return false;
+        }
+        return true;
+      }
+
+      public Builder mergeFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws java.io.IOException {
+        org.voltdb.pmsg.DRAgent.ClusterInfo parsedMessage = null;
+        try {
+          parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
+        } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+          parsedMessage = (org.voltdb.pmsg.DRAgent.ClusterInfo) e.getUnfinishedMessage();
+          throw e.unwrapIOException();
+        } finally {
+          if (parsedMessage != null) {
+            mergeFrom(parsedMessage);
+          }
+        }
+        return this;
+      }
+      private int bitField0_;
+
+      private int clusterId_ ;
+      /**
+       * <code>required int32 clusterId = 1;</code>
+       */
+      public boolean hasClusterId() {
+        return ((bitField0_ & 0x00000001) == 0x00000001);
+      }
+      /**
+       * <code>required int32 clusterId = 1;</code>
+       */
+      public int getClusterId() {
+        return clusterId_;
+      }
+      /**
+       * <code>required int32 clusterId = 1;</code>
+       */
+      public Builder setClusterId(int value) {
+        bitField0_ |= 0x00000001;
+        clusterId_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>required int32 clusterId = 1;</code>
+       */
+      public Builder clearClusterId() {
+        bitField0_ = (bitField0_ & ~0x00000001);
+        clusterId_ = 0;
+        onChanged();
+        return this;
+      }
+
+      private long creationId_ ;
+      /**
+       * <code>required fixed64 creationId = 2;</code>
+       */
+      public boolean hasCreationId() {
+        return ((bitField0_ & 0x00000002) == 0x00000002);
+      }
+      /**
+       * <code>required fixed64 creationId = 2;</code>
+       */
+      public long getCreationId() {
+        return creationId_;
+      }
+      /**
+       * <code>required fixed64 creationId = 2;</code>
+       */
+      public Builder setCreationId(long value) {
+        bitField0_ |= 0x00000002;
+        creationId_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>required fixed64 creationId = 2;</code>
+       */
+      public Builder clearCreationId() {
+        bitField0_ = (bitField0_ & ~0x00000002);
+        creationId_ = 0L;
+        onChanged();
+        return this;
+      }
+
+      private long recoveryId_ ;
+      /**
+       * <code>optional fixed64 recoveryId = 3;</code>
+       */
+      public boolean hasRecoveryId() {
+        return ((bitField0_ & 0x00000004) == 0x00000004);
+      }
+      /**
+       * <code>optional fixed64 recoveryId = 3;</code>
+       */
+      public long getRecoveryId() {
+        return recoveryId_;
+      }
+      /**
+       * <code>optional fixed64 recoveryId = 3;</code>
+       */
+      public Builder setRecoveryId(long value) {
+        bitField0_ |= 0x00000004;
+        recoveryId_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional fixed64 recoveryId = 3;</code>
+       */
+      public Builder clearRecoveryId() {
+        bitField0_ = (bitField0_ & ~0x00000004);
+        recoveryId_ = 0L;
+        onChanged();
+        return this;
+      }
+
+      private int protocolVersion_ ;
+      /**
+       * <code>optional int32 protocolVersion = 4;</code>
+       */
+      public boolean hasProtocolVersion() {
+        return ((bitField0_ & 0x00000008) == 0x00000008);
+      }
+      /**
+       * <code>optional int32 protocolVersion = 4;</code>
+       */
+      public int getProtocolVersion() {
+        return protocolVersion_;
+      }
+      /**
+       * <code>optional int32 protocolVersion = 4;</code>
+       */
+      public Builder setProtocolVersion(int value) {
+        bitField0_ |= 0x00000008;
+        protocolVersion_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional int32 protocolVersion = 4;</code>
+       */
+      public Builder clearProtocolVersion() {
+        bitField0_ = (bitField0_ & ~0x00000008);
+        protocolVersion_ = 0;
+        onChanged();
+        return this;
+      }
+
+      private int globalPartitionCount_ ;
+      /**
+       * <code>optional int32 globalPartitionCount = 5;</code>
+       */
+      public boolean hasGlobalPartitionCount() {
+        return ((bitField0_ & 0x00000010) == 0x00000010);
+      }
+      /**
+       * <code>optional int32 globalPartitionCount = 5;</code>
+       */
+      public int getGlobalPartitionCount() {
+        return globalPartitionCount_;
+      }
+      /**
+       * <code>optional int32 globalPartitionCount = 5;</code>
+       */
+      public Builder setGlobalPartitionCount(int value) {
+        bitField0_ |= 0x00000010;
+        globalPartitionCount_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional int32 globalPartitionCount = 5;</code>
+       */
+      public Builder clearGlobalPartitionCount() {
+        bitField0_ = (bitField0_ & ~0x00000010);
+        globalPartitionCount_ = 0;
+        onChanged();
+        return this;
+      }
+
+      private java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo> nodeInfo_ =
+        java.util.Collections.emptyList();
+      private void ensureNodeInfoIsMutable() {
+        if (!((bitField0_ & 0x00000020) == 0x00000020)) {
+          nodeInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.NodeInfo>(nodeInfo_);
+          bitField0_ |= 0x00000020;
+         }
+      }
+
+      private com.google.protobuf.RepeatedFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.NodeInfo, org.voltdb.pmsg.DRAgent.NodeInfo.Builder, org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> nodeInfoBuilder_;
+
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo> getNodeInfoList() {
+        if (nodeInfoBuilder_ == null) {
+          return java.util.Collections.unmodifiableList(nodeInfo_);
+        } else {
+          return nodeInfoBuilder_.getMessageList();
+        }
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public int getNodeInfoCount() {
+        if (nodeInfoBuilder_ == null) {
+          return nodeInfo_.size();
+        } else {
+          return nodeInfoBuilder_.getCount();
+        }
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.NodeInfo getNodeInfo(int index) {
+        if (nodeInfoBuilder_ == null) {
+          return nodeInfo_.get(index);
+        } else {
+          return nodeInfoBuilder_.getMessage(index);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public Builder setNodeInfo(
+          int index, org.voltdb.pmsg.DRAgent.NodeInfo value) {
+        if (nodeInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureNodeInfoIsMutable();
+          nodeInfo_.set(index, value);
+          onChanged();
+        } else {
+          nodeInfoBuilder_.setMessage(index, value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public Builder setNodeInfo(
+          int index, org.voltdb.pmsg.DRAgent.NodeInfo.Builder builderForValue) {
+        if (nodeInfoBuilder_ == null) {
+          ensureNodeInfoIsMutable();
+          nodeInfo_.set(index, builderForValue.build());
+          onChanged();
+        } else {
+          nodeInfoBuilder_.setMessage(index, builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public Builder addNodeInfo(org.voltdb.pmsg.DRAgent.NodeInfo value) {
+        if (nodeInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureNodeInfoIsMutable();
+          nodeInfo_.add(value);
+          onChanged();
+        } else {
+          nodeInfoBuilder_.addMessage(value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public Builder addNodeInfo(
+          int index, org.voltdb.pmsg.DRAgent.NodeInfo value) {
+        if (nodeInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensureNodeInfoIsMutable();
+          nodeInfo_.add(index, value);
+          onChanged();
+        } else {
+          nodeInfoBuilder_.addMessage(index, value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public Builder addNodeInfo(
+          org.voltdb.pmsg.DRAgent.NodeInfo.Builder builderForValue) {
+        if (nodeInfoBuilder_ == null) {
+          ensureNodeInfoIsMutable();
+          nodeInfo_.add(builderForValue.build());
+          onChanged();
+        } else {
+          nodeInfoBuilder_.addMessage(builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public Builder addNodeInfo(
+          int index, org.voltdb.pmsg.DRAgent.NodeInfo.Builder builderForValue) {
+        if (nodeInfoBuilder_ == null) {
+          ensureNodeInfoIsMutable();
+          nodeInfo_.add(index, builderForValue.build());
+          onChanged();
+        } else {
+          nodeInfoBuilder_.addMessage(index, builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public Builder addAllNodeInfo(
+          java.lang.Iterable<? extends org.voltdb.pmsg.DRAgent.NodeInfo> values) {
+        if (nodeInfoBuilder_ == null) {
+          ensureNodeInfoIsMutable();
+          com.google.protobuf.AbstractMessageLite.Builder.addAll(
+              values, nodeInfo_);
+          onChanged();
+        } else {
+          nodeInfoBuilder_.addAllMessages(values);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public Builder clearNodeInfo() {
+        if (nodeInfoBuilder_ == null) {
+          nodeInfo_ = java.util.Collections.emptyList();
+          bitField0_ = (bitField0_ & ~0x00000020);
+          onChanged();
+        } else {
+          nodeInfoBuilder_.clear();
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public Builder removeNodeInfo(int index) {
+        if (nodeInfoBuilder_ == null) {
+          ensureNodeInfoIsMutable();
+          nodeInfo_.remove(index);
+          onChanged();
+        } else {
+          nodeInfoBuilder_.remove(index);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.NodeInfo.Builder getNodeInfoBuilder(
+          int index) {
+        return getNodeInfoFieldBuilder().getBuilder(index);
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder getNodeInfoOrBuilder(
+          int index) {
+        if (nodeInfoBuilder_ == null) {
+          return nodeInfo_.get(index);  } else {
+          return nodeInfoBuilder_.getMessageOrBuilder(index);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public java.util.List<? extends org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> 
+           getNodeInfoOrBuilderList() {
+        if (nodeInfoBuilder_ != null) {
+          return nodeInfoBuilder_.getMessageOrBuilderList();
+        } else {
+          return java.util.Collections.unmodifiableList(nodeInfo_);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.NodeInfo.Builder addNodeInfoBuilder() {
+        return getNodeInfoFieldBuilder().addBuilder(
+            org.voltdb.pmsg.DRAgent.NodeInfo.getDefaultInstance());
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.NodeInfo.Builder addNodeInfoBuilder(
+          int index) {
+        return getNodeInfoFieldBuilder().addBuilder(
+            index, org.voltdb.pmsg.DRAgent.NodeInfo.getDefaultInstance());
+      }
+      /**
+       * <code>repeated .pmsg.NodeInfo nodeInfo = 6;</code>
+       */
+      public java.util.List<org.voltdb.pmsg.DRAgent.NodeInfo.Builder> 
+           getNodeInfoBuilderList() {
+        return getNodeInfoFieldBuilder().getBuilderList();
+      }
+      private com.google.protobuf.RepeatedFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.NodeInfo, org.voltdb.pmsg.DRAgent.NodeInfo.Builder, org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder> 
+          getNodeInfoFieldBuilder() {
+        if (nodeInfoBuilder_ == null) {
+          nodeInfoBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.NodeInfo, org.voltdb.pmsg.DRAgent.NodeInfo.Builder, org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder>(
+                  nodeInfo_,
+                  ((bitField0_ & 0x00000020) == 0x00000020),
+                  getParentForChildren(),
+                  isClean());
+          nodeInfo_ = null;
+        }
+        return nodeInfoBuilder_;
+      }
+
+      private java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo> partitionInfo_ =
+        java.util.Collections.emptyList();
+      private void ensurePartitionInfoIsMutable() {
+        if (!((bitField0_ & 0x00000040) == 0x00000040)) {
+          partitionInfo_ = new java.util.ArrayList<org.voltdb.pmsg.DRAgent.PartitionInfo>(partitionInfo_);
+          bitField0_ |= 0x00000040;
+         }
+      }
+
+      private com.google.protobuf.RepeatedFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.PartitionInfo, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder, org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder> partitionInfoBuilder_;
+
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo> getPartitionInfoList() {
+        if (partitionInfoBuilder_ == null) {
+          return java.util.Collections.unmodifiableList(partitionInfo_);
+        } else {
+          return partitionInfoBuilder_.getMessageList();
+        }
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public int getPartitionInfoCount() {
+        if (partitionInfoBuilder_ == null) {
+          return partitionInfo_.size();
+        } else {
+          return partitionInfoBuilder_.getCount();
+        }
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.PartitionInfo getPartitionInfo(int index) {
+        if (partitionInfoBuilder_ == null) {
+          return partitionInfo_.get(index);
+        } else {
+          return partitionInfoBuilder_.getMessage(index);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public Builder setPartitionInfo(
+          int index, org.voltdb.pmsg.DRAgent.PartitionInfo value) {
+        if (partitionInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensurePartitionInfoIsMutable();
+          partitionInfo_.set(index, value);
+          onChanged();
+        } else {
+          partitionInfoBuilder_.setMessage(index, value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public Builder setPartitionInfo(
+          int index, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder builderForValue) {
+        if (partitionInfoBuilder_ == null) {
+          ensurePartitionInfoIsMutable();
+          partitionInfo_.set(index, builderForValue.build());
+          onChanged();
+        } else {
+          partitionInfoBuilder_.setMessage(index, builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public Builder addPartitionInfo(org.voltdb.pmsg.DRAgent.PartitionInfo value) {
+        if (partitionInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensurePartitionInfoIsMutable();
+          partitionInfo_.add(value);
+          onChanged();
+        } else {
+          partitionInfoBuilder_.addMessage(value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public Builder addPartitionInfo(
+          int index, org.voltdb.pmsg.DRAgent.PartitionInfo value) {
+        if (partitionInfoBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          ensurePartitionInfoIsMutable();
+          partitionInfo_.add(index, value);
+          onChanged();
+        } else {
+          partitionInfoBuilder_.addMessage(index, value);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public Builder addPartitionInfo(
+          org.voltdb.pmsg.DRAgent.PartitionInfo.Builder builderForValue) {
+        if (partitionInfoBuilder_ == null) {
+          ensurePartitionInfoIsMutable();
+          partitionInfo_.add(builderForValue.build());
+          onChanged();
+        } else {
+          partitionInfoBuilder_.addMessage(builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public Builder addPartitionInfo(
+          int index, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder builderForValue) {
+        if (partitionInfoBuilder_ == null) {
+          ensurePartitionInfoIsMutable();
+          partitionInfo_.add(index, builderForValue.build());
+          onChanged();
+        } else {
+          partitionInfoBuilder_.addMessage(index, builderForValue.build());
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public Builder addAllPartitionInfo(
+          java.lang.Iterable<? extends org.voltdb.pmsg.DRAgent.PartitionInfo> values) {
+        if (partitionInfoBuilder_ == null) {
+          ensurePartitionInfoIsMutable();
+          com.google.protobuf.AbstractMessageLite.Builder.addAll(
+              values, partitionInfo_);
+          onChanged();
+        } else {
+          partitionInfoBuilder_.addAllMessages(values);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public Builder clearPartitionInfo() {
+        if (partitionInfoBuilder_ == null) {
+          partitionInfo_ = java.util.Collections.emptyList();
+          bitField0_ = (bitField0_ & ~0x00000040);
+          onChanged();
+        } else {
+          partitionInfoBuilder_.clear();
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public Builder removePartitionInfo(int index) {
+        if (partitionInfoBuilder_ == null) {
+          ensurePartitionInfoIsMutable();
+          partitionInfo_.remove(index);
+          onChanged();
+        } else {
+          partitionInfoBuilder_.remove(index);
+        }
+        return this;
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.PartitionInfo.Builder getPartitionInfoBuilder(
+          int index) {
+        return getPartitionInfoFieldBuilder().getBuilder(index);
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder getPartitionInfoOrBuilder(
+          int index) {
+        if (partitionInfoBuilder_ == null) {
+          return partitionInfo_.get(index);  } else {
+          return partitionInfoBuilder_.getMessageOrBuilder(index);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public java.util.List<? extends org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder> 
+           getPartitionInfoOrBuilderList() {
+        if (partitionInfoBuilder_ != null) {
+          return partitionInfoBuilder_.getMessageOrBuilderList();
+        } else {
+          return java.util.Collections.unmodifiableList(partitionInfo_);
+        }
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.PartitionInfo.Builder addPartitionInfoBuilder() {
+        return getPartitionInfoFieldBuilder().addBuilder(
+            org.voltdb.pmsg.DRAgent.PartitionInfo.getDefaultInstance());
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.PartitionInfo.Builder addPartitionInfoBuilder(
+          int index) {
+        return getPartitionInfoFieldBuilder().addBuilder(
+            index, org.voltdb.pmsg.DRAgent.PartitionInfo.getDefaultInstance());
+      }
+      /**
+       * <code>repeated .pmsg.PartitionInfo partitionInfo = 7;</code>
+       */
+      public java.util.List<org.voltdb.pmsg.DRAgent.PartitionInfo.Builder> 
+           getPartitionInfoBuilderList() {
+        return getPartitionInfoFieldBuilder().getBuilderList();
+      }
+      private com.google.protobuf.RepeatedFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.PartitionInfo, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder, org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder> 
+          getPartitionInfoFieldBuilder() {
+        if (partitionInfoBuilder_ == null) {
+          partitionInfoBuilder_ = new com.google.protobuf.RepeatedFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.PartitionInfo, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder, org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder>(
+                  partitionInfo_,
+                  ((bitField0_ & 0x00000040) == 0x00000040),
+                  getParentForChildren(),
+                  isClean());
+          partitionInfo_ = null;
+        }
+        return partitionInfoBuilder_;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
+
+      // @@protoc_insertion_point(builder_scope:pmsg.ClusterInfo)
+    }
+
+    // @@protoc_insertion_point(class_scope:pmsg.ClusterInfo)
+    private static final org.voltdb.pmsg.DRAgent.ClusterInfo DEFAULT_INSTANCE;
+    static {
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.ClusterInfo();
+    }
+
+    public static org.voltdb.pmsg.DRAgent.ClusterInfo getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<ClusterInfo>
+        PARSER = new com.google.protobuf.AbstractParser<ClusterInfo>() {
+      public ClusterInfo parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new ClusterInfo(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<ClusterInfo> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<ClusterInfo> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.ClusterInfo getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
+  }
+
+  public interface NodeInfoOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.NodeInfo)
+      com.google.protobuf.MessageOrBuilder {
+
+    /**
+     * <code>optional string hostname = 1;</code>
+     */
+    boolean hasHostname();
+    /**
+     * <code>optional string hostname = 1;</code>
+     */
+    java.lang.String getHostname();
+    /**
+     * <code>optional string hostname = 1;</code>
+     */
+    com.google.protobuf.ByteString
+        getHostnameBytes();
+
+    /**
+     * <pre>
+     * can be combined with hostname
+     * </pre>
+     *
+     * <code>optional int32 drport = 2;</code>
+     */
+    boolean hasDrport();
+    /**
+     * <pre>
+     * can be combined with hostname
+     * </pre>
+     *
+     * <code>optional int32 drport = 2;</code>
+     */
+    int getDrport();
+
+    /**
+     * <code>optional bool isUp = 3;</code>
+     */
+    boolean hasIsUp();
+    /**
+     * <code>optional bool isUp = 3;</code>
+     */
+    boolean getIsUp();
+  }
+  /**
+   * Protobuf type {@code pmsg.NodeInfo}
+   */
+  public  static final class NodeInfo extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.NodeInfo)
+      NodeInfoOrBuilder {
+    // Use NodeInfo.newBuilder() to construct.
+    private NodeInfo(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
+      super(builder);
+    }
+    private NodeInfo() {
+      hostname_ = "";
+      drport_ = 0;
+      isUp_ = false;
+    }
+
+    @java.lang.Override
+    public final com.google.protobuf.UnknownFieldSet
+    getUnknownFields() {
+      return this.unknownFields;
+    }
+    private NodeInfo(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      this();
+      int mutable_bitField0_ = 0;
+      com.google.protobuf.UnknownFieldSet.Builder unknownFields =
+          com.google.protobuf.UnknownFieldSet.newBuilder();
+      try {
+        boolean done = false;
+        while (!done) {
+          int tag = input.readTag();
+          switch (tag) {
+            case 0:
+              done = true;
+              break;
+            default: {
+              if (!parseUnknownField(input, unknownFields,
+                                     extensionRegistry, tag)) {
+                done = true;
+              }
+              break;
+            }
+            case 10: {
+              com.google.protobuf.ByteString bs = input.readBytes();
+              bitField0_ |= 0x00000001;
+              hostname_ = bs;
+              break;
+            }
+            case 16: {
+              bitField0_ |= 0x00000002;
+              drport_ = input.readInt32();
+              break;
+            }
+            case 24: {
+              bitField0_ |= 0x00000004;
+              isUp_ = input.readBool();
+              break;
+            }
+          }
+        }
+      } catch (com.google.protobuf.InvalidProtocolBufferException e) {
+        throw e.setUnfinishedMessage(this);
+      } catch (java.io.IOException e) {
+        throw new com.google.protobuf.InvalidProtocolBufferException(
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -7100,32 +14687,16 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_NodeInfo_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_NodeInfo_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.NodeInfo.class, org.voltdb.pmsg.DRAgent.NodeInfo.Builder.class);
     }
 
-    public static com.google.protobuf.Parser<NodeInfo> PARSER =
-        new com.google.protobuf.AbstractParser<NodeInfo>() {
-      public NodeInfo parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new NodeInfo(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<NodeInfo> getParserForType() {
-      return PARSER;
-    }
-
     private int bitField0_;
-    // optional string hostname = 1;
     public static final int HOSTNAME_FIELD_NUMBER = 1;
-    private java.lang.Object hostname_;
+    private volatile java.lang.Object hostname_;
     /**
      * <code>optional string hostname = 1;</code>
      */
@@ -7166,47 +14737,49 @@ public final class DRAgent {
       }
     }
 
-    // optional int32 drport = 2;
     public static final int DRPORT_FIELD_NUMBER = 2;
     private int drport_;
     /**
+     * <pre>
+     * can be combined with hostname
+     * </pre>
+     *
      * <code>optional int32 drport = 2;</code>
      */
     public boolean hasDrport() {
       return ((bitField0_ & 0x00000002) == 0x00000002);
     }
     /**
+     * <pre>
+     * can be combined with hostname
+     * </pre>
+     *
      * <code>optional int32 drport = 2;</code>
      */
     public int getDrport() {
       return drport_;
     }
 
-    // optional fixed64 catalogCRC = 3;
-    public static final int CATALOGCRC_FIELD_NUMBER = 3;
-    private long catalogCRC_;
+    public static final int ISUP_FIELD_NUMBER = 3;
+    private boolean isUp_;
     /**
-     * <code>optional fixed64 catalogCRC = 3;</code>
+     * <code>optional bool isUp = 3;</code>
      */
-    public boolean hasCatalogCRC() {
+    public boolean hasIsUp() {
       return ((bitField0_ & 0x00000004) == 0x00000004);
     }
     /**
-     * <code>optional fixed64 catalogCRC = 3;</code>
+     * <code>optional bool isUp = 3;</code>
      */
-    public long getCatalogCRC() {
-      return catalogCRC_;
+    public boolean getIsUp() {
+      return isUp_;
     }
 
-    private void initFields() {
-      hostname_ = "";
-      drport_ = 0;
-      catalogCRC_ = 0L;
-    }
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -7214,28 +14787,25 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
-        output.writeBytes(1, getHostnameBytes());
+        com.google.protobuf.GeneratedMessageV3.writeString(output, 1, hostname_);
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         output.writeInt32(2, drport_);
       }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
-        output.writeFixed64(3, catalogCRC_);
+        output.writeBool(3, isUp_);
       }
-      getUnknownFields().writeTo(output);
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeBytesSize(1, getHostnameBytes());
+        size += com.google.protobuf.GeneratedMessageV3.computeStringSize(1, hostname_);
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         size += com.google.protobuf.CodedOutputStream
@@ -7243,18 +14813,67 @@ public final class DRAgent {
       }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeFixed64Size(3, catalogCRC_);
+          .computeBoolSize(3, isUp_);
       }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.NodeInfo)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.NodeInfo other = (org.voltdb.pmsg.DRAgent.NodeInfo) obj;
+
+      boolean result = true;
+      result = result && (hasHostname() == other.hasHostname());
+      if (hasHostname()) {
+        result = result && getHostname()
+            .equals(other.getHostname());
+      }
+      result = result && (hasDrport() == other.hasDrport());
+      if (hasDrport()) {
+        result = result && (getDrport()
+            == other.getDrport());
+      }
+      result = result && (hasIsUp() == other.hasIsUp());
+      if (hasIsUp()) {
+        result = result && (getIsUp()
+            == other.getIsUp());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasHostname()) {
+        hash = (37 * hash) + HOSTNAME_FIELD_NUMBER;
+        hash = (53 * hash) + getHostname().hashCode();
+      }
+      if (hasDrport()) {
+        hash = (37 * hash) + DRPORT_FIELD_NUMBER;
+        hash = (53 * hash) + getDrport();
+      }
+      if (hasIsUp()) {
+        hash = (37 * hash) + ISUP_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getIsUp());
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.NodeInfo parseFrom(
@@ -7280,46 +14899,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.NodeInfo parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.NodeInfo parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.NodeInfo parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.NodeInfo parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.NodeInfo parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.NodeInfo parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.NodeInfo prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.NodeInfo prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -7327,14 +14957,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.NodeInfo}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.NodeInfo)
+        org.voltdb.pmsg.DRAgent.NodeInfoOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_NodeInfo_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_NodeInfo_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -7347,31 +14978,24 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
         hostname_ = "";
         bitField0_ = (bitField0_ & ~0x00000001);
         drport_ = 0;
         bitField0_ = (bitField0_ & ~0x00000002);
-        catalogCRC_ = 0L;
+        isUp_ = false;
         bitField0_ = (bitField0_ & ~0x00000004);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -7406,12 +15030,38 @@ public final class DRAgent {
         if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
           to_bitField0_ |= 0x00000004;
         }
-        result.catalogCRC_ = catalogCRC_;
+        result.isUp_ = isUp_;
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.NodeInfo) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.NodeInfo)other);
@@ -7431,10 +15081,11 @@ public final class DRAgent {
         if (other.hasDrport()) {
           setDrport(other.getDrport());
         }
-        if (other.hasCatalogCRC()) {
-          setCatalogCRC(other.getCatalogCRC());
+        if (other.hasIsUp()) {
+          setIsUp(other.getIsUp());
         }
-        this.mergeUnknownFields(other.getUnknownFields());
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
@@ -7451,7 +15102,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.NodeInfo) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -7461,7 +15112,6 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // optional string hostname = 1;
       private java.lang.Object hostname_ = "";
       /**
        * <code>optional string hostname = 1;</code>
@@ -7475,9 +15125,12 @@ public final class DRAgent {
       public java.lang.String getHostname() {
         java.lang.Object ref = hostname_;
         if (!(ref instanceof java.lang.String)) {
-          java.lang.String s = ((com.google.protobuf.ByteString) ref)
-              .toStringUtf8();
-          hostname_ = s;
+          com.google.protobuf.ByteString bs =
+              (com.google.protobuf.ByteString) ref;
+          java.lang.String s = bs.toStringUtf8();
+          if (bs.isValidUtf8()) {
+            hostname_ = s;
+          }
           return s;
         } else {
           return (java.lang.String) ref;
@@ -7535,21 +15188,32 @@ public final class DRAgent {
         return this;
       }
 
-      // optional int32 drport = 2;
       private int drport_ ;
       /**
+       * <pre>
+       * can be combined with hostname
+       * </pre>
+       *
        * <code>optional int32 drport = 2;</code>
        */
       public boolean hasDrport() {
         return ((bitField0_ & 0x00000002) == 0x00000002);
       }
       /**
+       * <pre>
+       * can be combined with hostname
+       * </pre>
+       *
        * <code>optional int32 drport = 2;</code>
        */
       public int getDrport() {
         return drport_;
       }
       /**
+       * <pre>
+       * can be combined with hostname
+       * </pre>
+       *
        * <code>optional int32 drport = 2;</code>
        */
       public Builder setDrport(int value) {
@@ -7559,6 +15223,10 @@ public final class DRAgent {
         return this;
       }
       /**
+       * <pre>
+       * can be combined with hostname
+       * </pre>
+       *
        * <code>optional int32 drport = 2;</code>
        */
       public Builder clearDrport() {
@@ -7568,228 +15236,168 @@ public final class DRAgent {
         return this;
       }
 
-      // optional fixed64 catalogCRC = 3;
-      private long catalogCRC_ ;
+      private boolean isUp_ ;
       /**
-       * <code>optional fixed64 catalogCRC = 3;</code>
+       * <code>optional bool isUp = 3;</code>
        */
-      public boolean hasCatalogCRC() {
+      public boolean hasIsUp() {
         return ((bitField0_ & 0x00000004) == 0x00000004);
       }
       /**
-       * <code>optional fixed64 catalogCRC = 3;</code>
+       * <code>optional bool isUp = 3;</code>
        */
-      public long getCatalogCRC() {
-        return catalogCRC_;
+      public boolean getIsUp() {
+        return isUp_;
       }
       /**
-       * <code>optional fixed64 catalogCRC = 3;</code>
+       * <code>optional bool isUp = 3;</code>
        */
-      public Builder setCatalogCRC(long value) {
+      public Builder setIsUp(boolean value) {
         bitField0_ |= 0x00000004;
-        catalogCRC_ = value;
+        isUp_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>optional fixed64 catalogCRC = 3;</code>
+       * <code>optional bool isUp = 3;</code>
        */
-      public Builder clearCatalogCRC() {
+      public Builder clearIsUp() {
         bitField0_ = (bitField0_ & ~0x00000004);
-        catalogCRC_ = 0L;
+        isUp_ = false;
         onChanged();
         return this;
       }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
 
       // @@protoc_insertion_point(builder_scope:pmsg.NodeInfo)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.NodeInfo)
+    private static final org.voltdb.pmsg.DRAgent.NodeInfo DEFAULT_INSTANCE;
     static {
-      defaultInstance = new NodeInfo(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.NodeInfo();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.NodeInfo)
+    public static org.voltdb.pmsg.DRAgent.NodeInfo getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<NodeInfo>
+        PARSER = new com.google.protobuf.AbstractParser<NodeInfo>() {
+      public NodeInfo parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new NodeInfo(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<NodeInfo> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<NodeInfo> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.NodeInfo getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface PartitionInfoOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface PartitionInfoOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.PartitionInfo)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional int32 partitionId = 1;
     /**
+     * <pre>
+     * should be required
+     * </pre>
+     *
      * <code>optional int32 partitionId = 1;</code>
      */
     boolean hasPartitionId();
     /**
+     * <pre>
+     * should be required
+     * </pre>
+     *
      * <code>optional int32 partitionId = 1;</code>
      */
     int getPartitionId();
 
-    // optional fixed64 lastSentTimestamp = 2;
     /**
-     * <code>optional fixed64 lastSentTimestamp = 2;</code>
-     *
-     * <pre>
-     * info for active replication
-     * </pre>
-     */
-    boolean hasLastSentTimestamp();
-    /**
-     * <code>optional fixed64 lastSentTimestamp = 2;</code>
-     *
-     * <pre>
-     * info for active replication
-     * </pre>
-     */
-    long getLastSentTimestamp();
-
-    // optional int64 lowestTupleIndex = 3;
-    /**
-     * <code>optional int64 lowestTupleIndex = 3;</code>
-     *
-     * <pre>
-     * info for syncing snapshots
-     * </pre>
-     */
-    boolean hasLowestTupleIndex();
-    /**
-     * <code>optional int64 lowestTupleIndex = 3;</code>
-     *
-     * <pre>
-     * info for syncing snapshots
-     * </pre>
-     */
-    long getLowestTupleIndex();
-
-    // optional int64 lastSentTupleIndex = 4;
-    /**
-     * <code>optional int64 lastSentTupleIndex = 4;</code>
-     */
-    boolean hasLastSentTupleIndex();
-    /**
-     * <code>optional int64 lastSentTupleIndex = 4;</code>
-     */
-    long getLastSentTupleIndex();
-
-    // optional int64 totalTupleCount = 5;
-    /**
-     * <code>optional int64 totalTupleCount = 5;</code>
-     */
-    boolean hasTotalTupleCount();
-    /**
-     * <code>optional int64 totalTupleCount = 5;</code>
-     */
-    long getTotalTupleCount();
-
-    // optional int64 outstandingBufferCount = 6;
-    /**
-     * <code>optional int64 outstandingBufferCount = 6;</code>
-     *
-     * <pre>
-     * common info
-     * </pre>
-     */
-    boolean hasOutstandingBufferCount();
-    /**
-     * <code>optional int64 outstandingBufferCount = 6;</code>
-     *
-     * <pre>
-     * common info
-     * </pre>
-     */
-    long getOutstandingBufferCount();
-
-    // optional int64 outstandingByteCount = 7;
-    /**
-     * <code>optional int64 outstandingByteCount = 7;</code>
-     */
-    boolean hasOutstandingByteCount();
-    /**
-     * <code>optional int64 outstandingByteCount = 7;</code>
-     */
-    long getOutstandingByteCount();
-
-    // optional bool isPaused = 8;
-    /**
-     * <code>optional bool isPaused = 8;</code>
-     */
-    boolean hasIsPaused();
-    /**
-     * <code>optional bool isPaused = 8;</code>
-     */
-    boolean getIsPaused();
-
-    // optional bool isSynced = 9;
-    /**
-     * <code>optional bool isSynced = 9;</code>
-     */
-    boolean hasIsSynced();
-    /**
-     * <code>optional bool isSynced = 9;</code>
-     */
-    boolean getIsSynced();
-
-    // optional int64 nextUniqueId = 10;
-    /**
-     * <code>optional int64 nextUniqueId = 10;</code>
-     *
      * <pre>
      * info for event synchronization
      * </pre>
+     *
+     * <code>optional int64 nextUniqueId = 10;</code>
      */
     boolean hasNextUniqueId();
     /**
-     * <code>optional int64 nextUniqueId = 10;</code>
-     *
      * <pre>
      * info for event synchronization
      * </pre>
+     *
+     * <code>optional int64 nextUniqueId = 10;</code>
      */
     long getNextUniqueId();
 
-    // optional bool isEnded = 11;
     /**
-     * <code>optional bool isEnded = 11;</code>
+     * <pre>
+     * for backward compatibility only
+     * </pre>
+     *
+     * <code>optional bool isSynced = 9 [default = true];</code>
      */
-    boolean hasIsEnded();
+    boolean hasIsSynced();
     /**
-     * <code>optional bool isEnded = 11;</code>
+     * <pre>
+     * for backward compatibility only
+     * </pre>
+     *
+     * <code>optional bool isSynced = 9 [default = true];</code>
      */
-    boolean getIsEnded();
+    boolean getIsSynced();
   }
   /**
    * Protobuf type {@code pmsg.PartitionInfo}
    */
-  public static final class PartitionInfo extends
-      com.google.protobuf.GeneratedMessage
-      implements PartitionInfoOrBuilder {
+  public  static final class PartitionInfo extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.PartitionInfo)
+      PartitionInfoOrBuilder {
     // Use PartitionInfo.newBuilder() to construct.
-    private PartitionInfo(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    private PartitionInfo(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private PartitionInfo(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final PartitionInfo defaultInstance;
-    public static PartitionInfo getDefaultInstance() {
-      return defaultInstance;
+    private PartitionInfo() {
+      partitionId_ = 0;
+      nextUniqueId_ = 0L;
+      isSynced_ = true;
     }
 
-    public PartitionInfo getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
     private PartitionInfo(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -7813,54 +15421,14 @@ public final class DRAgent {
               partitionId_ = input.readInt32();
               break;
             }
-            case 17: {
-              bitField0_ |= 0x00000002;
-              lastSentTimestamp_ = input.readFixed64();
-              break;
-            }
-            case 24: {
-              bitField0_ |= 0x00000004;
-              lowestTupleIndex_ = input.readInt64();
-              break;
-            }
-            case 32: {
-              bitField0_ |= 0x00000008;
-              lastSentTupleIndex_ = input.readInt64();
-              break;
-            }
-            case 40: {
-              bitField0_ |= 0x00000010;
-              totalTupleCount_ = input.readInt64();
-              break;
-            }
-            case 48: {
-              bitField0_ |= 0x00000020;
-              outstandingBufferCount_ = input.readInt64();
-              break;
-            }
-            case 56: {
-              bitField0_ |= 0x00000040;
-              outstandingByteCount_ = input.readInt64();
-              break;
-            }
-            case 64: {
-              bitField0_ |= 0x00000080;
-              isPaused_ = input.readBool();
-              break;
-            }
             case 72: {
-              bitField0_ |= 0x00000100;
+              bitField0_ |= 0x00000004;
               isSynced_ = input.readBool();
               break;
             }
             case 80: {
-              bitField0_ |= 0x00000200;
+              bitField0_ |= 0x00000002;
               nextUniqueId_ = input.readInt64();
-              break;
-            }
-            case 88: {
-              bitField0_ |= 0x00000400;
-              isEnded_ = input.readBool();
               break;
             }
           }
@@ -7869,7 +15437,7 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -7880,254 +15448,88 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_PartitionInfo_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_PartitionInfo_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.PartitionInfo.class, org.voltdb.pmsg.DRAgent.PartitionInfo.Builder.class);
     }
 
-    public static com.google.protobuf.Parser<PartitionInfo> PARSER =
-        new com.google.protobuf.AbstractParser<PartitionInfo>() {
-      public PartitionInfo parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new PartitionInfo(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<PartitionInfo> getParserForType() {
-      return PARSER;
-    }
-
     private int bitField0_;
-    // optional int32 partitionId = 1;
     public static final int PARTITIONID_FIELD_NUMBER = 1;
     private int partitionId_;
     /**
+     * <pre>
+     * should be required
+     * </pre>
+     *
      * <code>optional int32 partitionId = 1;</code>
      */
     public boolean hasPartitionId() {
       return ((bitField0_ & 0x00000001) == 0x00000001);
     }
     /**
+     * <pre>
+     * should be required
+     * </pre>
+     *
      * <code>optional int32 partitionId = 1;</code>
      */
     public int getPartitionId() {
       return partitionId_;
     }
 
-    // optional fixed64 lastSentTimestamp = 2;
-    public static final int LASTSENTTIMESTAMP_FIELD_NUMBER = 2;
-    private long lastSentTimestamp_;
-    /**
-     * <code>optional fixed64 lastSentTimestamp = 2;</code>
-     *
-     * <pre>
-     * info for active replication
-     * </pre>
-     */
-    public boolean hasLastSentTimestamp() {
-      return ((bitField0_ & 0x00000002) == 0x00000002);
-    }
-    /**
-     * <code>optional fixed64 lastSentTimestamp = 2;</code>
-     *
-     * <pre>
-     * info for active replication
-     * </pre>
-     */
-    public long getLastSentTimestamp() {
-      return lastSentTimestamp_;
-    }
-
-    // optional int64 lowestTupleIndex = 3;
-    public static final int LOWESTTUPLEINDEX_FIELD_NUMBER = 3;
-    private long lowestTupleIndex_;
-    /**
-     * <code>optional int64 lowestTupleIndex = 3;</code>
-     *
-     * <pre>
-     * info for syncing snapshots
-     * </pre>
-     */
-    public boolean hasLowestTupleIndex() {
-      return ((bitField0_ & 0x00000004) == 0x00000004);
-    }
-    /**
-     * <code>optional int64 lowestTupleIndex = 3;</code>
-     *
-     * <pre>
-     * info for syncing snapshots
-     * </pre>
-     */
-    public long getLowestTupleIndex() {
-      return lowestTupleIndex_;
-    }
-
-    // optional int64 lastSentTupleIndex = 4;
-    public static final int LASTSENTTUPLEINDEX_FIELD_NUMBER = 4;
-    private long lastSentTupleIndex_;
-    /**
-     * <code>optional int64 lastSentTupleIndex = 4;</code>
-     */
-    public boolean hasLastSentTupleIndex() {
-      return ((bitField0_ & 0x00000008) == 0x00000008);
-    }
-    /**
-     * <code>optional int64 lastSentTupleIndex = 4;</code>
-     */
-    public long getLastSentTupleIndex() {
-      return lastSentTupleIndex_;
-    }
-
-    // optional int64 totalTupleCount = 5;
-    public static final int TOTALTUPLECOUNT_FIELD_NUMBER = 5;
-    private long totalTupleCount_;
-    /**
-     * <code>optional int64 totalTupleCount = 5;</code>
-     */
-    public boolean hasTotalTupleCount() {
-      return ((bitField0_ & 0x00000010) == 0x00000010);
-    }
-    /**
-     * <code>optional int64 totalTupleCount = 5;</code>
-     */
-    public long getTotalTupleCount() {
-      return totalTupleCount_;
-    }
-
-    // optional int64 outstandingBufferCount = 6;
-    public static final int OUTSTANDINGBUFFERCOUNT_FIELD_NUMBER = 6;
-    private long outstandingBufferCount_;
-    /**
-     * <code>optional int64 outstandingBufferCount = 6;</code>
-     *
-     * <pre>
-     * common info
-     * </pre>
-     */
-    public boolean hasOutstandingBufferCount() {
-      return ((bitField0_ & 0x00000020) == 0x00000020);
-    }
-    /**
-     * <code>optional int64 outstandingBufferCount = 6;</code>
-     *
-     * <pre>
-     * common info
-     * </pre>
-     */
-    public long getOutstandingBufferCount() {
-      return outstandingBufferCount_;
-    }
-
-    // optional int64 outstandingByteCount = 7;
-    public static final int OUTSTANDINGBYTECOUNT_FIELD_NUMBER = 7;
-    private long outstandingByteCount_;
-    /**
-     * <code>optional int64 outstandingByteCount = 7;</code>
-     */
-    public boolean hasOutstandingByteCount() {
-      return ((bitField0_ & 0x00000040) == 0x00000040);
-    }
-    /**
-     * <code>optional int64 outstandingByteCount = 7;</code>
-     */
-    public long getOutstandingByteCount() {
-      return outstandingByteCount_;
-    }
-
-    // optional bool isPaused = 8;
-    public static final int ISPAUSED_FIELD_NUMBER = 8;
-    private boolean isPaused_;
-    /**
-     * <code>optional bool isPaused = 8;</code>
-     */
-    public boolean hasIsPaused() {
-      return ((bitField0_ & 0x00000080) == 0x00000080);
-    }
-    /**
-     * <code>optional bool isPaused = 8;</code>
-     */
-    public boolean getIsPaused() {
-      return isPaused_;
-    }
-
-    // optional bool isSynced = 9;
-    public static final int ISSYNCED_FIELD_NUMBER = 9;
-    private boolean isSynced_;
-    /**
-     * <code>optional bool isSynced = 9;</code>
-     */
-    public boolean hasIsSynced() {
-      return ((bitField0_ & 0x00000100) == 0x00000100);
-    }
-    /**
-     * <code>optional bool isSynced = 9;</code>
-     */
-    public boolean getIsSynced() {
-      return isSynced_;
-    }
-
-    // optional int64 nextUniqueId = 10;
     public static final int NEXTUNIQUEID_FIELD_NUMBER = 10;
     private long nextUniqueId_;
     /**
-     * <code>optional int64 nextUniqueId = 10;</code>
-     *
      * <pre>
      * info for event synchronization
      * </pre>
+     *
+     * <code>optional int64 nextUniqueId = 10;</code>
      */
     public boolean hasNextUniqueId() {
-      return ((bitField0_ & 0x00000200) == 0x00000200);
+      return ((bitField0_ & 0x00000002) == 0x00000002);
     }
     /**
-     * <code>optional int64 nextUniqueId = 10;</code>
-     *
      * <pre>
      * info for event synchronization
      * </pre>
+     *
+     * <code>optional int64 nextUniqueId = 10;</code>
      */
     public long getNextUniqueId() {
       return nextUniqueId_;
     }
 
-    // optional bool isEnded = 11;
-    public static final int ISENDED_FIELD_NUMBER = 11;
-    private boolean isEnded_;
+    public static final int ISSYNCED_FIELD_NUMBER = 9;
+    private boolean isSynced_;
     /**
-     * <code>optional bool isEnded = 11;</code>
+     * <pre>
+     * for backward compatibility only
+     * </pre>
+     *
+     * <code>optional bool isSynced = 9 [default = true];</code>
      */
-    public boolean hasIsEnded() {
-      return ((bitField0_ & 0x00000400) == 0x00000400);
+    public boolean hasIsSynced() {
+      return ((bitField0_ & 0x00000004) == 0x00000004);
     }
     /**
-     * <code>optional bool isEnded = 11;</code>
+     * <pre>
+     * for backward compatibility only
+     * </pre>
+     *
+     * <code>optional bool isSynced = 9 [default = true];</code>
      */
-    public boolean getIsEnded() {
-      return isEnded_;
+    public boolean getIsSynced() {
+      return isSynced_;
     }
 
-    private void initFields() {
-      partitionId_ = 0;
-      lastSentTimestamp_ = 0L;
-      lowestTupleIndex_ = 0L;
-      lastSentTupleIndex_ = 0L;
-      totalTupleCount_ = 0L;
-      outstandingBufferCount_ = 0L;
-      outstandingByteCount_ = 0L;
-      isPaused_ = false;
-      isSynced_ = false;
-      nextUniqueId_ = 0L;
-      isEnded_ = false;
-    }
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -8135,46 +15537,20 @@ public final class DRAgent {
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         output.writeInt32(1, partitionId_);
       }
-      if (((bitField0_ & 0x00000002) == 0x00000002)) {
-        output.writeFixed64(2, lastSentTimestamp_);
-      }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
-        output.writeInt64(3, lowestTupleIndex_);
-      }
-      if (((bitField0_ & 0x00000008) == 0x00000008)) {
-        output.writeInt64(4, lastSentTupleIndex_);
-      }
-      if (((bitField0_ & 0x00000010) == 0x00000010)) {
-        output.writeInt64(5, totalTupleCount_);
-      }
-      if (((bitField0_ & 0x00000020) == 0x00000020)) {
-        output.writeInt64(6, outstandingBufferCount_);
-      }
-      if (((bitField0_ & 0x00000040) == 0x00000040)) {
-        output.writeInt64(7, outstandingByteCount_);
-      }
-      if (((bitField0_ & 0x00000080) == 0x00000080)) {
-        output.writeBool(8, isPaused_);
-      }
-      if (((bitField0_ & 0x00000100) == 0x00000100)) {
         output.writeBool(9, isSynced_);
       }
-      if (((bitField0_ & 0x00000200) == 0x00000200)) {
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
         output.writeInt64(10, nextUniqueId_);
       }
-      if (((bitField0_ & 0x00000400) == 0x00000400)) {
-        output.writeBool(11, isEnded_);
-      }
-      getUnknownFields().writeTo(output);
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
@@ -8182,56 +15558,74 @@ public final class DRAgent {
         size += com.google.protobuf.CodedOutputStream
           .computeInt32Size(1, partitionId_);
       }
-      if (((bitField0_ & 0x00000002) == 0x00000002)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeFixed64Size(2, lastSentTimestamp_);
-      }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeInt64Size(3, lowestTupleIndex_);
-      }
-      if (((bitField0_ & 0x00000008) == 0x00000008)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeInt64Size(4, lastSentTupleIndex_);
-      }
-      if (((bitField0_ & 0x00000010) == 0x00000010)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeInt64Size(5, totalTupleCount_);
-      }
-      if (((bitField0_ & 0x00000020) == 0x00000020)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeInt64Size(6, outstandingBufferCount_);
-      }
-      if (((bitField0_ & 0x00000040) == 0x00000040)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeInt64Size(7, outstandingByteCount_);
-      }
-      if (((bitField0_ & 0x00000080) == 0x00000080)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(8, isPaused_);
-      }
-      if (((bitField0_ & 0x00000100) == 0x00000100)) {
         size += com.google.protobuf.CodedOutputStream
           .computeBoolSize(9, isSynced_);
       }
-      if (((bitField0_ & 0x00000200) == 0x00000200)) {
+      if (((bitField0_ & 0x00000002) == 0x00000002)) {
         size += com.google.protobuf.CodedOutputStream
           .computeInt64Size(10, nextUniqueId_);
       }
-      if (((bitField0_ & 0x00000400) == 0x00000400)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(11, isEnded_);
-      }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.PartitionInfo)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.PartitionInfo other = (org.voltdb.pmsg.DRAgent.PartitionInfo) obj;
+
+      boolean result = true;
+      result = result && (hasPartitionId() == other.hasPartitionId());
+      if (hasPartitionId()) {
+        result = result && (getPartitionId()
+            == other.getPartitionId());
+      }
+      result = result && (hasNextUniqueId() == other.hasNextUniqueId());
+      if (hasNextUniqueId()) {
+        result = result && (getNextUniqueId()
+            == other.getNextUniqueId());
+      }
+      result = result && (hasIsSynced() == other.hasIsSynced());
+      if (hasIsSynced()) {
+        result = result && (getIsSynced()
+            == other.getIsSynced());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasPartitionId()) {
+        hash = (37 * hash) + PARTITIONID_FIELD_NUMBER;
+        hash = (53 * hash) + getPartitionId();
+      }
+      if (hasNextUniqueId()) {
+        hash = (37 * hash) + NEXTUNIQUEID_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
+            getNextUniqueId());
+      }
+      if (hasIsSynced()) {
+        hash = (37 * hash) + ISSYNCED_FIELD_NUMBER;
+        hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+            getIsSynced());
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.PartitionInfo parseFrom(
@@ -8257,46 +15651,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.PartitionInfo parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.PartitionInfo parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.PartitionInfo parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.PartitionInfo parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.PartitionInfo parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.PartitionInfo parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.PartitionInfo prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.PartitionInfo prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -8304,14 +15709,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.PartitionInfo}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.PartitionInfo)
+        org.voltdb.pmsg.DRAgent.PartitionInfoOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_PartitionInfo_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_PartitionInfo_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -8324,47 +15730,24 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
         partitionId_ = 0;
         bitField0_ = (bitField0_ & ~0x00000001);
-        lastSentTimestamp_ = 0L;
-        bitField0_ = (bitField0_ & ~0x00000002);
-        lowestTupleIndex_ = 0L;
-        bitField0_ = (bitField0_ & ~0x00000004);
-        lastSentTupleIndex_ = 0L;
-        bitField0_ = (bitField0_ & ~0x00000008);
-        totalTupleCount_ = 0L;
-        bitField0_ = (bitField0_ & ~0x00000010);
-        outstandingBufferCount_ = 0L;
-        bitField0_ = (bitField0_ & ~0x00000020);
-        outstandingByteCount_ = 0L;
-        bitField0_ = (bitField0_ & ~0x00000040);
-        isPaused_ = false;
-        bitField0_ = (bitField0_ & ~0x00000080);
-        isSynced_ = false;
-        bitField0_ = (bitField0_ & ~0x00000100);
         nextUniqueId_ = 0L;
-        bitField0_ = (bitField0_ & ~0x00000200);
-        isEnded_ = false;
-        bitField0_ = (bitField0_ & ~0x00000400);
+        bitField0_ = (bitField0_ & ~0x00000002);
+        isSynced_ = true;
+        bitField0_ = (bitField0_ & ~0x00000004);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -8395,48 +15778,42 @@ public final class DRAgent {
         if (((from_bitField0_ & 0x00000002) == 0x00000002)) {
           to_bitField0_ |= 0x00000002;
         }
-        result.lastSentTimestamp_ = lastSentTimestamp_;
+        result.nextUniqueId_ = nextUniqueId_;
         if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
           to_bitField0_ |= 0x00000004;
         }
-        result.lowestTupleIndex_ = lowestTupleIndex_;
-        if (((from_bitField0_ & 0x00000008) == 0x00000008)) {
-          to_bitField0_ |= 0x00000008;
-        }
-        result.lastSentTupleIndex_ = lastSentTupleIndex_;
-        if (((from_bitField0_ & 0x00000010) == 0x00000010)) {
-          to_bitField0_ |= 0x00000010;
-        }
-        result.totalTupleCount_ = totalTupleCount_;
-        if (((from_bitField0_ & 0x00000020) == 0x00000020)) {
-          to_bitField0_ |= 0x00000020;
-        }
-        result.outstandingBufferCount_ = outstandingBufferCount_;
-        if (((from_bitField0_ & 0x00000040) == 0x00000040)) {
-          to_bitField0_ |= 0x00000040;
-        }
-        result.outstandingByteCount_ = outstandingByteCount_;
-        if (((from_bitField0_ & 0x00000080) == 0x00000080)) {
-          to_bitField0_ |= 0x00000080;
-        }
-        result.isPaused_ = isPaused_;
-        if (((from_bitField0_ & 0x00000100) == 0x00000100)) {
-          to_bitField0_ |= 0x00000100;
-        }
         result.isSynced_ = isSynced_;
-        if (((from_bitField0_ & 0x00000200) == 0x00000200)) {
-          to_bitField0_ |= 0x00000200;
-        }
-        result.nextUniqueId_ = nextUniqueId_;
-        if (((from_bitField0_ & 0x00000400) == 0x00000400)) {
-          to_bitField0_ |= 0x00000400;
-        }
-        result.isEnded_ = isEnded_;
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.PartitionInfo) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.PartitionInfo)other);
@@ -8451,37 +15828,14 @@ public final class DRAgent {
         if (other.hasPartitionId()) {
           setPartitionId(other.getPartitionId());
         }
-        if (other.hasLastSentTimestamp()) {
-          setLastSentTimestamp(other.getLastSentTimestamp());
-        }
-        if (other.hasLowestTupleIndex()) {
-          setLowestTupleIndex(other.getLowestTupleIndex());
-        }
-        if (other.hasLastSentTupleIndex()) {
-          setLastSentTupleIndex(other.getLastSentTupleIndex());
-        }
-        if (other.hasTotalTupleCount()) {
-          setTotalTupleCount(other.getTotalTupleCount());
-        }
-        if (other.hasOutstandingBufferCount()) {
-          setOutstandingBufferCount(other.getOutstandingBufferCount());
-        }
-        if (other.hasOutstandingByteCount()) {
-          setOutstandingByteCount(other.getOutstandingByteCount());
-        }
-        if (other.hasIsPaused()) {
-          setIsPaused(other.getIsPaused());
+        if (other.hasNextUniqueId()) {
+          setNextUniqueId(other.getNextUniqueId());
         }
         if (other.hasIsSynced()) {
           setIsSynced(other.getIsSynced());
         }
-        if (other.hasNextUniqueId()) {
-          setNextUniqueId(other.getNextUniqueId());
-        }
-        if (other.hasIsEnded()) {
-          setIsEnded(other.getIsEnded());
-        }
-        this.mergeUnknownFields(other.getUnknownFields());
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
@@ -8498,7 +15852,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.PartitionInfo) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -8508,21 +15862,32 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // optional int32 partitionId = 1;
       private int partitionId_ ;
       /**
+       * <pre>
+       * should be required
+       * </pre>
+       *
        * <code>optional int32 partitionId = 1;</code>
        */
       public boolean hasPartitionId() {
         return ((bitField0_ & 0x00000001) == 0x00000001);
       }
       /**
+       * <pre>
+       * should be required
+       * </pre>
+       *
        * <code>optional int32 partitionId = 1;</code>
        */
       public int getPartitionId() {
         return partitionId_;
       }
       /**
+       * <pre>
+       * should be required
+       * </pre>
+       *
        * <code>optional int32 partitionId = 1;</code>
        */
       public Builder setPartitionId(int value) {
@@ -8532,6 +15897,10 @@ public final class DRAgent {
         return this;
       }
       /**
+       * <pre>
+       * should be required
+       * </pre>
+       *
        * <code>optional int32 partitionId = 1;</code>
        */
       public Builder clearPartitionId() {
@@ -8541,415 +15910,154 @@ public final class DRAgent {
         return this;
       }
 
-      // optional fixed64 lastSentTimestamp = 2;
-      private long lastSentTimestamp_ ;
+      private long nextUniqueId_ ;
       /**
-       * <code>optional fixed64 lastSentTimestamp = 2;</code>
-       *
        * <pre>
-       * info for active replication
+       * info for event synchronization
        * </pre>
+       *
+       * <code>optional int64 nextUniqueId = 10;</code>
        */
-      public boolean hasLastSentTimestamp() {
+      public boolean hasNextUniqueId() {
         return ((bitField0_ & 0x00000002) == 0x00000002);
       }
       /**
-       * <code>optional fixed64 lastSentTimestamp = 2;</code>
-       *
-       * <pre>
-       * info for active replication
-       * </pre>
-       */
-      public long getLastSentTimestamp() {
-        return lastSentTimestamp_;
-      }
-      /**
-       * <code>optional fixed64 lastSentTimestamp = 2;</code>
-       *
-       * <pre>
-       * info for active replication
-       * </pre>
-       */
-      public Builder setLastSentTimestamp(long value) {
-        bitField0_ |= 0x00000002;
-        lastSentTimestamp_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional fixed64 lastSentTimestamp = 2;</code>
-       *
-       * <pre>
-       * info for active replication
-       * </pre>
-       */
-      public Builder clearLastSentTimestamp() {
-        bitField0_ = (bitField0_ & ~0x00000002);
-        lastSentTimestamp_ = 0L;
-        onChanged();
-        return this;
-      }
-
-      // optional int64 lowestTupleIndex = 3;
-      private long lowestTupleIndex_ ;
-      /**
-       * <code>optional int64 lowestTupleIndex = 3;</code>
-       *
-       * <pre>
-       * info for syncing snapshots
-       * </pre>
-       */
-      public boolean hasLowestTupleIndex() {
-        return ((bitField0_ & 0x00000004) == 0x00000004);
-      }
-      /**
-       * <code>optional int64 lowestTupleIndex = 3;</code>
-       *
-       * <pre>
-       * info for syncing snapshots
-       * </pre>
-       */
-      public long getLowestTupleIndex() {
-        return lowestTupleIndex_;
-      }
-      /**
-       * <code>optional int64 lowestTupleIndex = 3;</code>
-       *
-       * <pre>
-       * info for syncing snapshots
-       * </pre>
-       */
-      public Builder setLowestTupleIndex(long value) {
-        bitField0_ |= 0x00000004;
-        lowestTupleIndex_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional int64 lowestTupleIndex = 3;</code>
-       *
-       * <pre>
-       * info for syncing snapshots
-       * </pre>
-       */
-      public Builder clearLowestTupleIndex() {
-        bitField0_ = (bitField0_ & ~0x00000004);
-        lowestTupleIndex_ = 0L;
-        onChanged();
-        return this;
-      }
-
-      // optional int64 lastSentTupleIndex = 4;
-      private long lastSentTupleIndex_ ;
-      /**
-       * <code>optional int64 lastSentTupleIndex = 4;</code>
-       */
-      public boolean hasLastSentTupleIndex() {
-        return ((bitField0_ & 0x00000008) == 0x00000008);
-      }
-      /**
-       * <code>optional int64 lastSentTupleIndex = 4;</code>
-       */
-      public long getLastSentTupleIndex() {
-        return lastSentTupleIndex_;
-      }
-      /**
-       * <code>optional int64 lastSentTupleIndex = 4;</code>
-       */
-      public Builder setLastSentTupleIndex(long value) {
-        bitField0_ |= 0x00000008;
-        lastSentTupleIndex_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional int64 lastSentTupleIndex = 4;</code>
-       */
-      public Builder clearLastSentTupleIndex() {
-        bitField0_ = (bitField0_ & ~0x00000008);
-        lastSentTupleIndex_ = 0L;
-        onChanged();
-        return this;
-      }
-
-      // optional int64 totalTupleCount = 5;
-      private long totalTupleCount_ ;
-      /**
-       * <code>optional int64 totalTupleCount = 5;</code>
-       */
-      public boolean hasTotalTupleCount() {
-        return ((bitField0_ & 0x00000010) == 0x00000010);
-      }
-      /**
-       * <code>optional int64 totalTupleCount = 5;</code>
-       */
-      public long getTotalTupleCount() {
-        return totalTupleCount_;
-      }
-      /**
-       * <code>optional int64 totalTupleCount = 5;</code>
-       */
-      public Builder setTotalTupleCount(long value) {
-        bitField0_ |= 0x00000010;
-        totalTupleCount_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional int64 totalTupleCount = 5;</code>
-       */
-      public Builder clearTotalTupleCount() {
-        bitField0_ = (bitField0_ & ~0x00000010);
-        totalTupleCount_ = 0L;
-        onChanged();
-        return this;
-      }
-
-      // optional int64 outstandingBufferCount = 6;
-      private long outstandingBufferCount_ ;
-      /**
-       * <code>optional int64 outstandingBufferCount = 6;</code>
-       *
-       * <pre>
-       * common info
-       * </pre>
-       */
-      public boolean hasOutstandingBufferCount() {
-        return ((bitField0_ & 0x00000020) == 0x00000020);
-      }
-      /**
-       * <code>optional int64 outstandingBufferCount = 6;</code>
-       *
-       * <pre>
-       * common info
-       * </pre>
-       */
-      public long getOutstandingBufferCount() {
-        return outstandingBufferCount_;
-      }
-      /**
-       * <code>optional int64 outstandingBufferCount = 6;</code>
-       *
-       * <pre>
-       * common info
-       * </pre>
-       */
-      public Builder setOutstandingBufferCount(long value) {
-        bitField0_ |= 0x00000020;
-        outstandingBufferCount_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional int64 outstandingBufferCount = 6;</code>
-       *
-       * <pre>
-       * common info
-       * </pre>
-       */
-      public Builder clearOutstandingBufferCount() {
-        bitField0_ = (bitField0_ & ~0x00000020);
-        outstandingBufferCount_ = 0L;
-        onChanged();
-        return this;
-      }
-
-      // optional int64 outstandingByteCount = 7;
-      private long outstandingByteCount_ ;
-      /**
-       * <code>optional int64 outstandingByteCount = 7;</code>
-       */
-      public boolean hasOutstandingByteCount() {
-        return ((bitField0_ & 0x00000040) == 0x00000040);
-      }
-      /**
-       * <code>optional int64 outstandingByteCount = 7;</code>
-       */
-      public long getOutstandingByteCount() {
-        return outstandingByteCount_;
-      }
-      /**
-       * <code>optional int64 outstandingByteCount = 7;</code>
-       */
-      public Builder setOutstandingByteCount(long value) {
-        bitField0_ |= 0x00000040;
-        outstandingByteCount_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional int64 outstandingByteCount = 7;</code>
-       */
-      public Builder clearOutstandingByteCount() {
-        bitField0_ = (bitField0_ & ~0x00000040);
-        outstandingByteCount_ = 0L;
-        onChanged();
-        return this;
-      }
-
-      // optional bool isPaused = 8;
-      private boolean isPaused_ ;
-      /**
-       * <code>optional bool isPaused = 8;</code>
-       */
-      public boolean hasIsPaused() {
-        return ((bitField0_ & 0x00000080) == 0x00000080);
-      }
-      /**
-       * <code>optional bool isPaused = 8;</code>
-       */
-      public boolean getIsPaused() {
-        return isPaused_;
-      }
-      /**
-       * <code>optional bool isPaused = 8;</code>
-       */
-      public Builder setIsPaused(boolean value) {
-        bitField0_ |= 0x00000080;
-        isPaused_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional bool isPaused = 8;</code>
-       */
-      public Builder clearIsPaused() {
-        bitField0_ = (bitField0_ & ~0x00000080);
-        isPaused_ = false;
-        onChanged();
-        return this;
-      }
-
-      // optional bool isSynced = 9;
-      private boolean isSynced_ ;
-      /**
-       * <code>optional bool isSynced = 9;</code>
-       */
-      public boolean hasIsSynced() {
-        return ((bitField0_ & 0x00000100) == 0x00000100);
-      }
-      /**
-       * <code>optional bool isSynced = 9;</code>
-       */
-      public boolean getIsSynced() {
-        return isSynced_;
-      }
-      /**
-       * <code>optional bool isSynced = 9;</code>
-       */
-      public Builder setIsSynced(boolean value) {
-        bitField0_ |= 0x00000100;
-        isSynced_ = value;
-        onChanged();
-        return this;
-      }
-      /**
-       * <code>optional bool isSynced = 9;</code>
-       */
-      public Builder clearIsSynced() {
-        bitField0_ = (bitField0_ & ~0x00000100);
-        isSynced_ = false;
-        onChanged();
-        return this;
-      }
-
-      // optional int64 nextUniqueId = 10;
-      private long nextUniqueId_ ;
-      /**
-       * <code>optional int64 nextUniqueId = 10;</code>
-       *
        * <pre>
        * info for event synchronization
        * </pre>
-       */
-      public boolean hasNextUniqueId() {
-        return ((bitField0_ & 0x00000200) == 0x00000200);
-      }
-      /**
-       * <code>optional int64 nextUniqueId = 10;</code>
        *
-       * <pre>
-       * info for event synchronization
-       * </pre>
+       * <code>optional int64 nextUniqueId = 10;</code>
        */
       public long getNextUniqueId() {
         return nextUniqueId_;
       }
       /**
-       * <code>optional int64 nextUniqueId = 10;</code>
-       *
        * <pre>
        * info for event synchronization
        * </pre>
+       *
+       * <code>optional int64 nextUniqueId = 10;</code>
        */
       public Builder setNextUniqueId(long value) {
-        bitField0_ |= 0x00000200;
+        bitField0_ |= 0x00000002;
         nextUniqueId_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>optional int64 nextUniqueId = 10;</code>
-       *
        * <pre>
        * info for event synchronization
        * </pre>
+       *
+       * <code>optional int64 nextUniqueId = 10;</code>
        */
       public Builder clearNextUniqueId() {
-        bitField0_ = (bitField0_ & ~0x00000200);
+        bitField0_ = (bitField0_ & ~0x00000002);
         nextUniqueId_ = 0L;
         onChanged();
         return this;
       }
 
-      // optional bool isEnded = 11;
-      private boolean isEnded_ ;
+      private boolean isSynced_ = true;
       /**
-       * <code>optional bool isEnded = 11;</code>
+       * <pre>
+       * for backward compatibility only
+       * </pre>
+       *
+       * <code>optional bool isSynced = 9 [default = true];</code>
        */
-      public boolean hasIsEnded() {
-        return ((bitField0_ & 0x00000400) == 0x00000400);
+      public boolean hasIsSynced() {
+        return ((bitField0_ & 0x00000004) == 0x00000004);
       }
       /**
-       * <code>optional bool isEnded = 11;</code>
+       * <pre>
+       * for backward compatibility only
+       * </pre>
+       *
+       * <code>optional bool isSynced = 9 [default = true];</code>
        */
-      public boolean getIsEnded() {
-        return isEnded_;
+      public boolean getIsSynced() {
+        return isSynced_;
       }
       /**
-       * <code>optional bool isEnded = 11;</code>
+       * <pre>
+       * for backward compatibility only
+       * </pre>
+       *
+       * <code>optional bool isSynced = 9 [default = true];</code>
        */
-      public Builder setIsEnded(boolean value) {
-        bitField0_ |= 0x00000400;
-        isEnded_ = value;
+      public Builder setIsSynced(boolean value) {
+        bitField0_ |= 0x00000004;
+        isSynced_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>optional bool isEnded = 11;</code>
+       * <pre>
+       * for backward compatibility only
+       * </pre>
+       *
+       * <code>optional bool isSynced = 9 [default = true];</code>
        */
-      public Builder clearIsEnded() {
-        bitField0_ = (bitField0_ & ~0x00000400);
-        isEnded_ = false;
+      public Builder clearIsSynced() {
+        bitField0_ = (bitField0_ & ~0x00000004);
+        isSynced_ = true;
         onChanged();
         return this;
       }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
 
       // @@protoc_insertion_point(builder_scope:pmsg.PartitionInfo)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.PartitionInfo)
+    private static final org.voltdb.pmsg.DRAgent.PartitionInfo DEFAULT_INSTANCE;
     static {
-      defaultInstance = new PartitionInfo(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.PartitionInfo();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.PartitionInfo)
+    public static org.voltdb.pmsg.DRAgent.PartitionInfo getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<PartitionInfo>
+        PARSER = new com.google.protobuf.AbstractParser<PartitionInfo>() {
+      public PartitionInfo parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new PartitionInfo(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<PartitionInfo> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<PartitionInfo> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.PartitionInfo getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  public interface CtrlEnvelopeOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface CtrlEnvelopeOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:pmsg.CtrlEnvelope)
+      com.google.protobuf.MessageOrBuilder {
 
-    // required .pmsg.CtrlEnvelope.Type type = 1;
     /**
      * <code>required .pmsg.CtrlEnvelope.Type type = 1;</code>
      */
@@ -8959,7 +16067,6 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type getType();
 
-    // required .pmsg.UUID id = 2;
     /**
      * <code>required .pmsg.UUID id = 2;</code>
      */
@@ -8973,7 +16080,6 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.UUIDOrBuilder getIdOrBuilder();
 
-    // optional .pmsg.Ack ack = 3;
     /**
      * <code>optional .pmsg.Ack ack = 3;</code>
      */
@@ -8987,7 +16093,6 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.AckOrBuilder getAckOrBuilder();
 
-    // optional .pmsg.Reset reset = 4;
     /**
      * <code>optional .pmsg.Reset reset = 4;</code>
      */
@@ -9001,7 +16106,6 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.ResetOrBuilder getResetOrBuilder();
 
-    // optional .pmsg.Pause pause = 5;
     /**
      * <code>optional .pmsg.Pause pause = 5;</code>
      */
@@ -9015,7 +16119,6 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.PauseOrBuilder getPauseOrBuilder();
 
-    // optional .pmsg.Response response = 6;
     /**
      * <code>optional .pmsg.Response response = 6;</code>
      */
@@ -9029,7 +16132,6 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.ResponseOrBuilder getResponseOrBuilder();
 
-    // optional .pmsg.SnapshotReq snapshotReq = 7;
     /**
      * <code>optional .pmsg.SnapshotReq snapshotReq = 7;</code>
      */
@@ -9043,7 +16145,6 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.SnapshotReqOrBuilder getSnapshotReqOrBuilder();
 
-    // optional .pmsg.Subscribe subscribe = 8;
     /**
      * <code>optional .pmsg.Subscribe subscribe = 8;</code>
      */
@@ -9057,67 +16158,82 @@ public final class DRAgent {
      */
     org.voltdb.pmsg.DRAgent.SubscribeOrBuilder getSubscribeOrBuilder();
 
-    // optional .pmsg.EventAck eventAck = 9;
     /**
-     * <code>optional .pmsg.EventAck eventAck = 9;</code>
-     */
-    boolean hasEventAck();
-    /**
-     * <code>optional .pmsg.EventAck eventAck = 9;</code>
-     */
-    org.voltdb.pmsg.DRAgent.EventAck getEventAck();
-    /**
-     * <code>optional .pmsg.EventAck eventAck = 9;</code>
-     */
-    org.voltdb.pmsg.DRAgent.EventAckOrBuilder getEventAckOrBuilder();
-
-    // optional .pmsg.Connect connect = 10;
-    /**
+     * <pre>
+     * Intentionally skip field 9 -- deprecated message type
+     * </pre>
+     *
      * <code>optional .pmsg.Connect connect = 10;</code>
      */
     boolean hasConnect();
     /**
+     * <pre>
+     * Intentionally skip field 9 -- deprecated message type
+     * </pre>
+     *
      * <code>optional .pmsg.Connect connect = 10;</code>
      */
     org.voltdb.pmsg.DRAgent.Connect getConnect();
     /**
+     * <pre>
+     * Intentionally skip field 9 -- deprecated message type
+     * </pre>
+     *
      * <code>optional .pmsg.Connect connect = 10;</code>
      */
     org.voltdb.pmsg.DRAgent.ConnectOrBuilder getConnectOrBuilder();
+
+    /**
+     * <code>optional .pmsg.Query query = 11;</code>
+     */
+    boolean hasQuery();
+    /**
+     * <code>optional .pmsg.Query query = 11;</code>
+     */
+    org.voltdb.pmsg.DRAgent.Query getQuery();
+    /**
+     * <code>optional .pmsg.Query query = 11;</code>
+     */
+    org.voltdb.pmsg.DRAgent.QueryOrBuilder getQueryOrBuilder();
+
+    /**
+     * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+     */
+    boolean hasStartCursor();
+    /**
+     * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+     */
+    org.voltdb.pmsg.DRAgent.StartCursor getStartCursor();
+    /**
+     * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+     */
+    org.voltdb.pmsg.DRAgent.StartCursorOrBuilder getStartCursorOrBuilder();
   }
   /**
    * Protobuf type {@code pmsg.CtrlEnvelope}
    */
-  public static final class CtrlEnvelope extends
-      com.google.protobuf.GeneratedMessage
-      implements CtrlEnvelopeOrBuilder {
+  public  static final class CtrlEnvelope extends
+      com.google.protobuf.GeneratedMessageV3 implements
+      // @@protoc_insertion_point(message_implements:pmsg.CtrlEnvelope)
+      CtrlEnvelopeOrBuilder {
     // Use CtrlEnvelope.newBuilder() to construct.
-    private CtrlEnvelope(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+    private CtrlEnvelope(com.google.protobuf.GeneratedMessageV3.Builder<?> builder) {
       super(builder);
-      this.unknownFields = builder.getUnknownFields();
     }
-    private CtrlEnvelope(boolean noInit) { this.unknownFields = com.google.protobuf.UnknownFieldSet.getDefaultInstance(); }
-
-    private static final CtrlEnvelope defaultInstance;
-    public static CtrlEnvelope getDefaultInstance() {
-      return defaultInstance;
+    private CtrlEnvelope() {
+      type_ = 1;
     }
 
-    public CtrlEnvelope getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    private final com.google.protobuf.UnknownFieldSet unknownFields;
     @java.lang.Override
     public final com.google.protobuf.UnknownFieldSet
-        getUnknownFields() {
+    getUnknownFields() {
       return this.unknownFields;
     }
     private CtrlEnvelope(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
-      initFields();
+      this();
       int mutable_bitField0_ = 0;
       com.google.protobuf.UnknownFieldSet.Builder unknownFields =
           com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -9143,7 +16259,7 @@ public final class DRAgent {
                 unknownFields.mergeVarintField(1, rawValue);
               } else {
                 bitField0_ |= 0x00000001;
-                type_ = value;
+                type_ = rawValue;
               }
               break;
             }
@@ -9238,22 +16354,9 @@ public final class DRAgent {
               bitField0_ |= 0x00000080;
               break;
             }
-            case 74: {
-              org.voltdb.pmsg.DRAgent.EventAck.Builder subBuilder = null;
-              if (((bitField0_ & 0x00000100) == 0x00000100)) {
-                subBuilder = eventAck_.toBuilder();
-              }
-              eventAck_ = input.readMessage(org.voltdb.pmsg.DRAgent.EventAck.PARSER, extensionRegistry);
-              if (subBuilder != null) {
-                subBuilder.mergeFrom(eventAck_);
-                eventAck_ = subBuilder.buildPartial();
-              }
-              bitField0_ |= 0x00000100;
-              break;
-            }
             case 82: {
               org.voltdb.pmsg.DRAgent.Connect.Builder subBuilder = null;
-              if (((bitField0_ & 0x00000200) == 0x00000200)) {
+              if (((bitField0_ & 0x00000100) == 0x00000100)) {
                 subBuilder = connect_.toBuilder();
               }
               connect_ = input.readMessage(org.voltdb.pmsg.DRAgent.Connect.PARSER, extensionRegistry);
@@ -9261,7 +16364,33 @@ public final class DRAgent {
                 subBuilder.mergeFrom(connect_);
                 connect_ = subBuilder.buildPartial();
               }
+              bitField0_ |= 0x00000100;
+              break;
+            }
+            case 90: {
+              org.voltdb.pmsg.DRAgent.Query.Builder subBuilder = null;
+              if (((bitField0_ & 0x00000200) == 0x00000200)) {
+                subBuilder = query_.toBuilder();
+              }
+              query_ = input.readMessage(org.voltdb.pmsg.DRAgent.Query.PARSER, extensionRegistry);
+              if (subBuilder != null) {
+                subBuilder.mergeFrom(query_);
+                query_ = subBuilder.buildPartial();
+              }
               bitField0_ |= 0x00000200;
+              break;
+            }
+            case 98: {
+              org.voltdb.pmsg.DRAgent.StartCursor.Builder subBuilder = null;
+              if (((bitField0_ & 0x00000400) == 0x00000400)) {
+                subBuilder = startCursor_.toBuilder();
+              }
+              startCursor_ = input.readMessage(org.voltdb.pmsg.DRAgent.StartCursor.PARSER, extensionRegistry);
+              if (subBuilder != null) {
+                subBuilder.mergeFrom(startCursor_);
+                startCursor_ = subBuilder.buildPartial();
+              }
+              bitField0_ |= 0x00000400;
               break;
             }
           }
@@ -9270,7 +16399,7 @@ public final class DRAgent {
         throw e.setUnfinishedMessage(this);
       } catch (java.io.IOException e) {
         throw new com.google.protobuf.InvalidProtocolBufferException(
-            e.getMessage()).setUnfinishedMessage(this);
+            e).setUnfinishedMessage(this);
       } finally {
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
@@ -9281,26 +16410,11 @@ public final class DRAgent {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_CtrlEnvelope_descriptor;
     }
 
-    protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.voltdb.pmsg.DRAgent.internal_static_pmsg_CtrlEnvelope_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.voltdb.pmsg.DRAgent.CtrlEnvelope.class, org.voltdb.pmsg.DRAgent.CtrlEnvelope.Builder.class);
-    }
-
-    public static com.google.protobuf.Parser<CtrlEnvelope> PARSER =
-        new com.google.protobuf.AbstractParser<CtrlEnvelope>() {
-      public CtrlEnvelope parsePartialFrom(
-          com.google.protobuf.CodedInputStream input,
-          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-          throws com.google.protobuf.InvalidProtocolBufferException {
-        return new CtrlEnvelope(input, extensionRegistry);
-      }
-    };
-
-    @java.lang.Override
-    public com.google.protobuf.Parser<CtrlEnvelope> getParserForType() {
-      return PARSER;
     }
 
     /**
@@ -9311,47 +16425,47 @@ public final class DRAgent {
       /**
        * <code>ACK = 1;</code>
        */
-      ACK(0, 1),
+      ACK(1),
       /**
        * <code>RESET = 2;</code>
        */
-      RESET(1, 2),
+      RESET(2),
       /**
        * <code>PAUSE = 3;</code>
        */
-      PAUSE(2, 3),
+      PAUSE(3),
       /**
        * <code>QUERY = 4;</code>
        */
-      QUERY(3, 4),
+      QUERY(4),
       /**
        * <code>RESPONSE = 5;</code>
        */
-      RESPONSE(4, 5),
+      RESPONSE(5),
       /**
        * <code>SNAPSHOT_REQ = 6;</code>
        */
-      SNAPSHOT_REQ(5, 6),
+      SNAPSHOT_REQ(6),
       /**
        * <code>SNAPSHOT_TERM = 7;</code>
        */
-      SNAPSHOT_TERM(6, 7),
+      SNAPSHOT_TERM(7),
       /**
        * <code>STOP_SYNC = 8;</code>
        */
-      STOP_SYNC(7, 8),
+      STOP_SYNC(8),
       /**
        * <code>CONNECT = 9;</code>
        */
-      CONNECT(8, 9),
+      CONNECT(9),
       /**
        * <code>SUBSCRIBE = 10;</code>
        */
-      SUBSCRIBE(9, 10),
+      SUBSCRIBE(10),
       /**
-       * <code>EVENT_ACK = 11;</code>
+       * <code>START_CURSOR = 11;</code>
        */
-      EVENT_ACK(10, 11),
+      START_CURSOR(11),
       ;
 
       /**
@@ -9395,14 +16509,24 @@ public final class DRAgent {
        */
       public static final int SUBSCRIBE_VALUE = 10;
       /**
-       * <code>EVENT_ACK = 11;</code>
+       * <code>START_CURSOR = 11;</code>
        */
-      public static final int EVENT_ACK_VALUE = 11;
+      public static final int START_CURSOR_VALUE = 11;
 
 
-      public final int getNumber() { return value; }
+      public final int getNumber() {
+        return value;
+      }
 
+      /**
+       * @deprecated Use {@link #forNumber(int)} instead.
+       */
+      @java.lang.Deprecated
       public static Type valueOf(int value) {
+        return forNumber(value);
+      }
+
+      public static Type forNumber(int value) {
         switch (value) {
           case 1: return ACK;
           case 2: return RESET;
@@ -9414,7 +16538,7 @@ public final class DRAgent {
           case 8: return STOP_SYNC;
           case 9: return CONNECT;
           case 10: return SUBSCRIBE;
-          case 11: return EVENT_ACK;
+          case 11: return START_CURSOR;
           default: return null;
         }
       }
@@ -9423,17 +16547,17 @@ public final class DRAgent {
           internalGetValueMap() {
         return internalValueMap;
       }
-      private static com.google.protobuf.Internal.EnumLiteMap<Type>
-          internalValueMap =
+      private static final com.google.protobuf.Internal.EnumLiteMap<
+          Type> internalValueMap =
             new com.google.protobuf.Internal.EnumLiteMap<Type>() {
               public Type findValueByNumber(int number) {
-                return Type.valueOf(number);
+                return Type.forNumber(number);
               }
             };
 
       public final com.google.protobuf.Descriptors.EnumValueDescriptor
           getValueDescriptor() {
-        return getDescriptor().getValues().get(index);
+        return getDescriptor().getValues().get(ordinal());
       }
       public final com.google.protobuf.Descriptors.EnumDescriptor
           getDescriptorForType() {
@@ -9455,11 +16579,9 @@ public final class DRAgent {
         return VALUES[desc.getIndex()];
       }
 
-      private final int index;
       private final int value;
 
-      private Type(int index, int value) {
-        this.index = index;
+      private Type(int value) {
         this.value = value;
       }
 
@@ -9467,9 +16589,8 @@ public final class DRAgent {
     }
 
     private int bitField0_;
-    // required .pmsg.CtrlEnvelope.Type type = 1;
     public static final int TYPE_FIELD_NUMBER = 1;
-    private org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type type_;
+    private int type_;
     /**
      * <code>required .pmsg.CtrlEnvelope.Type type = 1;</code>
      */
@@ -9480,10 +16601,10 @@ public final class DRAgent {
      * <code>required .pmsg.CtrlEnvelope.Type type = 1;</code>
      */
     public org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type getType() {
-      return type_;
+      org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type result = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.valueOf(type_);
+      return result == null ? org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK : result;
     }
 
-    // required .pmsg.UUID id = 2;
     public static final int ID_FIELD_NUMBER = 2;
     private org.voltdb.pmsg.DRAgent.UUID id_;
     /**
@@ -9496,16 +16617,15 @@ public final class DRAgent {
      * <code>required .pmsg.UUID id = 2;</code>
      */
     public org.voltdb.pmsg.DRAgent.UUID getId() {
-      return id_;
+      return id_ == null ? org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
     }
     /**
      * <code>required .pmsg.UUID id = 2;</code>
      */
     public org.voltdb.pmsg.DRAgent.UUIDOrBuilder getIdOrBuilder() {
-      return id_;
+      return id_ == null ? org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
     }
 
-    // optional .pmsg.Ack ack = 3;
     public static final int ACK_FIELD_NUMBER = 3;
     private org.voltdb.pmsg.DRAgent.Ack ack_;
     /**
@@ -9518,16 +16638,15 @@ public final class DRAgent {
      * <code>optional .pmsg.Ack ack = 3;</code>
      */
     public org.voltdb.pmsg.DRAgent.Ack getAck() {
-      return ack_;
+      return ack_ == null ? org.voltdb.pmsg.DRAgent.Ack.getDefaultInstance() : ack_;
     }
     /**
      * <code>optional .pmsg.Ack ack = 3;</code>
      */
     public org.voltdb.pmsg.DRAgent.AckOrBuilder getAckOrBuilder() {
-      return ack_;
+      return ack_ == null ? org.voltdb.pmsg.DRAgent.Ack.getDefaultInstance() : ack_;
     }
 
-    // optional .pmsg.Reset reset = 4;
     public static final int RESET_FIELD_NUMBER = 4;
     private org.voltdb.pmsg.DRAgent.Reset reset_;
     /**
@@ -9540,16 +16659,15 @@ public final class DRAgent {
      * <code>optional .pmsg.Reset reset = 4;</code>
      */
     public org.voltdb.pmsg.DRAgent.Reset getReset() {
-      return reset_;
+      return reset_ == null ? org.voltdb.pmsg.DRAgent.Reset.getDefaultInstance() : reset_;
     }
     /**
      * <code>optional .pmsg.Reset reset = 4;</code>
      */
     public org.voltdb.pmsg.DRAgent.ResetOrBuilder getResetOrBuilder() {
-      return reset_;
+      return reset_ == null ? org.voltdb.pmsg.DRAgent.Reset.getDefaultInstance() : reset_;
     }
 
-    // optional .pmsg.Pause pause = 5;
     public static final int PAUSE_FIELD_NUMBER = 5;
     private org.voltdb.pmsg.DRAgent.Pause pause_;
     /**
@@ -9562,16 +16680,15 @@ public final class DRAgent {
      * <code>optional .pmsg.Pause pause = 5;</code>
      */
     public org.voltdb.pmsg.DRAgent.Pause getPause() {
-      return pause_;
+      return pause_ == null ? org.voltdb.pmsg.DRAgent.Pause.getDefaultInstance() : pause_;
     }
     /**
      * <code>optional .pmsg.Pause pause = 5;</code>
      */
     public org.voltdb.pmsg.DRAgent.PauseOrBuilder getPauseOrBuilder() {
-      return pause_;
+      return pause_ == null ? org.voltdb.pmsg.DRAgent.Pause.getDefaultInstance() : pause_;
     }
 
-    // optional .pmsg.Response response = 6;
     public static final int RESPONSE_FIELD_NUMBER = 6;
     private org.voltdb.pmsg.DRAgent.Response response_;
     /**
@@ -9584,16 +16701,15 @@ public final class DRAgent {
      * <code>optional .pmsg.Response response = 6;</code>
      */
     public org.voltdb.pmsg.DRAgent.Response getResponse() {
-      return response_;
+      return response_ == null ? org.voltdb.pmsg.DRAgent.Response.getDefaultInstance() : response_;
     }
     /**
      * <code>optional .pmsg.Response response = 6;</code>
      */
     public org.voltdb.pmsg.DRAgent.ResponseOrBuilder getResponseOrBuilder() {
-      return response_;
+      return response_ == null ? org.voltdb.pmsg.DRAgent.Response.getDefaultInstance() : response_;
     }
 
-    // optional .pmsg.SnapshotReq snapshotReq = 7;
     public static final int SNAPSHOTREQ_FIELD_NUMBER = 7;
     private org.voltdb.pmsg.DRAgent.SnapshotReq snapshotReq_;
     /**
@@ -9606,16 +16722,15 @@ public final class DRAgent {
      * <code>optional .pmsg.SnapshotReq snapshotReq = 7;</code>
      */
     public org.voltdb.pmsg.DRAgent.SnapshotReq getSnapshotReq() {
-      return snapshotReq_;
+      return snapshotReq_ == null ? org.voltdb.pmsg.DRAgent.SnapshotReq.getDefaultInstance() : snapshotReq_;
     }
     /**
      * <code>optional .pmsg.SnapshotReq snapshotReq = 7;</code>
      */
     public org.voltdb.pmsg.DRAgent.SnapshotReqOrBuilder getSnapshotReqOrBuilder() {
-      return snapshotReq_;
+      return snapshotReq_ == null ? org.voltdb.pmsg.DRAgent.SnapshotReq.getDefaultInstance() : snapshotReq_;
     }
 
-    // optional .pmsg.Subscribe subscribe = 8;
     public static final int SUBSCRIBE_FIELD_NUMBER = 8;
     private org.voltdb.pmsg.DRAgent.Subscribe subscribe_;
     /**
@@ -9628,75 +16743,95 @@ public final class DRAgent {
      * <code>optional .pmsg.Subscribe subscribe = 8;</code>
      */
     public org.voltdb.pmsg.DRAgent.Subscribe getSubscribe() {
-      return subscribe_;
+      return subscribe_ == null ? org.voltdb.pmsg.DRAgent.Subscribe.getDefaultInstance() : subscribe_;
     }
     /**
      * <code>optional .pmsg.Subscribe subscribe = 8;</code>
      */
     public org.voltdb.pmsg.DRAgent.SubscribeOrBuilder getSubscribeOrBuilder() {
-      return subscribe_;
+      return subscribe_ == null ? org.voltdb.pmsg.DRAgent.Subscribe.getDefaultInstance() : subscribe_;
     }
 
-    // optional .pmsg.EventAck eventAck = 9;
-    public static final int EVENTACK_FIELD_NUMBER = 9;
-    private org.voltdb.pmsg.DRAgent.EventAck eventAck_;
-    /**
-     * <code>optional .pmsg.EventAck eventAck = 9;</code>
-     */
-    public boolean hasEventAck() {
-      return ((bitField0_ & 0x00000100) == 0x00000100);
-    }
-    /**
-     * <code>optional .pmsg.EventAck eventAck = 9;</code>
-     */
-    public org.voltdb.pmsg.DRAgent.EventAck getEventAck() {
-      return eventAck_;
-    }
-    /**
-     * <code>optional .pmsg.EventAck eventAck = 9;</code>
-     */
-    public org.voltdb.pmsg.DRAgent.EventAckOrBuilder getEventAckOrBuilder() {
-      return eventAck_;
-    }
-
-    // optional .pmsg.Connect connect = 10;
     public static final int CONNECT_FIELD_NUMBER = 10;
     private org.voltdb.pmsg.DRAgent.Connect connect_;
     /**
+     * <pre>
+     * Intentionally skip field 9 -- deprecated message type
+     * </pre>
+     *
      * <code>optional .pmsg.Connect connect = 10;</code>
      */
     public boolean hasConnect() {
-      return ((bitField0_ & 0x00000200) == 0x00000200);
+      return ((bitField0_ & 0x00000100) == 0x00000100);
     }
     /**
+     * <pre>
+     * Intentionally skip field 9 -- deprecated message type
+     * </pre>
+     *
      * <code>optional .pmsg.Connect connect = 10;</code>
      */
     public org.voltdb.pmsg.DRAgent.Connect getConnect() {
-      return connect_;
+      return connect_ == null ? org.voltdb.pmsg.DRAgent.Connect.getDefaultInstance() : connect_;
     }
     /**
+     * <pre>
+     * Intentionally skip field 9 -- deprecated message type
+     * </pre>
+     *
      * <code>optional .pmsg.Connect connect = 10;</code>
      */
     public org.voltdb.pmsg.DRAgent.ConnectOrBuilder getConnectOrBuilder() {
-      return connect_;
+      return connect_ == null ? org.voltdb.pmsg.DRAgent.Connect.getDefaultInstance() : connect_;
     }
 
-    private void initFields() {
-      type_ = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK;
-      id_ = org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance();
-      ack_ = org.voltdb.pmsg.DRAgent.Ack.getDefaultInstance();
-      reset_ = org.voltdb.pmsg.DRAgent.Reset.getDefaultInstance();
-      pause_ = org.voltdb.pmsg.DRAgent.Pause.getDefaultInstance();
-      response_ = org.voltdb.pmsg.DRAgent.Response.getDefaultInstance();
-      snapshotReq_ = org.voltdb.pmsg.DRAgent.SnapshotReq.getDefaultInstance();
-      subscribe_ = org.voltdb.pmsg.DRAgent.Subscribe.getDefaultInstance();
-      eventAck_ = org.voltdb.pmsg.DRAgent.EventAck.getDefaultInstance();
-      connect_ = org.voltdb.pmsg.DRAgent.Connect.getDefaultInstance();
+    public static final int QUERY_FIELD_NUMBER = 11;
+    private org.voltdb.pmsg.DRAgent.Query query_;
+    /**
+     * <code>optional .pmsg.Query query = 11;</code>
+     */
+    public boolean hasQuery() {
+      return ((bitField0_ & 0x00000200) == 0x00000200);
     }
+    /**
+     * <code>optional .pmsg.Query query = 11;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.Query getQuery() {
+      return query_ == null ? org.voltdb.pmsg.DRAgent.Query.getDefaultInstance() : query_;
+    }
+    /**
+     * <code>optional .pmsg.Query query = 11;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.QueryOrBuilder getQueryOrBuilder() {
+      return query_ == null ? org.voltdb.pmsg.DRAgent.Query.getDefaultInstance() : query_;
+    }
+
+    public static final int STARTCURSOR_FIELD_NUMBER = 12;
+    private org.voltdb.pmsg.DRAgent.StartCursor startCursor_;
+    /**
+     * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+     */
+    public boolean hasStartCursor() {
+      return ((bitField0_ & 0x00000400) == 0x00000400);
+    }
+    /**
+     * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.StartCursor getStartCursor() {
+      return startCursor_ == null ? org.voltdb.pmsg.DRAgent.StartCursor.getDefaultInstance() : startCursor_;
+    }
+    /**
+     * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+     */
+    public org.voltdb.pmsg.DRAgent.StartCursorOrBuilder getStartCursorOrBuilder() {
+      return startCursor_ == null ? org.voltdb.pmsg.DRAgent.StartCursor.getDefaultInstance() : startCursor_;
+    }
+
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       if (!hasType()) {
         memoizedIsInitialized = 0;
@@ -9716,102 +16851,232 @@ public final class DRAgent {
           return false;
         }
       }
+      if (hasStartCursor()) {
+        if (!getStartCursor().isInitialized()) {
+          memoizedIsInitialized = 0;
+          return false;
+        }
+      }
       memoizedIsInitialized = 1;
       return true;
     }
 
     public void writeTo(com.google.protobuf.CodedOutputStream output)
                         throws java.io.IOException {
-      getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
-        output.writeEnum(1, type_.getNumber());
+        output.writeEnum(1, type_);
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
-        output.writeMessage(2, id_);
+        output.writeMessage(2, getId());
       }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
-        output.writeMessage(3, ack_);
+        output.writeMessage(3, getAck());
       }
       if (((bitField0_ & 0x00000008) == 0x00000008)) {
-        output.writeMessage(4, reset_);
+        output.writeMessage(4, getReset());
       }
       if (((bitField0_ & 0x00000010) == 0x00000010)) {
-        output.writeMessage(5, pause_);
+        output.writeMessage(5, getPause());
       }
       if (((bitField0_ & 0x00000020) == 0x00000020)) {
-        output.writeMessage(6, response_);
+        output.writeMessage(6, getResponse());
       }
       if (((bitField0_ & 0x00000040) == 0x00000040)) {
-        output.writeMessage(7, snapshotReq_);
+        output.writeMessage(7, getSnapshotReq());
       }
       if (((bitField0_ & 0x00000080) == 0x00000080)) {
-        output.writeMessage(8, subscribe_);
+        output.writeMessage(8, getSubscribe());
       }
       if (((bitField0_ & 0x00000100) == 0x00000100)) {
-        output.writeMessage(9, eventAck_);
+        output.writeMessage(10, getConnect());
       }
       if (((bitField0_ & 0x00000200) == 0x00000200)) {
-        output.writeMessage(10, connect_);
+        output.writeMessage(11, getQuery());
       }
-      getUnknownFields().writeTo(output);
+      if (((bitField0_ & 0x00000400) == 0x00000400)) {
+        output.writeMessage(12, getStartCursor());
+      }
+      unknownFields.writeTo(output);
     }
 
-    private int memoizedSerializedSize = -1;
     public int getSerializedSize() {
-      int size = memoizedSerializedSize;
+      int size = memoizedSize;
       if (size != -1) return size;
 
       size = 0;
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeEnumSize(1, type_.getNumber());
+          .computeEnumSize(1, type_);
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(2, id_);
+          .computeMessageSize(2, getId());
       }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(3, ack_);
+          .computeMessageSize(3, getAck());
       }
       if (((bitField0_ & 0x00000008) == 0x00000008)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(4, reset_);
+          .computeMessageSize(4, getReset());
       }
       if (((bitField0_ & 0x00000010) == 0x00000010)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(5, pause_);
+          .computeMessageSize(5, getPause());
       }
       if (((bitField0_ & 0x00000020) == 0x00000020)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(6, response_);
+          .computeMessageSize(6, getResponse());
       }
       if (((bitField0_ & 0x00000040) == 0x00000040)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(7, snapshotReq_);
+          .computeMessageSize(7, getSnapshotReq());
       }
       if (((bitField0_ & 0x00000080) == 0x00000080)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(8, subscribe_);
+          .computeMessageSize(8, getSubscribe());
       }
       if (((bitField0_ & 0x00000100) == 0x00000100)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(9, eventAck_);
+          .computeMessageSize(10, getConnect());
       }
       if (((bitField0_ & 0x00000200) == 0x00000200)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(10, connect_);
+          .computeMessageSize(11, getQuery());
       }
-      size += getUnknownFields().getSerializedSize();
-      memoizedSerializedSize = size;
+      if (((bitField0_ & 0x00000400) == 0x00000400)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeMessageSize(12, getStartCursor());
+      }
+      size += unknownFields.getSerializedSize();
+      memoizedSize = size;
       return size;
     }
 
     private static final long serialVersionUID = 0L;
     @java.lang.Override
-    protected java.lang.Object writeReplace()
-        throws java.io.ObjectStreamException {
-      return super.writeReplace();
+    public boolean equals(final java.lang.Object obj) {
+      if (obj == this) {
+       return true;
+      }
+      if (!(obj instanceof org.voltdb.pmsg.DRAgent.CtrlEnvelope)) {
+        return super.equals(obj);
+      }
+      org.voltdb.pmsg.DRAgent.CtrlEnvelope other = (org.voltdb.pmsg.DRAgent.CtrlEnvelope) obj;
+
+      boolean result = true;
+      result = result && (hasType() == other.hasType());
+      if (hasType()) {
+        result = result && type_ == other.type_;
+      }
+      result = result && (hasId() == other.hasId());
+      if (hasId()) {
+        result = result && getId()
+            .equals(other.getId());
+      }
+      result = result && (hasAck() == other.hasAck());
+      if (hasAck()) {
+        result = result && getAck()
+            .equals(other.getAck());
+      }
+      result = result && (hasReset() == other.hasReset());
+      if (hasReset()) {
+        result = result && getReset()
+            .equals(other.getReset());
+      }
+      result = result && (hasPause() == other.hasPause());
+      if (hasPause()) {
+        result = result && getPause()
+            .equals(other.getPause());
+      }
+      result = result && (hasResponse() == other.hasResponse());
+      if (hasResponse()) {
+        result = result && getResponse()
+            .equals(other.getResponse());
+      }
+      result = result && (hasSnapshotReq() == other.hasSnapshotReq());
+      if (hasSnapshotReq()) {
+        result = result && getSnapshotReq()
+            .equals(other.getSnapshotReq());
+      }
+      result = result && (hasSubscribe() == other.hasSubscribe());
+      if (hasSubscribe()) {
+        result = result && getSubscribe()
+            .equals(other.getSubscribe());
+      }
+      result = result && (hasConnect() == other.hasConnect());
+      if (hasConnect()) {
+        result = result && getConnect()
+            .equals(other.getConnect());
+      }
+      result = result && (hasQuery() == other.hasQuery());
+      if (hasQuery()) {
+        result = result && getQuery()
+            .equals(other.getQuery());
+      }
+      result = result && (hasStartCursor() == other.hasStartCursor());
+      if (hasStartCursor()) {
+        result = result && getStartCursor()
+            .equals(other.getStartCursor());
+      }
+      result = result && unknownFields.equals(other.unknownFields);
+      return result;
+    }
+
+    @java.lang.Override
+    public int hashCode() {
+      if (memoizedHashCode != 0) {
+        return memoizedHashCode;
+      }
+      int hash = 41;
+      hash = (19 * hash) + getDescriptorForType().hashCode();
+      if (hasType()) {
+        hash = (37 * hash) + TYPE_FIELD_NUMBER;
+        hash = (53 * hash) + type_;
+      }
+      if (hasId()) {
+        hash = (37 * hash) + ID_FIELD_NUMBER;
+        hash = (53 * hash) + getId().hashCode();
+      }
+      if (hasAck()) {
+        hash = (37 * hash) + ACK_FIELD_NUMBER;
+        hash = (53 * hash) + getAck().hashCode();
+      }
+      if (hasReset()) {
+        hash = (37 * hash) + RESET_FIELD_NUMBER;
+        hash = (53 * hash) + getReset().hashCode();
+      }
+      if (hasPause()) {
+        hash = (37 * hash) + PAUSE_FIELD_NUMBER;
+        hash = (53 * hash) + getPause().hashCode();
+      }
+      if (hasResponse()) {
+        hash = (37 * hash) + RESPONSE_FIELD_NUMBER;
+        hash = (53 * hash) + getResponse().hashCode();
+      }
+      if (hasSnapshotReq()) {
+        hash = (37 * hash) + SNAPSHOTREQ_FIELD_NUMBER;
+        hash = (53 * hash) + getSnapshotReq().hashCode();
+      }
+      if (hasSubscribe()) {
+        hash = (37 * hash) + SUBSCRIBE_FIELD_NUMBER;
+        hash = (53 * hash) + getSubscribe().hashCode();
+      }
+      if (hasConnect()) {
+        hash = (37 * hash) + CONNECT_FIELD_NUMBER;
+        hash = (53 * hash) + getConnect().hashCode();
+      }
+      if (hasQuery()) {
+        hash = (37 * hash) + QUERY_FIELD_NUMBER;
+        hash = (53 * hash) + getQuery().hashCode();
+      }
+      if (hasStartCursor()) {
+        hash = (37 * hash) + STARTCURSOR_FIELD_NUMBER;
+        hash = (53 * hash) + getStartCursor().hashCode();
+      }
+      hash = (29 * hash) + unknownFields.hashCode();
+      memoizedHashCode = hash;
+      return hash;
     }
 
     public static org.voltdb.pmsg.DRAgent.CtrlEnvelope parseFrom(
@@ -9837,46 +17102,57 @@ public final class DRAgent {
     }
     public static org.voltdb.pmsg.DRAgent.CtrlEnvelope parseFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.CtrlEnvelope parseFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.CtrlEnvelope parseDelimitedFrom(java.io.InputStream input)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.CtrlEnvelope parseDelimitedFrom(
         java.io.InputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseDelimitedFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
     }
     public static org.voltdb.pmsg.DRAgent.CtrlEnvelope parseFrom(
         com.google.protobuf.CodedInputStream input)
         throws java.io.IOException {
-      return PARSER.parseFrom(input);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input);
     }
     public static org.voltdb.pmsg.DRAgent.CtrlEnvelope parseFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws java.io.IOException {
-      return PARSER.parseFrom(input, extensionRegistry);
+      return com.google.protobuf.GeneratedMessageV3
+          .parseWithIOException(PARSER, input, extensionRegistry);
     }
 
-    public static Builder newBuilder() { return Builder.create(); }
     public Builder newBuilderForType() { return newBuilder(); }
-    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.CtrlEnvelope prototype) {
-      return newBuilder().mergeFrom(prototype);
+    public static Builder newBuilder() {
+      return DEFAULT_INSTANCE.toBuilder();
     }
-    public Builder toBuilder() { return newBuilder(this); }
+    public static Builder newBuilder(org.voltdb.pmsg.DRAgent.CtrlEnvelope prototype) {
+      return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+    }
+    public Builder toBuilder() {
+      return this == DEFAULT_INSTANCE
+          ? new Builder() : new Builder().mergeFrom(this);
+    }
 
     @java.lang.Override
     protected Builder newBuilderForType(
-        com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
       Builder builder = new Builder(parent);
       return builder;
     }
@@ -9884,14 +17160,15 @@ public final class DRAgent {
      * Protobuf type {@code pmsg.CtrlEnvelope}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.voltdb.pmsg.DRAgent.CtrlEnvelopeOrBuilder {
+        com.google.protobuf.GeneratedMessageV3.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:pmsg.CtrlEnvelope)
+        org.voltdb.pmsg.DRAgent.CtrlEnvelopeOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_CtrlEnvelope_descriptor;
       }
 
-      protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
           internalGetFieldAccessorTable() {
         return org.voltdb.pmsg.DRAgent.internal_static_pmsg_CtrlEnvelope_fieldAccessorTable
             .ensureFieldAccessorsInitialized(
@@ -9904,12 +17181,13 @@ public final class DRAgent {
       }
 
       private Builder(
-          com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+          com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
         super(parent);
         maybeForceBuilderInitialization();
       }
       private void maybeForceBuilderInitialization() {
-        if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
+        if (com.google.protobuf.GeneratedMessageV3
+                .alwaysUseFieldBuilders) {
           getIdFieldBuilder();
           getAckFieldBuilder();
           getResetFieldBuilder();
@@ -9917,77 +17195,76 @@ public final class DRAgent {
           getResponseFieldBuilder();
           getSnapshotReqFieldBuilder();
           getSubscribeFieldBuilder();
-          getEventAckFieldBuilder();
           getConnectFieldBuilder();
+          getQueryFieldBuilder();
+          getStartCursorFieldBuilder();
         }
       }
-      private static Builder create() {
-        return new Builder();
-      }
-
       public Builder clear() {
         super.clear();
-        type_ = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK;
+        type_ = 1;
         bitField0_ = (bitField0_ & ~0x00000001);
         if (idBuilder_ == null) {
-          id_ = org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance();
+          id_ = null;
         } else {
           idBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000002);
         if (ackBuilder_ == null) {
-          ack_ = org.voltdb.pmsg.DRAgent.Ack.getDefaultInstance();
+          ack_ = null;
         } else {
           ackBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000004);
         if (resetBuilder_ == null) {
-          reset_ = org.voltdb.pmsg.DRAgent.Reset.getDefaultInstance();
+          reset_ = null;
         } else {
           resetBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000008);
         if (pauseBuilder_ == null) {
-          pause_ = org.voltdb.pmsg.DRAgent.Pause.getDefaultInstance();
+          pause_ = null;
         } else {
           pauseBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000010);
         if (responseBuilder_ == null) {
-          response_ = org.voltdb.pmsg.DRAgent.Response.getDefaultInstance();
+          response_ = null;
         } else {
           responseBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000020);
         if (snapshotReqBuilder_ == null) {
-          snapshotReq_ = org.voltdb.pmsg.DRAgent.SnapshotReq.getDefaultInstance();
+          snapshotReq_ = null;
         } else {
           snapshotReqBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000040);
         if (subscribeBuilder_ == null) {
-          subscribe_ = org.voltdb.pmsg.DRAgent.Subscribe.getDefaultInstance();
+          subscribe_ = null;
         } else {
           subscribeBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000080);
-        if (eventAckBuilder_ == null) {
-          eventAck_ = org.voltdb.pmsg.DRAgent.EventAck.getDefaultInstance();
-        } else {
-          eventAckBuilder_.clear();
-        }
-        bitField0_ = (bitField0_ & ~0x00000100);
         if (connectBuilder_ == null) {
-          connect_ = org.voltdb.pmsg.DRAgent.Connect.getDefaultInstance();
+          connect_ = null;
         } else {
           connectBuilder_.clear();
         }
+        bitField0_ = (bitField0_ & ~0x00000100);
+        if (queryBuilder_ == null) {
+          query_ = null;
+        } else {
+          queryBuilder_.clear();
+        }
         bitField0_ = (bitField0_ & ~0x00000200);
+        if (startCursorBuilder_ == null) {
+          startCursor_ = null;
+        } else {
+          startCursorBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000400);
         return this;
-      }
-
-      public Builder clone() {
-        return create().mergeFrom(buildPartial());
       }
 
       public com.google.protobuf.Descriptors.Descriptor
@@ -10074,24 +17351,58 @@ public final class DRAgent {
         if (((from_bitField0_ & 0x00000100) == 0x00000100)) {
           to_bitField0_ |= 0x00000100;
         }
-        if (eventAckBuilder_ == null) {
-          result.eventAck_ = eventAck_;
-        } else {
-          result.eventAck_ = eventAckBuilder_.build();
-        }
-        if (((from_bitField0_ & 0x00000200) == 0x00000200)) {
-          to_bitField0_ |= 0x00000200;
-        }
         if (connectBuilder_ == null) {
           result.connect_ = connect_;
         } else {
           result.connect_ = connectBuilder_.build();
+        }
+        if (((from_bitField0_ & 0x00000200) == 0x00000200)) {
+          to_bitField0_ |= 0x00000200;
+        }
+        if (queryBuilder_ == null) {
+          result.query_ = query_;
+        } else {
+          result.query_ = queryBuilder_.build();
+        }
+        if (((from_bitField0_ & 0x00000400) == 0x00000400)) {
+          to_bitField0_ |= 0x00000400;
+        }
+        if (startCursorBuilder_ == null) {
+          result.startCursor_ = startCursor_;
+        } else {
+          result.startCursor_ = startCursorBuilder_.build();
         }
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
       }
 
+      public Builder clone() {
+        return (Builder) super.clone();
+      }
+      public Builder setField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.setField(field, value);
+      }
+      public Builder clearField(
+          com.google.protobuf.Descriptors.FieldDescriptor field) {
+        return (Builder) super.clearField(field);
+      }
+      public Builder clearOneof(
+          com.google.protobuf.Descriptors.OneofDescriptor oneof) {
+        return (Builder) super.clearOneof(oneof);
+      }
+      public Builder setRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          int index, Object value) {
+        return (Builder) super.setRepeatedField(field, index, value);
+      }
+      public Builder addRepeatedField(
+          com.google.protobuf.Descriptors.FieldDescriptor field,
+          Object value) {
+        return (Builder) super.addRepeatedField(field, value);
+      }
       public Builder mergeFrom(com.google.protobuf.Message other) {
         if (other instanceof org.voltdb.pmsg.DRAgent.CtrlEnvelope) {
           return mergeFrom((org.voltdb.pmsg.DRAgent.CtrlEnvelope)other);
@@ -10127,32 +17438,37 @@ public final class DRAgent {
         if (other.hasSubscribe()) {
           mergeSubscribe(other.getSubscribe());
         }
-        if (other.hasEventAck()) {
-          mergeEventAck(other.getEventAck());
-        }
         if (other.hasConnect()) {
           mergeConnect(other.getConnect());
         }
-        this.mergeUnknownFields(other.getUnknownFields());
+        if (other.hasQuery()) {
+          mergeQuery(other.getQuery());
+        }
+        if (other.hasStartCursor()) {
+          mergeStartCursor(other.getStartCursor());
+        }
+        this.mergeUnknownFields(other.unknownFields);
+        onChanged();
         return this;
       }
 
       public final boolean isInitialized() {
         if (!hasType()) {
-          
           return false;
         }
         if (!hasId()) {
-          
           return false;
         }
         if (!getId().isInitialized()) {
-          
           return false;
         }
         if (hasResponse()) {
           if (!getResponse().isInitialized()) {
-            
+            return false;
+          }
+        }
+        if (hasStartCursor()) {
+          if (!getStartCursor().isInitialized()) {
             return false;
           }
         }
@@ -10168,7 +17484,7 @@ public final class DRAgent {
           parsedMessage = PARSER.parsePartialFrom(input, extensionRegistry);
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
           parsedMessage = (org.voltdb.pmsg.DRAgent.CtrlEnvelope) e.getUnfinishedMessage();
-          throw e;
+          throw e.unwrapIOException();
         } finally {
           if (parsedMessage != null) {
             mergeFrom(parsedMessage);
@@ -10178,8 +17494,7 @@ public final class DRAgent {
       }
       private int bitField0_;
 
-      // required .pmsg.CtrlEnvelope.Type type = 1;
-      private org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type type_ = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK;
+      private int type_ = 1;
       /**
        * <code>required .pmsg.CtrlEnvelope.Type type = 1;</code>
        */
@@ -10190,7 +17505,8 @@ public final class DRAgent {
        * <code>required .pmsg.CtrlEnvelope.Type type = 1;</code>
        */
       public org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type getType() {
-        return type_;
+        org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type result = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.valueOf(type_);
+        return result == null ? org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK : result;
       }
       /**
        * <code>required .pmsg.CtrlEnvelope.Type type = 1;</code>
@@ -10200,7 +17516,7 @@ public final class DRAgent {
           throw new NullPointerException();
         }
         bitField0_ |= 0x00000001;
-        type_ = value;
+        type_ = value.getNumber();
         onChanged();
         return this;
       }
@@ -10209,14 +17525,13 @@ public final class DRAgent {
        */
       public Builder clearType() {
         bitField0_ = (bitField0_ & ~0x00000001);
-        type_ = org.voltdb.pmsg.DRAgent.CtrlEnvelope.Type.ACK;
+        type_ = 1;
         onChanged();
         return this;
       }
 
-      // required .pmsg.UUID id = 2;
-      private org.voltdb.pmsg.DRAgent.UUID id_ = org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
+      private org.voltdb.pmsg.DRAgent.UUID id_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.UUID, org.voltdb.pmsg.DRAgent.UUID.Builder, org.voltdb.pmsg.DRAgent.UUIDOrBuilder> idBuilder_;
       /**
        * <code>required .pmsg.UUID id = 2;</code>
@@ -10229,7 +17544,7 @@ public final class DRAgent {
        */
       public org.voltdb.pmsg.DRAgent.UUID getId() {
         if (idBuilder_ == null) {
-          return id_;
+          return id_ == null ? org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
         } else {
           return idBuilder_.getMessage();
         }
@@ -10270,6 +17585,7 @@ public final class DRAgent {
       public Builder mergeId(org.voltdb.pmsg.DRAgent.UUID value) {
         if (idBuilder_ == null) {
           if (((bitField0_ & 0x00000002) == 0x00000002) &&
+              id_ != null &&
               id_ != org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance()) {
             id_ =
               org.voltdb.pmsg.DRAgent.UUID.newBuilder(id_).mergeFrom(value).buildPartial();
@@ -10288,7 +17604,7 @@ public final class DRAgent {
        */
       public Builder clearId() {
         if (idBuilder_ == null) {
-          id_ = org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance();
+          id_ = null;
           onChanged();
         } else {
           idBuilder_.clear();
@@ -10311,19 +17627,20 @@ public final class DRAgent {
         if (idBuilder_ != null) {
           return idBuilder_.getMessageOrBuilder();
         } else {
-          return id_;
+          return id_ == null ?
+              org.voltdb.pmsg.DRAgent.UUID.getDefaultInstance() : id_;
         }
       }
       /**
        * <code>required .pmsg.UUID id = 2;</code>
        */
-      private com.google.protobuf.SingleFieldBuilder<
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.UUID, org.voltdb.pmsg.DRAgent.UUID.Builder, org.voltdb.pmsg.DRAgent.UUIDOrBuilder> 
           getIdFieldBuilder() {
         if (idBuilder_ == null) {
-          idBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+          idBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.UUID, org.voltdb.pmsg.DRAgent.UUID.Builder, org.voltdb.pmsg.DRAgent.UUIDOrBuilder>(
-                  id_,
+                  getId(),
                   getParentForChildren(),
                   isClean());
           id_ = null;
@@ -10331,9 +17648,8 @@ public final class DRAgent {
         return idBuilder_;
       }
 
-      // optional .pmsg.Ack ack = 3;
-      private org.voltdb.pmsg.DRAgent.Ack ack_ = org.voltdb.pmsg.DRAgent.Ack.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
+      private org.voltdb.pmsg.DRAgent.Ack ack_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Ack, org.voltdb.pmsg.DRAgent.Ack.Builder, org.voltdb.pmsg.DRAgent.AckOrBuilder> ackBuilder_;
       /**
        * <code>optional .pmsg.Ack ack = 3;</code>
@@ -10346,7 +17662,7 @@ public final class DRAgent {
        */
       public org.voltdb.pmsg.DRAgent.Ack getAck() {
         if (ackBuilder_ == null) {
-          return ack_;
+          return ack_ == null ? org.voltdb.pmsg.DRAgent.Ack.getDefaultInstance() : ack_;
         } else {
           return ackBuilder_.getMessage();
         }
@@ -10387,6 +17703,7 @@ public final class DRAgent {
       public Builder mergeAck(org.voltdb.pmsg.DRAgent.Ack value) {
         if (ackBuilder_ == null) {
           if (((bitField0_ & 0x00000004) == 0x00000004) &&
+              ack_ != null &&
               ack_ != org.voltdb.pmsg.DRAgent.Ack.getDefaultInstance()) {
             ack_ =
               org.voltdb.pmsg.DRAgent.Ack.newBuilder(ack_).mergeFrom(value).buildPartial();
@@ -10405,7 +17722,7 @@ public final class DRAgent {
        */
       public Builder clearAck() {
         if (ackBuilder_ == null) {
-          ack_ = org.voltdb.pmsg.DRAgent.Ack.getDefaultInstance();
+          ack_ = null;
           onChanged();
         } else {
           ackBuilder_.clear();
@@ -10428,19 +17745,20 @@ public final class DRAgent {
         if (ackBuilder_ != null) {
           return ackBuilder_.getMessageOrBuilder();
         } else {
-          return ack_;
+          return ack_ == null ?
+              org.voltdb.pmsg.DRAgent.Ack.getDefaultInstance() : ack_;
         }
       }
       /**
        * <code>optional .pmsg.Ack ack = 3;</code>
        */
-      private com.google.protobuf.SingleFieldBuilder<
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Ack, org.voltdb.pmsg.DRAgent.Ack.Builder, org.voltdb.pmsg.DRAgent.AckOrBuilder> 
           getAckFieldBuilder() {
         if (ackBuilder_ == null) {
-          ackBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+          ackBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.Ack, org.voltdb.pmsg.DRAgent.Ack.Builder, org.voltdb.pmsg.DRAgent.AckOrBuilder>(
-                  ack_,
+                  getAck(),
                   getParentForChildren(),
                   isClean());
           ack_ = null;
@@ -10448,9 +17766,8 @@ public final class DRAgent {
         return ackBuilder_;
       }
 
-      // optional .pmsg.Reset reset = 4;
-      private org.voltdb.pmsg.DRAgent.Reset reset_ = org.voltdb.pmsg.DRAgent.Reset.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
+      private org.voltdb.pmsg.DRAgent.Reset reset_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Reset, org.voltdb.pmsg.DRAgent.Reset.Builder, org.voltdb.pmsg.DRAgent.ResetOrBuilder> resetBuilder_;
       /**
        * <code>optional .pmsg.Reset reset = 4;</code>
@@ -10463,7 +17780,7 @@ public final class DRAgent {
        */
       public org.voltdb.pmsg.DRAgent.Reset getReset() {
         if (resetBuilder_ == null) {
-          return reset_;
+          return reset_ == null ? org.voltdb.pmsg.DRAgent.Reset.getDefaultInstance() : reset_;
         } else {
           return resetBuilder_.getMessage();
         }
@@ -10504,6 +17821,7 @@ public final class DRAgent {
       public Builder mergeReset(org.voltdb.pmsg.DRAgent.Reset value) {
         if (resetBuilder_ == null) {
           if (((bitField0_ & 0x00000008) == 0x00000008) &&
+              reset_ != null &&
               reset_ != org.voltdb.pmsg.DRAgent.Reset.getDefaultInstance()) {
             reset_ =
               org.voltdb.pmsg.DRAgent.Reset.newBuilder(reset_).mergeFrom(value).buildPartial();
@@ -10522,7 +17840,7 @@ public final class DRAgent {
        */
       public Builder clearReset() {
         if (resetBuilder_ == null) {
-          reset_ = org.voltdb.pmsg.DRAgent.Reset.getDefaultInstance();
+          reset_ = null;
           onChanged();
         } else {
           resetBuilder_.clear();
@@ -10545,19 +17863,20 @@ public final class DRAgent {
         if (resetBuilder_ != null) {
           return resetBuilder_.getMessageOrBuilder();
         } else {
-          return reset_;
+          return reset_ == null ?
+              org.voltdb.pmsg.DRAgent.Reset.getDefaultInstance() : reset_;
         }
       }
       /**
        * <code>optional .pmsg.Reset reset = 4;</code>
        */
-      private com.google.protobuf.SingleFieldBuilder<
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Reset, org.voltdb.pmsg.DRAgent.Reset.Builder, org.voltdb.pmsg.DRAgent.ResetOrBuilder> 
           getResetFieldBuilder() {
         if (resetBuilder_ == null) {
-          resetBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+          resetBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.Reset, org.voltdb.pmsg.DRAgent.Reset.Builder, org.voltdb.pmsg.DRAgent.ResetOrBuilder>(
-                  reset_,
+                  getReset(),
                   getParentForChildren(),
                   isClean());
           reset_ = null;
@@ -10565,9 +17884,8 @@ public final class DRAgent {
         return resetBuilder_;
       }
 
-      // optional .pmsg.Pause pause = 5;
-      private org.voltdb.pmsg.DRAgent.Pause pause_ = org.voltdb.pmsg.DRAgent.Pause.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
+      private org.voltdb.pmsg.DRAgent.Pause pause_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Pause, org.voltdb.pmsg.DRAgent.Pause.Builder, org.voltdb.pmsg.DRAgent.PauseOrBuilder> pauseBuilder_;
       /**
        * <code>optional .pmsg.Pause pause = 5;</code>
@@ -10580,7 +17898,7 @@ public final class DRAgent {
        */
       public org.voltdb.pmsg.DRAgent.Pause getPause() {
         if (pauseBuilder_ == null) {
-          return pause_;
+          return pause_ == null ? org.voltdb.pmsg.DRAgent.Pause.getDefaultInstance() : pause_;
         } else {
           return pauseBuilder_.getMessage();
         }
@@ -10621,6 +17939,7 @@ public final class DRAgent {
       public Builder mergePause(org.voltdb.pmsg.DRAgent.Pause value) {
         if (pauseBuilder_ == null) {
           if (((bitField0_ & 0x00000010) == 0x00000010) &&
+              pause_ != null &&
               pause_ != org.voltdb.pmsg.DRAgent.Pause.getDefaultInstance()) {
             pause_ =
               org.voltdb.pmsg.DRAgent.Pause.newBuilder(pause_).mergeFrom(value).buildPartial();
@@ -10639,7 +17958,7 @@ public final class DRAgent {
        */
       public Builder clearPause() {
         if (pauseBuilder_ == null) {
-          pause_ = org.voltdb.pmsg.DRAgent.Pause.getDefaultInstance();
+          pause_ = null;
           onChanged();
         } else {
           pauseBuilder_.clear();
@@ -10662,19 +17981,20 @@ public final class DRAgent {
         if (pauseBuilder_ != null) {
           return pauseBuilder_.getMessageOrBuilder();
         } else {
-          return pause_;
+          return pause_ == null ?
+              org.voltdb.pmsg.DRAgent.Pause.getDefaultInstance() : pause_;
         }
       }
       /**
        * <code>optional .pmsg.Pause pause = 5;</code>
        */
-      private com.google.protobuf.SingleFieldBuilder<
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Pause, org.voltdb.pmsg.DRAgent.Pause.Builder, org.voltdb.pmsg.DRAgent.PauseOrBuilder> 
           getPauseFieldBuilder() {
         if (pauseBuilder_ == null) {
-          pauseBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+          pauseBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.Pause, org.voltdb.pmsg.DRAgent.Pause.Builder, org.voltdb.pmsg.DRAgent.PauseOrBuilder>(
-                  pause_,
+                  getPause(),
                   getParentForChildren(),
                   isClean());
           pause_ = null;
@@ -10682,9 +18002,8 @@ public final class DRAgent {
         return pauseBuilder_;
       }
 
-      // optional .pmsg.Response response = 6;
-      private org.voltdb.pmsg.DRAgent.Response response_ = org.voltdb.pmsg.DRAgent.Response.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
+      private org.voltdb.pmsg.DRAgent.Response response_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Response, org.voltdb.pmsg.DRAgent.Response.Builder, org.voltdb.pmsg.DRAgent.ResponseOrBuilder> responseBuilder_;
       /**
        * <code>optional .pmsg.Response response = 6;</code>
@@ -10697,7 +18016,7 @@ public final class DRAgent {
        */
       public org.voltdb.pmsg.DRAgent.Response getResponse() {
         if (responseBuilder_ == null) {
-          return response_;
+          return response_ == null ? org.voltdb.pmsg.DRAgent.Response.getDefaultInstance() : response_;
         } else {
           return responseBuilder_.getMessage();
         }
@@ -10738,6 +18057,7 @@ public final class DRAgent {
       public Builder mergeResponse(org.voltdb.pmsg.DRAgent.Response value) {
         if (responseBuilder_ == null) {
           if (((bitField0_ & 0x00000020) == 0x00000020) &&
+              response_ != null &&
               response_ != org.voltdb.pmsg.DRAgent.Response.getDefaultInstance()) {
             response_ =
               org.voltdb.pmsg.DRAgent.Response.newBuilder(response_).mergeFrom(value).buildPartial();
@@ -10756,7 +18076,7 @@ public final class DRAgent {
        */
       public Builder clearResponse() {
         if (responseBuilder_ == null) {
-          response_ = org.voltdb.pmsg.DRAgent.Response.getDefaultInstance();
+          response_ = null;
           onChanged();
         } else {
           responseBuilder_.clear();
@@ -10779,19 +18099,20 @@ public final class DRAgent {
         if (responseBuilder_ != null) {
           return responseBuilder_.getMessageOrBuilder();
         } else {
-          return response_;
+          return response_ == null ?
+              org.voltdb.pmsg.DRAgent.Response.getDefaultInstance() : response_;
         }
       }
       /**
        * <code>optional .pmsg.Response response = 6;</code>
        */
-      private com.google.protobuf.SingleFieldBuilder<
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Response, org.voltdb.pmsg.DRAgent.Response.Builder, org.voltdb.pmsg.DRAgent.ResponseOrBuilder> 
           getResponseFieldBuilder() {
         if (responseBuilder_ == null) {
-          responseBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+          responseBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.Response, org.voltdb.pmsg.DRAgent.Response.Builder, org.voltdb.pmsg.DRAgent.ResponseOrBuilder>(
-                  response_,
+                  getResponse(),
                   getParentForChildren(),
                   isClean());
           response_ = null;
@@ -10799,9 +18120,8 @@ public final class DRAgent {
         return responseBuilder_;
       }
 
-      // optional .pmsg.SnapshotReq snapshotReq = 7;
-      private org.voltdb.pmsg.DRAgent.SnapshotReq snapshotReq_ = org.voltdb.pmsg.DRAgent.SnapshotReq.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
+      private org.voltdb.pmsg.DRAgent.SnapshotReq snapshotReq_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.SnapshotReq, org.voltdb.pmsg.DRAgent.SnapshotReq.Builder, org.voltdb.pmsg.DRAgent.SnapshotReqOrBuilder> snapshotReqBuilder_;
       /**
        * <code>optional .pmsg.SnapshotReq snapshotReq = 7;</code>
@@ -10814,7 +18134,7 @@ public final class DRAgent {
        */
       public org.voltdb.pmsg.DRAgent.SnapshotReq getSnapshotReq() {
         if (snapshotReqBuilder_ == null) {
-          return snapshotReq_;
+          return snapshotReq_ == null ? org.voltdb.pmsg.DRAgent.SnapshotReq.getDefaultInstance() : snapshotReq_;
         } else {
           return snapshotReqBuilder_.getMessage();
         }
@@ -10855,6 +18175,7 @@ public final class DRAgent {
       public Builder mergeSnapshotReq(org.voltdb.pmsg.DRAgent.SnapshotReq value) {
         if (snapshotReqBuilder_ == null) {
           if (((bitField0_ & 0x00000040) == 0x00000040) &&
+              snapshotReq_ != null &&
               snapshotReq_ != org.voltdb.pmsg.DRAgent.SnapshotReq.getDefaultInstance()) {
             snapshotReq_ =
               org.voltdb.pmsg.DRAgent.SnapshotReq.newBuilder(snapshotReq_).mergeFrom(value).buildPartial();
@@ -10873,7 +18194,7 @@ public final class DRAgent {
        */
       public Builder clearSnapshotReq() {
         if (snapshotReqBuilder_ == null) {
-          snapshotReq_ = org.voltdb.pmsg.DRAgent.SnapshotReq.getDefaultInstance();
+          snapshotReq_ = null;
           onChanged();
         } else {
           snapshotReqBuilder_.clear();
@@ -10896,19 +18217,20 @@ public final class DRAgent {
         if (snapshotReqBuilder_ != null) {
           return snapshotReqBuilder_.getMessageOrBuilder();
         } else {
-          return snapshotReq_;
+          return snapshotReq_ == null ?
+              org.voltdb.pmsg.DRAgent.SnapshotReq.getDefaultInstance() : snapshotReq_;
         }
       }
       /**
        * <code>optional .pmsg.SnapshotReq snapshotReq = 7;</code>
        */
-      private com.google.protobuf.SingleFieldBuilder<
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.SnapshotReq, org.voltdb.pmsg.DRAgent.SnapshotReq.Builder, org.voltdb.pmsg.DRAgent.SnapshotReqOrBuilder> 
           getSnapshotReqFieldBuilder() {
         if (snapshotReqBuilder_ == null) {
-          snapshotReqBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+          snapshotReqBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.SnapshotReq, org.voltdb.pmsg.DRAgent.SnapshotReq.Builder, org.voltdb.pmsg.DRAgent.SnapshotReqOrBuilder>(
-                  snapshotReq_,
+                  getSnapshotReq(),
                   getParentForChildren(),
                   isClean());
           snapshotReq_ = null;
@@ -10916,9 +18238,8 @@ public final class DRAgent {
         return snapshotReqBuilder_;
       }
 
-      // optional .pmsg.Subscribe subscribe = 8;
-      private org.voltdb.pmsg.DRAgent.Subscribe subscribe_ = org.voltdb.pmsg.DRAgent.Subscribe.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
+      private org.voltdb.pmsg.DRAgent.Subscribe subscribe_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Subscribe, org.voltdb.pmsg.DRAgent.Subscribe.Builder, org.voltdb.pmsg.DRAgent.SubscribeOrBuilder> subscribeBuilder_;
       /**
        * <code>optional .pmsg.Subscribe subscribe = 8;</code>
@@ -10931,7 +18252,7 @@ public final class DRAgent {
        */
       public org.voltdb.pmsg.DRAgent.Subscribe getSubscribe() {
         if (subscribeBuilder_ == null) {
-          return subscribe_;
+          return subscribe_ == null ? org.voltdb.pmsg.DRAgent.Subscribe.getDefaultInstance() : subscribe_;
         } else {
           return subscribeBuilder_.getMessage();
         }
@@ -10972,6 +18293,7 @@ public final class DRAgent {
       public Builder mergeSubscribe(org.voltdb.pmsg.DRAgent.Subscribe value) {
         if (subscribeBuilder_ == null) {
           if (((bitField0_ & 0x00000080) == 0x00000080) &&
+              subscribe_ != null &&
               subscribe_ != org.voltdb.pmsg.DRAgent.Subscribe.getDefaultInstance()) {
             subscribe_ =
               org.voltdb.pmsg.DRAgent.Subscribe.newBuilder(subscribe_).mergeFrom(value).buildPartial();
@@ -10990,7 +18312,7 @@ public final class DRAgent {
        */
       public Builder clearSubscribe() {
         if (subscribeBuilder_ == null) {
-          subscribe_ = org.voltdb.pmsg.DRAgent.Subscribe.getDefaultInstance();
+          subscribe_ = null;
           onChanged();
         } else {
           subscribeBuilder_.clear();
@@ -11013,19 +18335,20 @@ public final class DRAgent {
         if (subscribeBuilder_ != null) {
           return subscribeBuilder_.getMessageOrBuilder();
         } else {
-          return subscribe_;
+          return subscribe_ == null ?
+              org.voltdb.pmsg.DRAgent.Subscribe.getDefaultInstance() : subscribe_;
         }
       }
       /**
        * <code>optional .pmsg.Subscribe subscribe = 8;</code>
        */
-      private com.google.protobuf.SingleFieldBuilder<
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Subscribe, org.voltdb.pmsg.DRAgent.Subscribe.Builder, org.voltdb.pmsg.DRAgent.SubscribeOrBuilder> 
           getSubscribeFieldBuilder() {
         if (subscribeBuilder_ == null) {
-          subscribeBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+          subscribeBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.Subscribe, org.voltdb.pmsg.DRAgent.Subscribe.Builder, org.voltdb.pmsg.DRAgent.SubscribeOrBuilder>(
-                  subscribe_,
+                  getSubscribe(),
                   getParentForChildren(),
                   isClean());
           subscribe_ = null;
@@ -11033,144 +18356,38 @@ public final class DRAgent {
         return subscribeBuilder_;
       }
 
-      // optional .pmsg.EventAck eventAck = 9;
-      private org.voltdb.pmsg.DRAgent.EventAck eventAck_ = org.voltdb.pmsg.DRAgent.EventAck.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
-          org.voltdb.pmsg.DRAgent.EventAck, org.voltdb.pmsg.DRAgent.EventAck.Builder, org.voltdb.pmsg.DRAgent.EventAckOrBuilder> eventAckBuilder_;
-      /**
-       * <code>optional .pmsg.EventAck eventAck = 9;</code>
-       */
-      public boolean hasEventAck() {
-        return ((bitField0_ & 0x00000100) == 0x00000100);
-      }
-      /**
-       * <code>optional .pmsg.EventAck eventAck = 9;</code>
-       */
-      public org.voltdb.pmsg.DRAgent.EventAck getEventAck() {
-        if (eventAckBuilder_ == null) {
-          return eventAck_;
-        } else {
-          return eventAckBuilder_.getMessage();
-        }
-      }
-      /**
-       * <code>optional .pmsg.EventAck eventAck = 9;</code>
-       */
-      public Builder setEventAck(org.voltdb.pmsg.DRAgent.EventAck value) {
-        if (eventAckBuilder_ == null) {
-          if (value == null) {
-            throw new NullPointerException();
-          }
-          eventAck_ = value;
-          onChanged();
-        } else {
-          eventAckBuilder_.setMessage(value);
-        }
-        bitField0_ |= 0x00000100;
-        return this;
-      }
-      /**
-       * <code>optional .pmsg.EventAck eventAck = 9;</code>
-       */
-      public Builder setEventAck(
-          org.voltdb.pmsg.DRAgent.EventAck.Builder builderForValue) {
-        if (eventAckBuilder_ == null) {
-          eventAck_ = builderForValue.build();
-          onChanged();
-        } else {
-          eventAckBuilder_.setMessage(builderForValue.build());
-        }
-        bitField0_ |= 0x00000100;
-        return this;
-      }
-      /**
-       * <code>optional .pmsg.EventAck eventAck = 9;</code>
-       */
-      public Builder mergeEventAck(org.voltdb.pmsg.DRAgent.EventAck value) {
-        if (eventAckBuilder_ == null) {
-          if (((bitField0_ & 0x00000100) == 0x00000100) &&
-              eventAck_ != org.voltdb.pmsg.DRAgent.EventAck.getDefaultInstance()) {
-            eventAck_ =
-              org.voltdb.pmsg.DRAgent.EventAck.newBuilder(eventAck_).mergeFrom(value).buildPartial();
-          } else {
-            eventAck_ = value;
-          }
-          onChanged();
-        } else {
-          eventAckBuilder_.mergeFrom(value);
-        }
-        bitField0_ |= 0x00000100;
-        return this;
-      }
-      /**
-       * <code>optional .pmsg.EventAck eventAck = 9;</code>
-       */
-      public Builder clearEventAck() {
-        if (eventAckBuilder_ == null) {
-          eventAck_ = org.voltdb.pmsg.DRAgent.EventAck.getDefaultInstance();
-          onChanged();
-        } else {
-          eventAckBuilder_.clear();
-        }
-        bitField0_ = (bitField0_ & ~0x00000100);
-        return this;
-      }
-      /**
-       * <code>optional .pmsg.EventAck eventAck = 9;</code>
-       */
-      public org.voltdb.pmsg.DRAgent.EventAck.Builder getEventAckBuilder() {
-        bitField0_ |= 0x00000100;
-        onChanged();
-        return getEventAckFieldBuilder().getBuilder();
-      }
-      /**
-       * <code>optional .pmsg.EventAck eventAck = 9;</code>
-       */
-      public org.voltdb.pmsg.DRAgent.EventAckOrBuilder getEventAckOrBuilder() {
-        if (eventAckBuilder_ != null) {
-          return eventAckBuilder_.getMessageOrBuilder();
-        } else {
-          return eventAck_;
-        }
-      }
-      /**
-       * <code>optional .pmsg.EventAck eventAck = 9;</code>
-       */
-      private com.google.protobuf.SingleFieldBuilder<
-          org.voltdb.pmsg.DRAgent.EventAck, org.voltdb.pmsg.DRAgent.EventAck.Builder, org.voltdb.pmsg.DRAgent.EventAckOrBuilder> 
-          getEventAckFieldBuilder() {
-        if (eventAckBuilder_ == null) {
-          eventAckBuilder_ = new com.google.protobuf.SingleFieldBuilder<
-              org.voltdb.pmsg.DRAgent.EventAck, org.voltdb.pmsg.DRAgent.EventAck.Builder, org.voltdb.pmsg.DRAgent.EventAckOrBuilder>(
-                  eventAck_,
-                  getParentForChildren(),
-                  isClean());
-          eventAck_ = null;
-        }
-        return eventAckBuilder_;
-      }
-
-      // optional .pmsg.Connect connect = 10;
-      private org.voltdb.pmsg.DRAgent.Connect connect_ = org.voltdb.pmsg.DRAgent.Connect.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
+      private org.voltdb.pmsg.DRAgent.Connect connect_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Connect, org.voltdb.pmsg.DRAgent.Connect.Builder, org.voltdb.pmsg.DRAgent.ConnectOrBuilder> connectBuilder_;
       /**
+       * <pre>
+       * Intentionally skip field 9 -- deprecated message type
+       * </pre>
+       *
        * <code>optional .pmsg.Connect connect = 10;</code>
        */
       public boolean hasConnect() {
-        return ((bitField0_ & 0x00000200) == 0x00000200);
+        return ((bitField0_ & 0x00000100) == 0x00000100);
       }
       /**
+       * <pre>
+       * Intentionally skip field 9 -- deprecated message type
+       * </pre>
+       *
        * <code>optional .pmsg.Connect connect = 10;</code>
        */
       public org.voltdb.pmsg.DRAgent.Connect getConnect() {
         if (connectBuilder_ == null) {
-          return connect_;
+          return connect_ == null ? org.voltdb.pmsg.DRAgent.Connect.getDefaultInstance() : connect_;
         } else {
           return connectBuilder_.getMessage();
         }
       }
       /**
+       * <pre>
+       * Intentionally skip field 9 -- deprecated message type
+       * </pre>
+       *
        * <code>optional .pmsg.Connect connect = 10;</code>
        */
       public Builder setConnect(org.voltdb.pmsg.DRAgent.Connect value) {
@@ -11183,10 +18400,14 @@ public final class DRAgent {
         } else {
           connectBuilder_.setMessage(value);
         }
-        bitField0_ |= 0x00000200;
+        bitField0_ |= 0x00000100;
         return this;
       }
       /**
+       * <pre>
+       * Intentionally skip field 9 -- deprecated message type
+       * </pre>
+       *
        * <code>optional .pmsg.Connect connect = 10;</code>
        */
       public Builder setConnect(
@@ -11197,15 +18418,20 @@ public final class DRAgent {
         } else {
           connectBuilder_.setMessage(builderForValue.build());
         }
-        bitField0_ |= 0x00000200;
+        bitField0_ |= 0x00000100;
         return this;
       }
       /**
+       * <pre>
+       * Intentionally skip field 9 -- deprecated message type
+       * </pre>
+       *
        * <code>optional .pmsg.Connect connect = 10;</code>
        */
       public Builder mergeConnect(org.voltdb.pmsg.DRAgent.Connect value) {
         if (connectBuilder_ == null) {
-          if (((bitField0_ & 0x00000200) == 0x00000200) &&
+          if (((bitField0_ & 0x00000100) == 0x00000100) &&
+              connect_ != null &&
               connect_ != org.voltdb.pmsg.DRAgent.Connect.getDefaultInstance()) {
             connect_ =
               org.voltdb.pmsg.DRAgent.Connect.newBuilder(connect_).mergeFrom(value).buildPartial();
@@ -11216,50 +18442,67 @@ public final class DRAgent {
         } else {
           connectBuilder_.mergeFrom(value);
         }
-        bitField0_ |= 0x00000200;
+        bitField0_ |= 0x00000100;
         return this;
       }
       /**
+       * <pre>
+       * Intentionally skip field 9 -- deprecated message type
+       * </pre>
+       *
        * <code>optional .pmsg.Connect connect = 10;</code>
        */
       public Builder clearConnect() {
         if (connectBuilder_ == null) {
-          connect_ = org.voltdb.pmsg.DRAgent.Connect.getDefaultInstance();
+          connect_ = null;
           onChanged();
         } else {
           connectBuilder_.clear();
         }
-        bitField0_ = (bitField0_ & ~0x00000200);
+        bitField0_ = (bitField0_ & ~0x00000100);
         return this;
       }
       /**
+       * <pre>
+       * Intentionally skip field 9 -- deprecated message type
+       * </pre>
+       *
        * <code>optional .pmsg.Connect connect = 10;</code>
        */
       public org.voltdb.pmsg.DRAgent.Connect.Builder getConnectBuilder() {
-        bitField0_ |= 0x00000200;
+        bitField0_ |= 0x00000100;
         onChanged();
         return getConnectFieldBuilder().getBuilder();
       }
       /**
+       * <pre>
+       * Intentionally skip field 9 -- deprecated message type
+       * </pre>
+       *
        * <code>optional .pmsg.Connect connect = 10;</code>
        */
       public org.voltdb.pmsg.DRAgent.ConnectOrBuilder getConnectOrBuilder() {
         if (connectBuilder_ != null) {
           return connectBuilder_.getMessageOrBuilder();
         } else {
-          return connect_;
+          return connect_ == null ?
+              org.voltdb.pmsg.DRAgent.Connect.getDefaultInstance() : connect_;
         }
       }
       /**
+       * <pre>
+       * Intentionally skip field 9 -- deprecated message type
+       * </pre>
+       *
        * <code>optional .pmsg.Connect connect = 10;</code>
        */
-      private com.google.protobuf.SingleFieldBuilder<
+      private com.google.protobuf.SingleFieldBuilderV3<
           org.voltdb.pmsg.DRAgent.Connect, org.voltdb.pmsg.DRAgent.Connect.Builder, org.voltdb.pmsg.DRAgent.ConnectOrBuilder> 
           getConnectFieldBuilder() {
         if (connectBuilder_ == null) {
-          connectBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+          connectBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
               org.voltdb.pmsg.DRAgent.Connect, org.voltdb.pmsg.DRAgent.Connect.Builder, org.voltdb.pmsg.DRAgent.ConnectOrBuilder>(
-                  connect_,
+                  getConnect(),
                   getParentForChildren(),
                   isClean());
           connect_ = null;
@@ -11267,218 +18510,576 @@ public final class DRAgent {
         return connectBuilder_;
       }
 
+      private org.voltdb.pmsg.DRAgent.Query query_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.Query, org.voltdb.pmsg.DRAgent.Query.Builder, org.voltdb.pmsg.DRAgent.QueryOrBuilder> queryBuilder_;
+      /**
+       * <code>optional .pmsg.Query query = 11;</code>
+       */
+      public boolean hasQuery() {
+        return ((bitField0_ & 0x00000200) == 0x00000200);
+      }
+      /**
+       * <code>optional .pmsg.Query query = 11;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.Query getQuery() {
+        if (queryBuilder_ == null) {
+          return query_ == null ? org.voltdb.pmsg.DRAgent.Query.getDefaultInstance() : query_;
+        } else {
+          return queryBuilder_.getMessage();
+        }
+      }
+      /**
+       * <code>optional .pmsg.Query query = 11;</code>
+       */
+      public Builder setQuery(org.voltdb.pmsg.DRAgent.Query value) {
+        if (queryBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          query_ = value;
+          onChanged();
+        } else {
+          queryBuilder_.setMessage(value);
+        }
+        bitField0_ |= 0x00000200;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.Query query = 11;</code>
+       */
+      public Builder setQuery(
+          org.voltdb.pmsg.DRAgent.Query.Builder builderForValue) {
+        if (queryBuilder_ == null) {
+          query_ = builderForValue.build();
+          onChanged();
+        } else {
+          queryBuilder_.setMessage(builderForValue.build());
+        }
+        bitField0_ |= 0x00000200;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.Query query = 11;</code>
+       */
+      public Builder mergeQuery(org.voltdb.pmsg.DRAgent.Query value) {
+        if (queryBuilder_ == null) {
+          if (((bitField0_ & 0x00000200) == 0x00000200) &&
+              query_ != null &&
+              query_ != org.voltdb.pmsg.DRAgent.Query.getDefaultInstance()) {
+            query_ =
+              org.voltdb.pmsg.DRAgent.Query.newBuilder(query_).mergeFrom(value).buildPartial();
+          } else {
+            query_ = value;
+          }
+          onChanged();
+        } else {
+          queryBuilder_.mergeFrom(value);
+        }
+        bitField0_ |= 0x00000200;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.Query query = 11;</code>
+       */
+      public Builder clearQuery() {
+        if (queryBuilder_ == null) {
+          query_ = null;
+          onChanged();
+        } else {
+          queryBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000200);
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.Query query = 11;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.Query.Builder getQueryBuilder() {
+        bitField0_ |= 0x00000200;
+        onChanged();
+        return getQueryFieldBuilder().getBuilder();
+      }
+      /**
+       * <code>optional .pmsg.Query query = 11;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.QueryOrBuilder getQueryOrBuilder() {
+        if (queryBuilder_ != null) {
+          return queryBuilder_.getMessageOrBuilder();
+        } else {
+          return query_ == null ?
+              org.voltdb.pmsg.DRAgent.Query.getDefaultInstance() : query_;
+        }
+      }
+      /**
+       * <code>optional .pmsg.Query query = 11;</code>
+       */
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.Query, org.voltdb.pmsg.DRAgent.Query.Builder, org.voltdb.pmsg.DRAgent.QueryOrBuilder> 
+          getQueryFieldBuilder() {
+        if (queryBuilder_ == null) {
+          queryBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.Query, org.voltdb.pmsg.DRAgent.Query.Builder, org.voltdb.pmsg.DRAgent.QueryOrBuilder>(
+                  getQuery(),
+                  getParentForChildren(),
+                  isClean());
+          query_ = null;
+        }
+        return queryBuilder_;
+      }
+
+      private org.voltdb.pmsg.DRAgent.StartCursor startCursor_ = null;
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.StartCursor, org.voltdb.pmsg.DRAgent.StartCursor.Builder, org.voltdb.pmsg.DRAgent.StartCursorOrBuilder> startCursorBuilder_;
+      /**
+       * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+       */
+      public boolean hasStartCursor() {
+        return ((bitField0_ & 0x00000400) == 0x00000400);
+      }
+      /**
+       * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.StartCursor getStartCursor() {
+        if (startCursorBuilder_ == null) {
+          return startCursor_ == null ? org.voltdb.pmsg.DRAgent.StartCursor.getDefaultInstance() : startCursor_;
+        } else {
+          return startCursorBuilder_.getMessage();
+        }
+      }
+      /**
+       * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+       */
+      public Builder setStartCursor(org.voltdb.pmsg.DRAgent.StartCursor value) {
+        if (startCursorBuilder_ == null) {
+          if (value == null) {
+            throw new NullPointerException();
+          }
+          startCursor_ = value;
+          onChanged();
+        } else {
+          startCursorBuilder_.setMessage(value);
+        }
+        bitField0_ |= 0x00000400;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+       */
+      public Builder setStartCursor(
+          org.voltdb.pmsg.DRAgent.StartCursor.Builder builderForValue) {
+        if (startCursorBuilder_ == null) {
+          startCursor_ = builderForValue.build();
+          onChanged();
+        } else {
+          startCursorBuilder_.setMessage(builderForValue.build());
+        }
+        bitField0_ |= 0x00000400;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+       */
+      public Builder mergeStartCursor(org.voltdb.pmsg.DRAgent.StartCursor value) {
+        if (startCursorBuilder_ == null) {
+          if (((bitField0_ & 0x00000400) == 0x00000400) &&
+              startCursor_ != null &&
+              startCursor_ != org.voltdb.pmsg.DRAgent.StartCursor.getDefaultInstance()) {
+            startCursor_ =
+              org.voltdb.pmsg.DRAgent.StartCursor.newBuilder(startCursor_).mergeFrom(value).buildPartial();
+          } else {
+            startCursor_ = value;
+          }
+          onChanged();
+        } else {
+          startCursorBuilder_.mergeFrom(value);
+        }
+        bitField0_ |= 0x00000400;
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+       */
+      public Builder clearStartCursor() {
+        if (startCursorBuilder_ == null) {
+          startCursor_ = null;
+          onChanged();
+        } else {
+          startCursorBuilder_.clear();
+        }
+        bitField0_ = (bitField0_ & ~0x00000400);
+        return this;
+      }
+      /**
+       * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.StartCursor.Builder getStartCursorBuilder() {
+        bitField0_ |= 0x00000400;
+        onChanged();
+        return getStartCursorFieldBuilder().getBuilder();
+      }
+      /**
+       * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+       */
+      public org.voltdb.pmsg.DRAgent.StartCursorOrBuilder getStartCursorOrBuilder() {
+        if (startCursorBuilder_ != null) {
+          return startCursorBuilder_.getMessageOrBuilder();
+        } else {
+          return startCursor_ == null ?
+              org.voltdb.pmsg.DRAgent.StartCursor.getDefaultInstance() : startCursor_;
+        }
+      }
+      /**
+       * <code>optional .pmsg.StartCursor startCursor = 12;</code>
+       */
+      private com.google.protobuf.SingleFieldBuilderV3<
+          org.voltdb.pmsg.DRAgent.StartCursor, org.voltdb.pmsg.DRAgent.StartCursor.Builder, org.voltdb.pmsg.DRAgent.StartCursorOrBuilder> 
+          getStartCursorFieldBuilder() {
+        if (startCursorBuilder_ == null) {
+          startCursorBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
+              org.voltdb.pmsg.DRAgent.StartCursor, org.voltdb.pmsg.DRAgent.StartCursor.Builder, org.voltdb.pmsg.DRAgent.StartCursorOrBuilder>(
+                  getStartCursor(),
+                  getParentForChildren(),
+                  isClean());
+          startCursor_ = null;
+        }
+        return startCursorBuilder_;
+      }
+      public final Builder setUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.setUnknownFields(unknownFields);
+      }
+
+      public final Builder mergeUnknownFields(
+          final com.google.protobuf.UnknownFieldSet unknownFields) {
+        return super.mergeUnknownFields(unknownFields);
+      }
+
+
       // @@protoc_insertion_point(builder_scope:pmsg.CtrlEnvelope)
     }
 
+    // @@protoc_insertion_point(class_scope:pmsg.CtrlEnvelope)
+    private static final org.voltdb.pmsg.DRAgent.CtrlEnvelope DEFAULT_INSTANCE;
     static {
-      defaultInstance = new CtrlEnvelope(true);
-      defaultInstance.initFields();
+      DEFAULT_INSTANCE = new org.voltdb.pmsg.DRAgent.CtrlEnvelope();
     }
 
-    // @@protoc_insertion_point(class_scope:pmsg.CtrlEnvelope)
+    public static org.voltdb.pmsg.DRAgent.CtrlEnvelope getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    @java.lang.Deprecated public static final com.google.protobuf.Parser<CtrlEnvelope>
+        PARSER = new com.google.protobuf.AbstractParser<CtrlEnvelope>() {
+      public CtrlEnvelope parsePartialFrom(
+          com.google.protobuf.CodedInputStream input,
+          com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+          throws com.google.protobuf.InvalidProtocolBufferException {
+          return new CtrlEnvelope(input, extensionRegistry);
+      }
+    };
+
+    public static com.google.protobuf.Parser<CtrlEnvelope> parser() {
+      return PARSER;
+    }
+
+    @java.lang.Override
+    public com.google.protobuf.Parser<CtrlEnvelope> getParserForType() {
+      return PARSER;
+    }
+
+    public org.voltdb.pmsg.DRAgent.CtrlEnvelope getDefaultInstanceForType() {
+      return DEFAULT_INSTANCE;
+    }
+
   }
 
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_UUID_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_UUID_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_Ack_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_Ack_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_SnapshotReq_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_SnapshotReq_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_Reset_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_Reset_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_Pause_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_Pause_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_Connect_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_Connect_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_Subscribe_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_Subscribe_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
-    internal_static_pmsg_EventAck_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_pmsg_EventAck_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_pmsg_Query_descriptor;
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_pmsg_Query_fieldAccessorTable;
+  private static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_pmsg_StartCursor_descriptor;
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_pmsg_StartCursor_fieldAccessorTable;
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_Response_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_Response_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_pmsg_CtrlProtoResponse_descriptor;
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_pmsg_CtrlProtoResponse_fieldAccessorTable;
+  private static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_pmsg_AckResponse_descriptor;
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_pmsg_AckResponse_fieldAccessorTable;
+  private static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_pmsg_ConnectResponse_descriptor;
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_pmsg_ConnectResponse_fieldAccessorTable;
+  private static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_pmsg_QueryResponse_descriptor;
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_pmsg_QueryResponse_fieldAccessorTable;
+  private static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_pmsg_ClusterInfo_descriptor;
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+      internal_static_pmsg_ClusterInfo_fieldAccessorTable;
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_NodeInfo_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_NodeInfo_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_PartitionInfo_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_PartitionInfo_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_pmsg_CtrlEnvelope_descriptor;
-  private static
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+  private static final 
+    com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
       internal_static_pmsg_CtrlEnvelope_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
     return descriptor;
   }
-  private static com.google.protobuf.Descriptors.FileDescriptor
+  private static  com.google.protobuf.Descriptors.FileDescriptor
       descriptor;
   static {
     java.lang.String[] descriptorData = {
       "\n\rdragent.proto\022\004pmsg\"\'\n\004UUID\022\020\n\010instanc" +
-      "e\030\001 \002(\006\022\r\n\005count\030\002 \002(\006\"-\n\003Ack\022\023\n\013partiti" +
-      "onId\030\001 \001(\005\022\021\n\ttimestamp\030\002 \001(\006\"\034\n\013Snapsho" +
-      "tReq\022\r\n\005nonce\030\001 \001(\t\"/\n\005Reset\022\023\n\013partitio" +
-      "nId\030\001 \001(\005\022\021\n\ttimestamp\030\002 \001(\006\"\034\n\005Pause\022\023\n" +
-      "\013partitionId\030\001 \001(\005\"7\n\007Connect\022\021\n\tcluster" +
-      "Id\030\001 \001(\005\022\031\n\021persistInstanceId\030\002 \001(\006\"t\n\tS" +
-      "ubscribe\022\023\n\013partitionId\030\001 \001(\005\022\021\n\ttimesta" +
-      "mp\030\002 \001(\006\022\022\n\nisCovering\030\003 \001(\010\022\030\n\020rewindTo" +
-      "UniqueId\030\004 \001(\006\022\021\n\tisSyncing\030\005 \001(\010\"c\n\010Eve",
-      "ntAck\022\023\n\013partitionId\030\001 \001(\005\022\021\n\teventType\030" +
-      "\002 \001(\005\022\024\n\014lookForEvent\030\003 \001(\010\022\031\n\021lastAcked" +
-      "UniqueId\030\004 \001(\006\"\351\003\n\010Response\022\026\n\002id\030\001 \002(\0132" +
-      "\n.pmsg.UUID\022,\n\004mode\030\002 \001(\0162\036.pmsg.Respons" +
-      "e.ReplicationMode\022\031\n\021snapshotTimestamp\030\003" +
-      " \001(\006\022\026\n\016instanceIdHash\030\004 \001(\006\022\017\n\007version\030" +
-      "\005 \001(\t\022 \n\010nodeInfo\030\006 \003(\0132\016.pmsg.NodeInfo\022" +
-      "\034\n\024globalPartitionCount\030\007 \001(\005\022*\n\rpartiti" +
-      "onInfo\030\010 \003(\0132\023.pmsg.PartitionInfo\022\021\n\006sta" +
-      "tus\030\t \001(\005:\0010\022%\n\004type\030\n \001(\0162\027.pmsg.CtrlEn",
-      "velope.Type\022\022\n\ncatalogCRC\030\013 \001(\006\022\030\n\020catal" +
-      "ogSignature\030\014 \001(\t\022\024\n\014failureCause\030\r \001(\t\"" +
-      "i\n\017ReplicationMode\022\010\n\004IDLE\020\001\022\026\n\022SYNCING_" +
-      "REPLICATED\020\002\022\027\n\023SYNCING_PARTITIONED\020\003\022\n\n" +
-      "\006ACTIVE\020\004\022\017\n\013UNAVAILABLE\020\005\"@\n\010NodeInfo\022\020" +
-      "\n\010hostname\030\001 \001(\t\022\016\n\006drport\030\002 \001(\005\022\022\n\ncata" +
-      "logCRC\030\003 \001(\006\"\227\002\n\rPartitionInfo\022\023\n\013partit" +
-      "ionId\030\001 \001(\005\022\031\n\021lastSentTimestamp\030\002 \001(\006\022\030" +
-      "\n\020lowestTupleIndex\030\003 \001(\003\022\032\n\022lastSentTupl" +
-      "eIndex\030\004 \001(\003\022\027\n\017totalTupleCount\030\005 \001(\003\022\036\n",
-      "\026outstandingBufferCount\030\006 \001(\003\022\034\n\024outstan" +
-      "dingByteCount\030\007 \001(\003\022\020\n\010isPaused\030\010 \001(\010\022\020\n" +
-      "\010isSynced\030\t \001(\010\022\024\n\014nextUniqueId\030\n \001(\003\022\017\n" +
-      "\007isEnded\030\013 \001(\010\"\355\003\n\014CtrlEnvelope\022%\n\004type\030" +
-      "\001 \002(\0162\027.pmsg.CtrlEnvelope.Type\022\026\n\002id\030\002 \002" +
-      "(\0132\n.pmsg.UUID\022\026\n\003ack\030\003 \001(\0132\t.pmsg.Ack\022\032" +
-      "\n\005reset\030\004 \001(\0132\013.pmsg.Reset\022\032\n\005pause\030\005 \001(" +
-      "\0132\013.pmsg.Pause\022 \n\010response\030\006 \001(\0132\016.pmsg." +
-      "Response\022&\n\013snapshotReq\030\007 \001(\0132\021.pmsg.Sna" +
-      "pshotReq\022\"\n\tsubscribe\030\010 \001(\0132\017.pmsg.Subsc",
-      "ribe\022 \n\010eventAck\030\t \001(\0132\016.pmsg.EventAck\022\036" +
-      "\n\007connect\030\n \001(\0132\r.pmsg.Connect\"\235\001\n\004Type\022" +
-      "\007\n\003ACK\020\001\022\t\n\005RESET\020\002\022\t\n\005PAUSE\020\003\022\t\n\005QUERY\020" +
-      "\004\022\014\n\010RESPONSE\020\005\022\020\n\014SNAPSHOT_REQ\020\006\022\021\n\rSNA" +
-      "PSHOT_TERM\020\007\022\r\n\tSTOP_SYNC\020\010\022\013\n\007CONNECT\020\t" +
-      "\022\r\n\tSUBSCRIBE\020\n\022\r\n\tEVENT_ACK\020\013B\032\n\017org.vo" +
-      "ltdb.pmsgB\007DRAgent"
+      "e\030\001 \002(\006\022\r\n\005count\030\002 \002(\006\"M\n\003Ack\022\023\n\013partiti" +
+      "onId\030\001 \001(\005\022\021\n\ttimestamp\030\002 \001(\006\022\036\n\026average" +
+      "RowLatencyNanos\030\003 \001(\006\":\n\013SnapshotReq\022\r\n\005" +
+      "nonce\030\001 \001(\t\022\034\n\024globalPartitionCount\030\002 \001(" +
+      "\005\"/\n\005Reset\022\023\n\013partitionId\030\001 \001(\005\022\021\n\ttimes" +
+      "tamp\030\002 \001(\006\"\034\n\005Pause\022\023\n\013partitionId\030\001 \001(\005" +
+      "\"\215\001\n\007Connect\022\021\n\tclusterId\030\001 \001(\005\022\031\n\021clust" +
+      "erCreationId\030\002 \001(\006\022\027\n\017protocolVersion\030\003 " +
+      "\001(\005\022\031\n\021clusterRecoveryId\030\004 \001(\006\022 \n\010nodeIn",
+      "fo\030\005 \001(\0132\016.pmsg.NodeInfo\"t\n\tSubscribe\022\023\n" +
+      "\013partitionId\030\001 \001(\005\022\021\n\ttimestamp\030\002 \001(\006\022\022\n" +
+      "\nisCovering\030\003 \001(\010\022\030\n\020rewindToUniqueId\030\004 " +
+      "\001(\006\022\021\n\tisSyncing\030\005 \001(\010\"#\n\005Query\022\032\n\013inclu" +
+      "deMesh\030\001 \001(\010:\005false\"5\n\013StartCursor\022&\n\013cl" +
+      "usterInfo\030\001 \003(\0132\021.pmsg.ClusterInfo\"\231\004\n\010R" +
+      "esponse\022\026\n\002id\030\001 \002(\0132\n.pmsg.UUID\022,\n\004mode\030" +
+      "\002 \001(\0162\036.pmsg.Response.ReplicationMode\022\031\n" +
+      "\021snapshotTimestamp\030\003 \001(\006\022\026\n\016instanceIdHa" +
+      "sh\030\004 \001(\006\022\017\n\007version\030\005 \001(\t\022 \n\010nodeInfo\030\006 ",
+      "\003(\0132\016.pmsg.NodeInfo\022\034\n\024globalPartitionCo" +
+      "unt\030\007 \001(\005\022*\n\rpartitionInfo\030\010 \003(\0132\023.pmsg." +
+      "PartitionInfo\022\021\n\006status\030\t \001(\005:\0010\022%\n\004type" +
+      "\030\n \001(\0162\027.pmsg.CtrlEnvelope.Type\022\022\n\ncatal" +
+      "ogCRC\030\013 \001(\006\022\030\n\020catalogSignature\030\014 \001(\t\022\024\n" +
+      "\014failureCause\030\r \001(\t\022\025\n\risEndOfStream\030\016 \001" +
+      "(\010\022\027\n\017protocolVersion\030\017 \001(\005\"i\n\017Replicati" +
+      "onMode\022\010\n\004IDLE\020\001\022\026\n\022SYNCING_REPLICATED\020\002" +
+      "\022\027\n\023SYNCING_PARTITIONED\020\003\022\n\n\006ACTIVE\020\004\022\017\n" +
+      "\013UNAVAILABLE\020\005\"\377\001\n\021CtrlProtoResponse\022\026\n\002",
+      "id\030\001 \002(\0132\n.pmsg.UUID\022%\n\004type\030\002 \001(\0162\027.pms" +
+      "g.CtrlEnvelope.Type\022\021\n\006status\030\003 \001(\005:\0010\022\024" +
+      "\n\014failureCause\030\004 \001(\t\022.\n\017connectResponse\030" +
+      "\005 \001(\0132\025.pmsg.ConnectResponse\022*\n\rqueryRes" +
+      "ponse\030\006 \001(\0132\023.pmsg.QueryResponse\022&\n\013ackR" +
+      "esponse\030\007 \001(\0132\021.pmsg.AckResponse\"$\n\013AckR" +
+      "esponse\022\025\n\risEndOfStream\030\001 \001(\010\"\200\001\n\017Conne" +
+      "ctResponse\022\022\n\ncatalogCRC\030\001 \001(\006\022\030\n\020catalo" +
+      "gSignature\030\002 \001(\t\022\027\n\017protocolVersion\030\003 \001(" +
+      "\005\022&\n\013clusterInfo\030\004 \003(\0132\021.pmsg.ClusterInf",
+      "o\"p\n\rQueryResponse\022\032\n\013includeMesh\030\001 \001(\010:" +
+      "\005false\022&\n\013clusterInfo\030\002 \003(\0132\021.pmsg.Clust" +
+      "erInfo\022\033\n\023hashinatorSignature\030\003 \001(\006\"\315\001\n\013" +
+      "ClusterInfo\022\021\n\tclusterId\030\001 \002(\005\022\022\n\ncreati" +
+      "onId\030\002 \002(\006\022\022\n\nrecoveryId\030\003 \001(\006\022\027\n\017protoc" +
+      "olVersion\030\004 \001(\005\022\034\n\024globalPartitionCount\030" +
+      "\005 \001(\005\022 \n\010nodeInfo\030\006 \003(\0132\016.pmsg.NodeInfo\022" +
+      "*\n\rpartitionInfo\030\007 \003(\0132\023.pmsg.PartitionI" +
+      "nfo\":\n\010NodeInfo\022\020\n\010hostname\030\001 \001(\t\022\016\n\006drp" +
+      "ort\030\002 \001(\005\022\014\n\004isUp\030\003 \001(\010\"R\n\rPartitionInfo",
+      "\022\023\n\013partitionId\030\001 \001(\005\022\024\n\014nextUniqueId\030\n " +
+      "\001(\003\022\026\n\010isSynced\030\t \001(\010:\004true\"\222\004\n\014CtrlEnve" +
+      "lope\022%\n\004type\030\001 \002(\0162\027.pmsg.CtrlEnvelope.T" +
+      "ype\022\026\n\002id\030\002 \002(\0132\n.pmsg.UUID\022\026\n\003ack\030\003 \001(\013" +
+      "2\t.pmsg.Ack\022\032\n\005reset\030\004 \001(\0132\013.pmsg.Reset\022" +
+      "\032\n\005pause\030\005 \001(\0132\013.pmsg.Pause\022 \n\010response\030" +
+      "\006 \001(\0132\016.pmsg.Response\022&\n\013snapshotReq\030\007 \001" +
+      "(\0132\021.pmsg.SnapshotReq\022\"\n\tsubscribe\030\010 \001(\013" +
+      "2\017.pmsg.Subscribe\022\036\n\007connect\030\n \001(\0132\r.pms" +
+      "g.Connect\022\032\n\005query\030\013 \001(\0132\013.pmsg.Query\022&\n",
+      "\013startCursor\030\014 \001(\0132\021.pmsg.StartCursor\"\240\001" +
+      "\n\004Type\022\007\n\003ACK\020\001\022\t\n\005RESET\020\002\022\t\n\005PAUSE\020\003\022\t\n" +
+      "\005QUERY\020\004\022\014\n\010RESPONSE\020\005\022\020\n\014SNAPSHOT_REQ\020\006" +
+      "\022\021\n\rSNAPSHOT_TERM\020\007\022\r\n\tSTOP_SYNC\020\010\022\013\n\007CO" +
+      "NNECT\020\t\022\r\n\tSUBSCRIBE\020\n\022\020\n\014START_CURSOR\020\013" +
+      "B\032\n\017org.voltdb.pmsgB\007DRAgent"
     };
     com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner =
-      new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {
-        public com.google.protobuf.ExtensionRegistry assignDescriptors(
-            com.google.protobuf.Descriptors.FileDescriptor root) {
-          descriptor = root;
-          internal_static_pmsg_UUID_descriptor =
-            getDescriptor().getMessageTypes().get(0);
-          internal_static_pmsg_UUID_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_UUID_descriptor,
-              new java.lang.String[] { "Instance", "Count", });
-          internal_static_pmsg_Ack_descriptor =
-            getDescriptor().getMessageTypes().get(1);
-          internal_static_pmsg_Ack_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_Ack_descriptor,
-              new java.lang.String[] { "PartitionId", "Timestamp", });
-          internal_static_pmsg_SnapshotReq_descriptor =
-            getDescriptor().getMessageTypes().get(2);
-          internal_static_pmsg_SnapshotReq_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_SnapshotReq_descriptor,
-              new java.lang.String[] { "Nonce", });
-          internal_static_pmsg_Reset_descriptor =
-            getDescriptor().getMessageTypes().get(3);
-          internal_static_pmsg_Reset_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_Reset_descriptor,
-              new java.lang.String[] { "PartitionId", "Timestamp", });
-          internal_static_pmsg_Pause_descriptor =
-            getDescriptor().getMessageTypes().get(4);
-          internal_static_pmsg_Pause_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_Pause_descriptor,
-              new java.lang.String[] { "PartitionId", });
-          internal_static_pmsg_Connect_descriptor =
-            getDescriptor().getMessageTypes().get(5);
-          internal_static_pmsg_Connect_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_Connect_descriptor,
-              new java.lang.String[] { "ClusterId", "PersistInstanceId", });
-          internal_static_pmsg_Subscribe_descriptor =
-            getDescriptor().getMessageTypes().get(6);
-          internal_static_pmsg_Subscribe_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_Subscribe_descriptor,
-              new java.lang.String[] { "PartitionId", "Timestamp", "IsCovering", "RewindToUniqueId", "IsSyncing", });
-          internal_static_pmsg_EventAck_descriptor =
-            getDescriptor().getMessageTypes().get(7);
-          internal_static_pmsg_EventAck_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_EventAck_descriptor,
-              new java.lang.String[] { "PartitionId", "EventType", "LookForEvent", "LastAckedUniqueId", });
-          internal_static_pmsg_Response_descriptor =
-            getDescriptor().getMessageTypes().get(8);
-          internal_static_pmsg_Response_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_Response_descriptor,
-              new java.lang.String[] { "Id", "Mode", "SnapshotTimestamp", "InstanceIdHash", "Version", "NodeInfo", "GlobalPartitionCount", "PartitionInfo", "Status", "Type", "CatalogCRC", "CatalogSignature", "FailureCause", });
-          internal_static_pmsg_NodeInfo_descriptor =
-            getDescriptor().getMessageTypes().get(9);
-          internal_static_pmsg_NodeInfo_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_NodeInfo_descriptor,
-              new java.lang.String[] { "Hostname", "Drport", "CatalogCRC", });
-          internal_static_pmsg_PartitionInfo_descriptor =
-            getDescriptor().getMessageTypes().get(10);
-          internal_static_pmsg_PartitionInfo_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_PartitionInfo_descriptor,
-              new java.lang.String[] { "PartitionId", "LastSentTimestamp", "LowestTupleIndex", "LastSentTupleIndex", "TotalTupleCount", "OutstandingBufferCount", "OutstandingByteCount", "IsPaused", "IsSynced", "NextUniqueId", "IsEnded", });
-          internal_static_pmsg_CtrlEnvelope_descriptor =
-            getDescriptor().getMessageTypes().get(11);
-          internal_static_pmsg_CtrlEnvelope_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_pmsg_CtrlEnvelope_descriptor,
-              new java.lang.String[] { "Type", "Id", "Ack", "Reset", "Pause", "Response", "SnapshotReq", "Subscribe", "EventAck", "Connect", });
-          return null;
-        }
-      };
+        new com.google.protobuf.Descriptors.FileDescriptor.    InternalDescriptorAssigner() {
+          public com.google.protobuf.ExtensionRegistry assignDescriptors(
+              com.google.protobuf.Descriptors.FileDescriptor root) {
+            descriptor = root;
+            return null;
+          }
+        };
     com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
         new com.google.protobuf.Descriptors.FileDescriptor[] {
         }, assigner);
+    internal_static_pmsg_UUID_descriptor =
+      getDescriptor().getMessageTypes().get(0);
+    internal_static_pmsg_UUID_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_UUID_descriptor,
+        new java.lang.String[] { "Instance", "Count", });
+    internal_static_pmsg_Ack_descriptor =
+      getDescriptor().getMessageTypes().get(1);
+    internal_static_pmsg_Ack_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_Ack_descriptor,
+        new java.lang.String[] { "PartitionId", "Timestamp", "AverageRowLatencyNanos", });
+    internal_static_pmsg_SnapshotReq_descriptor =
+      getDescriptor().getMessageTypes().get(2);
+    internal_static_pmsg_SnapshotReq_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_SnapshotReq_descriptor,
+        new java.lang.String[] { "Nonce", "GlobalPartitionCount", });
+    internal_static_pmsg_Reset_descriptor =
+      getDescriptor().getMessageTypes().get(3);
+    internal_static_pmsg_Reset_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_Reset_descriptor,
+        new java.lang.String[] { "PartitionId", "Timestamp", });
+    internal_static_pmsg_Pause_descriptor =
+      getDescriptor().getMessageTypes().get(4);
+    internal_static_pmsg_Pause_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_Pause_descriptor,
+        new java.lang.String[] { "PartitionId", });
+    internal_static_pmsg_Connect_descriptor =
+      getDescriptor().getMessageTypes().get(5);
+    internal_static_pmsg_Connect_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_Connect_descriptor,
+        new java.lang.String[] { "ClusterId", "ClusterCreationId", "ProtocolVersion", "ClusterRecoveryId", "NodeInfo", });
+    internal_static_pmsg_Subscribe_descriptor =
+      getDescriptor().getMessageTypes().get(6);
+    internal_static_pmsg_Subscribe_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_Subscribe_descriptor,
+        new java.lang.String[] { "PartitionId", "Timestamp", "IsCovering", "RewindToUniqueId", "IsSyncing", });
+    internal_static_pmsg_Query_descriptor =
+      getDescriptor().getMessageTypes().get(7);
+    internal_static_pmsg_Query_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_Query_descriptor,
+        new java.lang.String[] { "IncludeMesh", });
+    internal_static_pmsg_StartCursor_descriptor =
+      getDescriptor().getMessageTypes().get(8);
+    internal_static_pmsg_StartCursor_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_StartCursor_descriptor,
+        new java.lang.String[] { "ClusterInfo", });
+    internal_static_pmsg_Response_descriptor =
+      getDescriptor().getMessageTypes().get(9);
+    internal_static_pmsg_Response_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_Response_descriptor,
+        new java.lang.String[] { "Id", "Mode", "SnapshotTimestamp", "InstanceIdHash", "Version", "NodeInfo", "GlobalPartitionCount", "PartitionInfo", "Status", "Type", "CatalogCRC", "CatalogSignature", "FailureCause", "IsEndOfStream", "ProtocolVersion", });
+    internal_static_pmsg_CtrlProtoResponse_descriptor =
+      getDescriptor().getMessageTypes().get(10);
+    internal_static_pmsg_CtrlProtoResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_CtrlProtoResponse_descriptor,
+        new java.lang.String[] { "Id", "Type", "Status", "FailureCause", "ConnectResponse", "QueryResponse", "AckResponse", });
+    internal_static_pmsg_AckResponse_descriptor =
+      getDescriptor().getMessageTypes().get(11);
+    internal_static_pmsg_AckResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_AckResponse_descriptor,
+        new java.lang.String[] { "IsEndOfStream", });
+    internal_static_pmsg_ConnectResponse_descriptor =
+      getDescriptor().getMessageTypes().get(12);
+    internal_static_pmsg_ConnectResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_ConnectResponse_descriptor,
+        new java.lang.String[] { "CatalogCRC", "CatalogSignature", "ProtocolVersion", "ClusterInfo", });
+    internal_static_pmsg_QueryResponse_descriptor =
+      getDescriptor().getMessageTypes().get(13);
+    internal_static_pmsg_QueryResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_QueryResponse_descriptor,
+        new java.lang.String[] { "IncludeMesh", "ClusterInfo", "HashinatorSignature", });
+    internal_static_pmsg_ClusterInfo_descriptor =
+      getDescriptor().getMessageTypes().get(14);
+    internal_static_pmsg_ClusterInfo_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_ClusterInfo_descriptor,
+        new java.lang.String[] { "ClusterId", "CreationId", "RecoveryId", "ProtocolVersion", "GlobalPartitionCount", "NodeInfo", "PartitionInfo", });
+    internal_static_pmsg_NodeInfo_descriptor =
+      getDescriptor().getMessageTypes().get(15);
+    internal_static_pmsg_NodeInfo_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_NodeInfo_descriptor,
+        new java.lang.String[] { "Hostname", "Drport", "IsUp", });
+    internal_static_pmsg_PartitionInfo_descriptor =
+      getDescriptor().getMessageTypes().get(16);
+    internal_static_pmsg_PartitionInfo_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_PartitionInfo_descriptor,
+        new java.lang.String[] { "PartitionId", "NextUniqueId", "IsSynced", });
+    internal_static_pmsg_CtrlEnvelope_descriptor =
+      getDescriptor().getMessageTypes().get(17);
+    internal_static_pmsg_CtrlEnvelope_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
+        internal_static_pmsg_CtrlEnvelope_descriptor,
+        new java.lang.String[] { "Type", "Id", "Ack", "Reset", "Pause", "Response", "SnapshotReq", "Subscribe", "Connect", "Query", "StartCursor", });
   }
 
   // @@protoc_insertion_point(outer_class_scope)

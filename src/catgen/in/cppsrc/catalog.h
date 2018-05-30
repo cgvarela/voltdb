@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -64,7 +64,6 @@ protected:
     std::vector<std::string> m_deletions;
 
     void executeOne(const std::string &stmt);
-    CatalogType * itemForRef(const std::string &ref);
     CatalogType * itemForPath(const CatalogType *parent, const std::string &path);
     CatalogType * itemForPathPart(const CatalogType *parent, const std::string &pathPart) const;
 
@@ -83,6 +82,7 @@ private:
 
 public:
     void purgeDeletions();
+    CatalogType * itemForRef(const std::string &ref);
 
     /**
      * Create a new Catalog hierarchy.
@@ -105,7 +105,7 @@ public:
     static void hexDecodeString(const std::string &hexString, char *buffer);
 
     /** pass in a buffer at twice as long as the string */
-    static void hexEncodeString(const char *string, char *buffer);
+    static void hexEncodeString(const char *string, char *buffer, size_t len);
 
     /** return by out-param a copy of the recently deleted paths. */
     void getDeletedPaths(std::vector<std::string> &deletions);

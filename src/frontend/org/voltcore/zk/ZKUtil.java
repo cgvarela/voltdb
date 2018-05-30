@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -100,37 +100,23 @@ public class ZKUtil {
         return tempFile;
     }
 
-//    /*
-//     * Attempts to upload the files atomically and transactionally
-//     */
-//    public static void uploadFiles(
-//            ZooKeeper zk,
-//            String rootPath,
-//            List<String> zkNames,
-//            List<String> filePaths,
-//            boolean ephemeral) throws Exception {
-//        for (String filePath : filePaths) {
-//            File file = new VoltFile(filePath);
-//            if (!file.exists() || !file.canRead()) {
-//                throw new Exception("File " + file + " does not exist or isn't readable");
-//            }
-//        }
-//        for (int ii = 0; ii < filePaths.size(); ii++) {
-//            File file = new VoltFile(filePaths.get(ii));
-//            uploadFileAsChunks(zk, rootPath + "/" + zkNames.get(ii), file, ephemeral);
-//        }
-//    }
-
     public static boolean uploadFileAsChunks(ZooKeeper zk, String zkPath, File file, boolean ephemeral)
             throws Exception {
-        if (file.exists() && file.canRead()) {
-            FileInputStream fis = new FileInputStream(file);
-            ByteBuffer fileBuffer = ByteBuffer.allocate((int)file.length());
-            while (fileBuffer.hasRemaining()) {
-                fis.getChannel().read(fileBuffer);
+        FileInputStream fis = null;
+        try {
+            if (file.exists() && file.canRead()) {
+                fis = new FileInputStream(file);
+                ByteBuffer fileBuffer = ByteBuffer.allocate((int)file.length());
+                while (fileBuffer.hasRemaining()) {
+                    fis.getChannel().read(fileBuffer);
+                }
+                fileBuffer.flip();
+                uploadBytesAsChunks(zk, zkPath, fileBuffer.array(), ephemeral);
             }
-            fileBuffer.flip();
-            uploadBytesAsChunks(zk, zkPath, fileBuffer.array(), ephemeral);
+        } finally {
+            if (fis != null) {
+                fis.close();
+            }
         }
         return true;
     }

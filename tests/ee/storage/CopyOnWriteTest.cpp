@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,38 +22,45 @@
  */
 
 #include "harness.h"
-#include "common/TupleSchema.h"
-#include "common/types.h"
+
 #include "common/NValue.hpp"
 #include "common/RecoveryProtoMessage.h"
-#include "common/ValueFactory.hpp"
-#include "common/ValuePeeker.hpp"
 #include "common/TupleOutputStream.h"
 #include "common/TupleOutputStreamProcessor.h"
+#include "common/TupleSchema.h"
+#include "common/types.h"
+#include "common/ValueFactory.hpp"
+#include "common/ValuePeeker.hpp"
 #include "execution/VoltDBEngine.h"
 #include "expressions/expressions.h"
+#include "indexes/tableindex.h"
+#include "indexes/tableindexfactory.h"
+#include "storage/CopyOnWriteIterator.h"
+#include "storage/DRTupleStream.h"
+#include "storage/ElasticContext.h"
+#include "storage/ElasticScanner.h"
 #include "storage/persistenttable.h"
 #include "storage/tablefactory.h"
-#include "storage/tableutil.h"
-#include "indexes/tableindex.h"
 #include "storage/tableiterator.h"
-#include "storage/CopyOnWriteIterator.h"
 #include "storage/TableStreamerContext.h"
-#include "storage/ElasticScanner.h"
-#include "storage/ElasticContext.h"
-#include "storage/DRTupleStream.h"
-#include "stx/btree_set.h"
-#include "common/DefaultTupleSerializer.h"
-#include "jsoncpp/jsoncpp.h"
-#include <vector>
-#include <string>
-#include <iostream>
-#include <stdint.h>
-#include <stdarg.h>
+#include "storage/tableutil.h"
+
 #include <boost/foreach.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
+
+#include "stx/btree_set.h"
+
 #include <murmur3/MurmurHash3.h>
+
+#include "jsoncpp/jsoncpp.h"
+
+#include <iostream>
+#include <stdint.h>
+#include <stdarg.h>
+#include <string>
+#include <vector>
+
 
 using namespace voltdb;
 
@@ -132,7 +139,7 @@ typedef std::vector<T_HashRange> T_HashRangeVector;
  */
 class CopyOnWriteTest : public Test {
 public:
-    CopyOnWriteTest() : m_table(NULL) {
+    CopyOnWriteTest() : m_table(NULL), drStream(0) {
         m_tuplesInserted = 0;
         m_tuplesUpdated = 0;
         m_tuplesDeleted = 0;
@@ -140,8 +147,13 @@ public:
         m_tuplesDeletedInLastUndo = 0;
         m_engine = new voltdb::VoltDBEngine();
         int partitionCount = 1;
-        m_engine->initialize(1,1, 0, 0, "", false, DEFAULT_TEMP_TABLE_MEMORY);
-        m_engine->updateHashinator( HASHINATOR_LEGACY, (char*)&partitionCount, NULL, 0);
+        int tokenCount = htonl(100);
+        int partitionId = htonl(0);
+
+        m_engine->initialize(1,1, 0, partitionCount, 0, "", 0, 1024, DEFAULT_TEMP_TABLE_MEMORY, false);
+        partitionCount = htonl(partitionCount);
+        int data[3] = {partitionCount, tokenCount, partitionId};
+        m_engine->updateHashinator((char*)data, NULL, 0);
 
         m_columnNames.push_back("1");
         m_columnNames.push_back("2");
@@ -205,7 +217,7 @@ public:
 
         strcpy(m_stage, "Initialize");
 
-        ExecutorContext::getExecutorContext()->setDrStreamForTest(&drStream);
+        ExecutorContext::getExecutorContext()->setDrStream(&drStream);
     }
 
     ~CopyOnWriteTest() {
@@ -232,19 +244,23 @@ public:
                                              true, true, m_tableSchema);
         std::vector<voltdb::TableIndexScheme> indexes;
 
+        if (m_table != NULL) {
+            delete m_table;
+        }
+
         m_table = dynamic_cast<voltdb::PersistentTable*>(
                 voltdb::TableFactory::getPersistentTable(m_tableId, "Foo", m_tableSchema,
                                                          m_columnNames, signature, false, 0, false, false,
                                                          tableAllocationTargetSize));
 
-        TableIndex *pkeyIndex = TableIndexFactory::TableIndexFactory::getInstance(indexScheme);
+        TableIndex *pkeyIndex = TableIndexFactory::getInstance(indexScheme);
         assert(pkeyIndex);
         m_table->addIndex(pkeyIndex);
         m_table->setPrimaryKeyIndex(pkeyIndex);
 
         TableTuple tuple(m_table->schema());
         size_t i = 0;
-        voltdb::TableIterator& iterator = m_table->iterator();
+        voltdb::TableIterator iterator = m_table->iterator();
         while (iterator.next(tuple)) {
             int64_t value = *reinterpret_cast<const int64_t*>(tuple.address() + 1);
             m_values.push_back(value);
@@ -295,7 +311,7 @@ public:
         }
         m_engine->setUndoToken(++m_undoToken);
         ExecutorContext::getExecutorContext()->setupForPlanFragments(m_engine->getCurrentUndoQuantum(),
-                                                                     0, 0, 0, 0);
+                                                                     0, 0, 0, 0, false);
         m_tuplesDeletedInLastUndo = 0;
         m_tuplesInsertedInLastUndo = 0;
     }
@@ -312,6 +328,21 @@ public:
         }
     }
 
+    void updateSpecificTuple(PersistentTable *table, voltdb::TableTuple tuple, T_ValueSet *setFrom = NULL, T_ValueSet *setTo = NULL) {
+        TableTuple tempTuple = table->tempTuple();
+        tempTuple.copy(tuple);
+        int value = ::rand();
+        tempTuple.setNValue(1, ValueFactory::getIntegerValue(value));
+        if (setFrom != NULL) {
+            setFrom->insert(*reinterpret_cast<const int64_t*>(tuple.address() + 1));
+        }
+        if (setTo != NULL) {
+            setTo->insert(*reinterpret_cast<const int64_t*>(tempTuple.address() + 1));
+        }
+        table->updateTuple(tuple, tempTuple);
+        m_tuplesUpdated++;
+    }
+
     void doRandomInsert(PersistentTable *table, T_ValueSet *set = NULL) {
         addRandomUniqueTuples(table, 1, set);
         m_tuplesInserted++;
@@ -319,20 +350,9 @@ public:
     }
 
     void doRandomUpdate(PersistentTable *table, T_ValueSet *setFrom = NULL, T_ValueSet *setTo = NULL) {
-        voltdb::TableTuple tuple(table->schema());
-        voltdb::TableTuple tempTuple = table->tempTuple();
+        TableTuple tuple(table->schema());
         if (tableutil::getRandomTuple(table, tuple)) {
-            tempTuple.copy(tuple);
-            int value = ::rand();
-            tempTuple.setNValue(1, ValueFactory::getIntegerValue(value));
-            if (setFrom != NULL) {
-                setFrom->insert(*reinterpret_cast<const int64_t*>(tuple.address() + 1));
-            }
-            if (setTo != NULL) {
-                setTo->insert(*reinterpret_cast<const int64_t*>(tempTuple.address() + 1));
-            }
-            table->updateTuple(tuple, tempTuple);
-            m_tuplesUpdated++;
+            updateSpecificTuple(table, tuple, setFrom, setTo);
         }
     }
 
@@ -371,8 +391,8 @@ public:
         }
     }
 
-    void doForcedCompaction(PersistentTable *table) {
-        table->doForcedCompaction();
+    bool doForcedCompaction(PersistentTable *table) {
+        return table->doForcedCompaction();
     }
 
     void checkTuples(size_t tupleCount, const T_ValueSet& expected, const T_ValueSet& received) {
@@ -393,7 +413,7 @@ public:
         }
 
         size_t numTuples = 0;
-        voltdb::TableIterator& iterator = m_table->iterator();
+        voltdb::TableIterator iterator = m_table->iterator();
         TableTuple tuple(m_table->schema());
         while (iterator.next(tuple)) {
             if (tuple.isDirty()) {
@@ -416,7 +436,7 @@ public:
     }
 
     void getTableValueSet(T_ValueSet &set) {
-        voltdb::TableIterator& iterator = m_table->iterator();
+        voltdb::TableIterator iterator = m_table->iterator();
         TableTuple tuple(m_table->schema());
         while (iterator.next(tuple)) {
             const std::pair<T_ValueSet::iterator, bool> p =
@@ -453,11 +473,11 @@ public:
         return m_table->m_blocksNotPendingSnapshot;
     }
 
-    TBBucketMap &getBlocksPendingSnapshotLoad() {
+    TBBucketPtrVector &getBlocksPendingSnapshotLoad() {
         return m_table->m_blocksPendingSnapshotLoad;
     }
 
-    TBBucketMap &getBlocksNotPendingSnapshotLoad() {
+    TBBucketPtrVector &getBlocksNotPendingSnapshotLoad() {
         return m_table->m_blocksNotPendingSnapshotLoad;
     }
 
@@ -467,8 +487,7 @@ public:
                           bool skipInternalActivation) {
         m_outputStreams.reset(new TupleOutputStreamProcessor(m_serializationBuffer, sizeof(m_serializationBuffer)));
         m_outputStream = &m_outputStreams->at(0);
-        return m_table->activateWithCustomStreamer(m_serializer,
-                                                   streamType,
+        return m_table->activateWithCustomStreamer(streamType,
                                                    streamer,
                                                    m_tableId,
                                                    predicateStrings,
@@ -647,7 +666,7 @@ public:
         // Check for dirty tuples.
         context("check dirty");
         int numTuples = 0;
-        voltdb::TableIterator &iterator = m_table->iterator();
+        voltdb::TableIterator iterator = m_table->iterator();
         TableTuple tuple(m_table->schema());
         while (iterator.next(tuple)) {
             if (tuple.isDirty()) {
@@ -742,7 +761,7 @@ public:
 
     void checkIndex(const std::string &tag, ElasticIndex *index, StreamPredicateList &predicates, bool directKey) {
         ASSERT_NE(NULL, index);
-        voltdb::TableIterator& iterator = m_table->iterator();
+        voltdb::TableIterator iterator = m_table->iterator();
         TableTuple tuple(m_table->schema());
         T_ValueSet accepted;
         T_ValueSet rejected;
@@ -951,7 +970,7 @@ public:
 
     void streamElasticIndex(std::vector<std::string> &predicateStrings, bool checkCalls) {
         boost::shared_ptr<ReferenceSerializeInputBE> predicateInput = getPredicateSerializeInput(predicateStrings);
-        bool ok = m_table->activateStream(m_serializer, TABLE_STREAM_ELASTIC_INDEX, 0, m_tableId, *predicateInput);
+        bool ok = m_table->activateStream(TABLE_STREAM_ELASTIC_INDEX, 0, m_tableId, *predicateInput);
         ASSERT_TRUE(ok);
 
         // Force index streaming to need multiple streamMore() calls.
@@ -979,7 +998,7 @@ public:
 
         totalInserted = 0;
 
-        m_table->activateStream(m_serializer, TABLE_STREAM_SNAPSHOT, 0, m_tableId, predicateInput);
+        m_table->activateStream(TABLE_STREAM_SNAPSHOT, 0, m_tableId, predicateInput);
 
         while (true) {
             TupleOutputStreamProcessor outputStreams(m_serializationBuffer, sizeof(m_serializationBuffer));
@@ -1035,7 +1054,7 @@ public:
         boost::shared_ptr<ReferenceSerializeInputBE> predicateInput = getHashRangePredicateInput(testRange);
 
         m_engine->setUndoToken(m_undoToken);
-        bool activated = m_table->activateStream(m_serializer, TABLE_STREAM_ELASTIC_INDEX_READ,
+        bool activated = m_table->activateStream(TABLE_STREAM_ELASTIC_INDEX_READ,
                                                  0, m_tableId, *predicateInput);
         ASSERT_TRUE(activated);
 
@@ -1076,13 +1095,13 @@ public:
             m_engine->releaseUndoToken(m_undoToken);
         }
         ExecutorContext::getExecutorContext()->setupForPlanFragments(m_engine->getCurrentUndoQuantum(),
-                                                                     0, 0, 0, 0);
+                                                                     0, 0, 0, 0, false);
         m_undoToken++;
     }
 
     void clearIndex(const T_HashRange &testRange, bool expected) {
         boost::shared_ptr<ReferenceSerializeInputBE> predicateInput = getHashRangePredicateInput(testRange);
-        bool activated = m_table->activateStream(m_serializer, TABLE_STREAM_ELASTIC_INDEX_CLEAR,
+        bool activated = m_table->activateStream(TABLE_STREAM_ELASTIC_INDEX_CLEAR,
                                                  0, m_tableId, *predicateInput);
         ASSERT_EQ(expected,activated);
     }
@@ -1097,7 +1116,6 @@ public:
     std::vector<bool> m_tableSchemaAllowNull;
     std::vector<int> m_primaryKeyIndexColumns;
     char signature[20];
-    DefaultTupleSerializer m_serializer;
     char m_serializationBuffer[BUFFER_SIZE];
     char m_predicateBuffer[1024 * 256];
     char m_hashRangeBuffer[1024 * 256];
@@ -1143,11 +1161,11 @@ TEST_F(CopyOnWriteTest, CopyOnWriteIterator) {
     int tupleCount = TUPLE_COUNT;
     addRandomUniqueTuples( m_table, tupleCount);
 
-    voltdb::TableIterator& iterator = m_table->iterator();
+    voltdb::TableIterator iterator = m_table->iterator();
     TBMap blocks(getTableData());
     getBlocksPendingSnapshot().swap(getBlocksNotPendingSnapshot());
     getBlocksPendingSnapshotLoad().swap(getBlocksNotPendingSnapshotLoad());
-    voltdb::CopyOnWriteIterator COWIterator(m_table, &getSurgeon(), blocks);
+    voltdb::CopyOnWriteIterator COWIterator(m_table, &getSurgeon());
     TableTuple tuple(m_table->schema());
     TableTuple COWTuple(m_table->schema());
 
@@ -1188,6 +1206,32 @@ TEST_F(CopyOnWriteTest, TestTableTupleFlags) {
     ASSERT_FALSE(tuple.isDirty());
 }
 
+// Simple test that performs snapshot activation on empty table, inserts tuples and calls stream more tuples
+TEST_F(CopyOnWriteTest, TestTupleInsertionBetweenSnapshotActivateFinish) {
+    initTable(1, 0);
+    int tupleCount = 4;
+
+    // Empty table has an assigned allocated tuple storage
+    ASSERT_EQ(1, m_table->allocatedBlockCount());
+    char config[4];
+    ::memset(config, 0, 4);
+    ReferenceSerializeInputBE input(config, 4);
+    // activate snapshot
+    m_table->activateStream(TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
+    // insert tuples
+    addRandomUniqueTuples(m_table, tupleCount);
+    // do work - start taking snapshot of the table
+    char serializationBuffer[BUFFER_SIZE];
+    TupleOutputStreamProcessor outputStreams(serializationBuffer, sizeof(serializationBuffer));
+    std::vector<int> retPositions;
+    int64_t remaining = m_table->streamMore(outputStreams, TABLE_STREAM_SNAPSHOT, retPositions);
+    // no work done by snapshot as the table was empty
+    ASSERT_EQ(0, remaining);
+    ASSERT_EQ(outputStreams.size(), retPositions.size());
+    // check the # tuple insertion count is reflected correctly
+    ASSERT_EQ(tupleCount, m_table->visibleTupleCount());
+}
+
 TEST_F(CopyOnWriteTest, BigTest) {
     initTable(1, 0);
     int tupleCount = TUPLE_COUNT;
@@ -1200,7 +1244,7 @@ TEST_F(CopyOnWriteTest, BigTest) {
         ::memset(config, 0, 4);
         ReferenceSerializeInputBE input(config, 4);
 
-        m_table->activateStream(m_serializer, TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
+        m_table->activateStream(TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
 
         T_ValueSet COWTuples;
         char serializationBuffer[BUFFER_SIZE];
@@ -1248,10 +1292,10 @@ TEST_F(CopyOnWriteTest, BigTestWithUndo) {
     addRandomUniqueTuples( m_table, tupleCount);
     m_engine->setUndoToken(0);
     ExecutorContext::getExecutorContext()->setupForPlanFragments(m_engine->getCurrentUndoQuantum(),
-                                                                 0, 0, 0, 0);
+                                                                 0, 0, 0, 0, false);
     for (int qq = 0; qq < NUM_REPETITIONS; qq++) {
         T_ValueSet originalTuples;
-        voltdb::TableIterator& iterator = m_table->iterator();
+        voltdb::TableIterator iterator = m_table->iterator();
         TableTuple tuple(m_table->schema());
         while (iterator.next(tuple)) {
             const std::pair<T_ValueSet::iterator, bool> p =
@@ -1267,7 +1311,7 @@ TEST_F(CopyOnWriteTest, BigTestWithUndo) {
         char config[4];
         ::memset(config, 0, 4);
         ReferenceSerializeInputBE input(config, 4);
-        m_table->activateStream(m_serializer, TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
+        m_table->activateStream(TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
 
         T_ValueSet COWTuples;
         char serializationBuffer[BUFFER_SIZE];
@@ -1316,10 +1360,10 @@ TEST_F(CopyOnWriteTest, BigTestUndoEverything) {
     addRandomUniqueTuples( m_table, tupleCount);
     m_engine->setUndoToken(0);
     ExecutorContext::getExecutorContext()->setupForPlanFragments(m_engine->getCurrentUndoQuantum(),
-                                                                 0, 0, 0, 0);
+                                                                 0, 0, 0, 0, false);
     for (int qq = 0; qq < NUM_REPETITIONS; qq++) {
         T_ValueSet originalTuples;
-        voltdb::TableIterator& iterator = m_table->iterator();
+        voltdb::TableIterator iterator = m_table->iterator();
         TableTuple tuple(m_table->schema());
         while (iterator.next(tuple)) {
             const std::pair<T_ValueSet::iterator, bool> p =
@@ -1335,7 +1379,7 @@ TEST_F(CopyOnWriteTest, BigTestUndoEverything) {
         char config[4];
         ::memset(config, 0, 4);
         ReferenceSerializeInputBE input(config, 4);
-        m_table->activateStream(m_serializer, TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
+        m_table->activateStream(TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
 
         T_ValueSet COWTuples;
         char serializationBuffer[BUFFER_SIZE];
@@ -1374,7 +1418,7 @@ TEST_F(CopyOnWriteTest, BigTestUndoEverything) {
             m_engine->undoUndoToken(m_undoToken);
             m_engine->setUndoToken(++m_undoToken);
             ExecutorContext::getExecutorContext()->setupForPlanFragments(m_engine->getCurrentUndoQuantum(),
-                                                                         0, 0, 0, 0);
+                                                                         0, 0, 0, 0, false);
         }
 
         checkTuples(0, originalTuples, COWTuples);
@@ -1401,7 +1445,7 @@ TEST_F(CopyOnWriteTest, MultiStream) {
         iterate();
 
         int totalInserted = 0;              // Total tuple counter.
-        boost::scoped_ptr<char> buffers[npartitions];   // Stream buffers.
+        boost::scoped_array<char> buffers[npartitions];   // Stream buffers.
         std::vector<std::string> strings(npartitions);  // Range strings.
         T_ValueSet expected[npartitions]; // Expected tuple values by partition.
         T_ValueSet actual[npartitions];   // Actual tuple values by partition.
@@ -1434,7 +1478,7 @@ TEST_F(CopyOnWriteTest, MultiStream) {
         context("precalculate");
 
         // Map original tuples to expected partitions.
-        voltdb::TableIterator& iterator = m_table->iterator();
+        voltdb::TableIterator iterator = m_table->iterator();
         int partCol = m_table->partitionColumn();
         TableTuple tuple(m_table->schema());
         while (iterator.next(tuple)) {
@@ -1456,7 +1500,7 @@ TEST_F(CopyOnWriteTest, MultiStream) {
         context("activate");
 
         ReferenceSerializeInputBE input(buffer, output.position());
-        bool success = m_table->activateStream(m_serializer, TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
+        bool success = m_table->activateStream(TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
         if (!success) {
             error("COW was previously activated");
         }
@@ -1546,7 +1590,7 @@ TEST_F(CopyOnWriteTest, BufferBoundaryCondition) {
     char config[4];
     ::memset(config, 0, 4);
     ReferenceSerializeInputBE input(config, 4);
-    m_table->activateStream(m_serializer, TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
+    m_table->activateStream(TABLE_STREAM_SNAPSHOT, 0, m_tableId, input);
     TupleOutputStreamProcessor outputStreams(serializationBuffer, bufferSize);
     std::vector<int> retPositions;
     int64_t remaining = m_table->streamMore(outputStreams, TABLE_STREAM_SNAPSHOT, retPositions);
@@ -1569,7 +1613,6 @@ public:
         m_test(test), m_partitionId(partitionId), m_type(type) {}
 
     virtual bool activateStream(PersistentTableSurgeon &surgeon,
-                                TupleSerializer &tupleSerializer,
                                 TableStreamType streamType,
                                 const std::vector<std::string> &predicateStrings) {
         return false;
@@ -1740,11 +1783,10 @@ public:
     {}
 
     virtual bool activateStream(PersistentTableSurgeon &surgeon,
-                                TupleSerializer &tupleSerializer,
                                 TableStreamType streamType,
                                 const std::vector<std::string> &predicateStrings) {
         m_context.reset(new ElasticContext(*m_test.m_table, surgeon, m_partitionId,
-                                           tupleSerializer, m_predicateStrings));
+                                           m_predicateStrings));
         return m_context->handleActivation(streamType) == TableStreamerContext::ACTIVATION_SUCCEEDED;
     }
 
@@ -1944,7 +1986,7 @@ TEST_F(CopyOnWriteTest, SnapshotAndIndex) {
             checkIndex(testRange2.label("streamed"), &streamedIndex2, predicates2, true);
         }
 
-        itest++;
+        //itest++;
     }
 }
 
@@ -1964,3 +2006,4 @@ TEST_F(CopyOnWriteTest, ElasticIndexLowerUpperBounds) {
 int main() {
     return TestSuite::globalInstance()->runAll();
 }
+

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -48,8 +48,8 @@ public class ElasticJoinProducer extends JoinProducerBase implements TaskLog {
     private boolean m_firstFragResponseSent = false;
 
     // a snapshot sink used to stream table data from multiple sources
-    private final StreamSnapshotSink m_dataSink;
-    private final Mailbox m_streamSnapshotMb;
+    private StreamSnapshotSink m_dataSink = null;
+    private Mailbox m_streamSnapshotMb;
 
     private class CompletionAction extends JoinCompletionAction {
         @Override
@@ -65,8 +65,9 @@ public class ElasticJoinProducer extends JoinProducerBase implements TaskLog {
     {
         super(partitionId, "Elastic join producer:" + partitionId + " ", taskQueue);
         m_completionAction = new CompletionAction();
-        m_streamSnapshotMb = VoltDB.instance().getHostMessenger().createMailbox();
-        m_dataSink = new StreamSnapshotSink(m_streamSnapshotMb);
+        if (JOINLOG.isDebugEnabled()) {
+            JOINLOG.debug(m_whoami + "created");
+        }
     }
 
     /*
@@ -112,20 +113,32 @@ public class ElasticJoinProducer extends JoinProducerBase implements TaskLog {
         connection.setPerPartitionTxnIds(partitionTxnIds, true);
     }
 
+    private void initMailBox() {
+        m_streamSnapshotMb = VoltDB.instance().getHostMessenger().createMailbox();
+        m_dataSink = new StreamSnapshotSink(m_streamSnapshotMb);
+    }
+
     private void doInitiation(RejoinMessage message)
     {
         m_coordinatorHsId = message.m_sourceHSId;
+        initMailBox();
+
         registerSnapshotMonitor(message.getSnapshotNonce());
 
-        long sinkHSId = m_dataSink.initialize(message.getSnapshotSourceCount(),
-                                              message.getSnapshotBufferPool());
+        // The lowest partition has a single source for all messages whereas all other partitions have a real
+        // data source and a dummy data source for replicated tables that are used to sync up replicated table changes.
+        boolean haveTwoSources = VoltDB.instance().getLowestPartitionId() != m_partitionId;
+
+        long sinkHSId = m_dataSink.initialize(haveTwoSources?2:1,
+                                              message.getSnapshotDataBufferPool(),
+                                              message.getSnapshotCompressedDataBufferPool());
 
         // respond to the coordinator with the sink HSID
         RejoinMessage msg = new RejoinMessage(m_mailbox.getHSId(), -1, sinkHSId);
         m_mailbox.send(m_coordinatorHsId, msg);
-
         m_taskQueue.offer(this);
-        JOINLOG.info("P" + m_partitionId + " received initiation");
+        JOINLOG.info("P" + m_partitionId + " received initiation" +
+                " sinkHSID:" + sinkHSId + " haveTwoSources:" + haveTwoSources);
     }
 
     /**
@@ -164,13 +177,14 @@ public class ElasticJoinProducer extends JoinProducerBase implements TaskLog {
 
             if (m_streamSnapshotMb != null) {
                 VoltDB.instance().getHostMessenger().removeMailbox(m_streamSnapshotMb.getHSId());
+                m_streamSnapshotMb = null;
+                JOINLOG.debug(m_whoami + " data transfer is finished");
             }
-
-            JOINLOG.debug(m_whoami + " data transfer is finished");
 
             if (m_snapshotCompletionMonitor.isDone()) {
                 try {
                     SnapshotCompletionEvent event = m_snapshotCompletionMonitor.get();
+                    siteConnection.setDRProtocolVersion(event.drVersion);
                     assert(event != null);
                     JOINLOG.debug("P" + m_partitionId + " noticed data transfer completion");
                     m_completionAction.setSnapshotTxnId(event.multipartTxnId);
@@ -178,7 +192,9 @@ public class ElasticJoinProducer extends JoinProducerBase implements TaskLog {
                     setJoinComplete(siteConnection,
                                     event.exportSequenceNumbers,
                                     event.drSequenceNumbers,
-                                    false /* requireExistingSequenceNumbers */);
+                                    event.drMixedClusterSizeConsumerState,
+                                    false /* requireExistingSequenceNumbers */,
+                                    event.clusterCreateTime);
                 } catch (InterruptedException e) {
                     // isDone() already returned true, this shouldn't happen
                     VoltDB.crashLocalVoltDB("Impossible interruption happend", true, e);
@@ -280,10 +296,5 @@ public class ElasticJoinProducer extends JoinProducerBase implements TaskLog {
     public void close() throws IOException
     {
         m_taskLog.close();
-    }
-
-    @Override
-    public void enableRecording(long snapshotSpHandle) {
-        //Implemented by the nest task log, it is enabled immediately on construction
     }
 }

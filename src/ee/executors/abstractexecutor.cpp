@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -43,21 +43,21 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <sstream>
+#include <vector>
+
 #include "abstractexecutor.h"
 
-#include "execution/VoltDBEngine.h"
 #include "plannodes/abstractoperationnode.h"
 #include "plannodes/abstractscannode.h"
 #include "storage/tablefactory.h"
-#include "storage/TableCatalogDelegate.hpp"
+#include "storage/temptable.h"
+#include "storage/LargeTempTable.h"
 
-#include <vector>
-
-using namespace std;
-using namespace voltdb;
+namespace voltdb {
 
 bool AbstractExecutor::init(VoltDBEngine* engine,
-                            TempTableLimits* limits)
+                            const ExecutorVector& executorVector)
 {
     assert (m_abstractNode);
 
@@ -106,9 +106,9 @@ bool AbstractExecutor::init(VoltDBEngine* engine,
         // If the target_table is NULL, then we need to ask the engine
         // for a reference to what we need
         // Really, we can't enforce this when we load the plan? --izzy 7/3/2010
-        bool is_subquery = (scan_node != NULL && scan_node->isSubQuery());
-        if (target_table == NULL && !is_subquery) {
-            target_table = engine->getTable(targetTableName);
+        bool isPersistentTableScan = (scan_node != NULL && scan_node->isPersistentTableScan());
+        if (target_table == NULL && isPersistentTableScan) {
+            target_table = engine->getTableByName(targetTableName);
             if (target_table == NULL) {
                 VOLT_ERROR("Failed to retrieve target table '%s' "
                            "from execution engine for PlanNode '%s'",
@@ -127,12 +127,12 @@ bool AbstractExecutor::init(VoltDBEngine* engine,
     }
 
     // Call the p_init() method on our derived class
-    if (!p_init(m_abstractNode, limits)) {
+    if (!p_init(m_abstractNode, executorVector)) {
         return false;
     }
 
     if (m_tmpOutputTable == NULL) {
-        m_tmpOutputTable = dynamic_cast<TempTable*>(m_abstractNode->getOutputTable());
+        m_tmpOutputTable = dynamic_cast<AbstractTempTable*>(m_abstractNode->getOutputTable());
     }
 
     return true;
@@ -142,8 +142,8 @@ bool AbstractExecutor::init(VoltDBEngine* engine,
  * Set up a multi-column temp output table for those executors that require one.
  * Called from p_init.
  */
-void AbstractExecutor::setTempOutputTable(TempTableLimits* limits, const string tempTableName) {
-    assert(limits);
+void AbstractExecutor::setTempOutputTable(const ExecutorVector& executorVector,
+                                          const string tempTableName) {
     TupleSchema* schema = m_abstractNode->generateTupleSchema();
     int column_count = schema->columnCount();
     std::vector<std::string> column_names(column_count);
@@ -154,11 +154,18 @@ void AbstractExecutor::setTempOutputTable(TempTableLimits* limits, const string 
         column_names[ctr] = outputSchema[ctr]->getColumnName();
     }
 
-    m_tmpOutputTable = TableFactory::getTempTable(m_abstractNode->databaseId(),
-                                                              tempTableName,
-                                                              schema,
-                                                              column_names,
-                                                              limits);
+    if (executorVector.isLargeQuery()) {
+        m_tmpOutputTable = TableFactory::buildLargeTempTable(tempTableName,
+                                                             schema,
+                                                             column_names);
+    }
+    else {
+        m_tmpOutputTable = TableFactory::buildTempTable(tempTableName,
+                                                        schema,
+                                                        column_names,
+                                                        executorVector.limits());
+    }
+
     m_abstractNode->setOutputTable(m_tmpOutputTable);
 }
 
@@ -169,13 +176,40 @@ void AbstractExecutor::setTempOutputTable(TempTableLimits* limits, const string 
 void AbstractExecutor::setDMLCountOutputTable(TempTableLimits* limits) {
     TupleSchema* schema = m_abstractNode->generateDMLCountTupleSchema();
     const std::vector<std::string> columnNames(1, "modified_tuples");
-    m_tmpOutputTable = TableFactory::getTempTable(m_abstractNode->databaseId(),
-                                                              "temp",
-                                                              schema,
-                                                              columnNames,
-                                                              limits);
+    m_tmpOutputTable = TableFactory::buildTempTable("temp",
+                                                    schema,
+                                                    columnNames,
+                                                    limits);
     m_abstractNode->setOutputTable(m_tmpOutputTable);
 }
 
-
 AbstractExecutor::~AbstractExecutor() {}
+
+AbstractExecutor::TupleComparer::TupleComparer(const std::vector<AbstractExpression*>& keys,
+    const std::vector<SortDirectionType>& dirs) : m_keys(keys), m_dirs(dirs), m_keyCount(keys.size())
+{
+    assert(keys.size() == dirs.size());
+    assert(std::find(m_dirs.begin(), m_dirs.end(), SORT_DIRECTION_TYPE_INVALID) == m_dirs.end());
+}
+
+bool AbstractExecutor::TupleComparer::operator()(TableTuple ta, TableTuple tb) const
+{
+    for (size_t i = 0; i < m_keyCount; ++i)
+    {
+        AbstractExpression* k = m_keys[i];
+        SortDirectionType dir = m_dirs[i];
+        int cmp = k->eval(&ta, NULL).compare(k->eval(&tb, NULL));
+
+        if (cmp < 0) return (dir == SORT_DIRECTION_TYPE_ASC);
+        if (cmp > 0) return (dir == SORT_DIRECTION_TYPE_DESC);
+    }
+    return false; // ta == tb on these keys
+}
+
+std::string AbstractExecutor::debug() const {
+    std::ostringstream oss;
+    oss << "Executor with plan node: " << getPlanNode()->debug("");
+    return oss.str();
+}
+
+} // end namespace voltdb

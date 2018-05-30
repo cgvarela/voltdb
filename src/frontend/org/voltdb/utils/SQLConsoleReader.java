@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -48,6 +48,11 @@ public class SQLConsoleReader extends jline.console.ConsoleReader implements SQL
 
     @Override
     public String readBatchLine() throws IOException { return readLine("batch>"); }
+
+    @Override
+    public int getLineNumber() {
+        return 0;
+    }
 
     /* (non-Javadoc)
      * @see jline.console.ConsoleReader#searchBackwards(java.lang.String, int, boolean)

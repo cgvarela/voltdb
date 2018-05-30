@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,9 +16,27 @@
  */
 #include "common/Topend.h"
 #include "common/StreamBlock.h"
+#include "storage/table.h"
+#include "storage/persistenttable.h"
+#include "storage/tablefactory.h"
 
 namespace voltdb {
-    DummyTopend::DummyTopend() : receivedDRBuffer(false), receivedExportBuffer(false) {
+    static Table* copyTable(const std::string &name, Table* template_table, char *signature)
+    {
+        Table* t = TableFactory::getPersistentTable(0,
+                                                    name,
+                                                    TupleSchema::createTupleSchema(template_table->schema()),
+                                                    template_table->getColumnNames(),
+                                                    signature);
+        TableTuple tuple(template_table->schema());
+        TableIterator iterator = template_table->iterator();
+        while (iterator.next(tuple)) {
+            t->insertTuple(tuple);
+        }
+        return t;
+    }
+
+    DummyTopend::DummyTopend() : receivedDRBuffer(false), receivedExportBuffer(false), pushDRBufferRetval(-1) {
 
     }
 
@@ -27,9 +45,12 @@ namespace voltdb {
         return 0;
     }
 
-    int64_t DummyTopend::fragmentProgressUpdate(int32_t batchIndex, std::string planNodeName,
-            std::string targetTableName, int64_t targetTableSize, int64_t tuplesFound,
-            int64_t currMemoryInBytes, int64_t peakMemoryInBytes) {
+    int64_t DummyTopend::fragmentProgressUpdate(
+            int32_t batchIndex,
+            PlanNodeType planNodeType,
+            int64_t tuplesFound,
+            int64_t currMemoryInBytes,
+            int64_t peakMemoryInBytes) {
         return 1000000000; // larger means less likely/frequent callbacks to ignore
     }
 
@@ -48,7 +69,7 @@ namespace voltdb {
         return bytes;
     }
 
-    void DummyTopend::pushExportBuffer(int64_t generation, int32_t partitionId, std::string signature, StreamBlock *block, bool sync, bool endOfStream) {
+    void DummyTopend::pushExportBuffer(int32_t partitionId, std::string signature, StreamBlock *block, bool sync) {
         if (sync) {
             return;
         }
@@ -59,11 +80,77 @@ namespace voltdb {
         receivedExportBuffer = true;
     }
 
-    void DummyTopend::pushDRBuffer(int32_t partitionId, voltdb::StreamBlock *block) {
+    void DummyTopend::pushEndOfStream(int32_t partitionId, std::string signature) {
+        partitionIds.push(partitionId);
+        signatures.push(signature);
+        receivedExportBuffer = true;
+    }
+
+    int64_t DummyTopend::pushDRBuffer(int32_t partitionId, voltdb::StreamBlock *block) {
         receivedDRBuffer = true;
         partitionIds.push(partitionId);
         blocks.push_back(boost::shared_ptr<StreamBlock>(new StreamBlock(block)));
         data.push_back(boost::shared_array<char>(block->rawPtr()));
+        return pushDRBufferRetval;
+    }
+
+
+    void DummyTopend::pushPoisonPill(int32_t partitionId, std::string& reason, StreamBlock *block) {
+        partitionIds.push(partitionId);
+        blocks.push_back(boost::shared_ptr<StreamBlock>(new StreamBlock(block)));
+        data.push_back(boost::shared_array<char>(block->rawPtr()));
+    }
+
+
+    int DummyTopend::reportDRConflict(int32_t partitionId, int32_t remoteClusterId, int64_t remoteTimestamp, std::string tableName, DRRecordType action,
+            DRConflictType deleteConflict, Table *existingMetaTableForDelete, Table *existingTupleTableForDelete,
+            Table *expectedMetaTableForDelete, Table *expectedTupleTableForDelete,
+            DRConflictType insertConflict, Table *existingMetaTableForInsert, Table *existingTupleTableForInsert,
+            Table *newMetaTableForInsert, Table *newTupleTableForInsert) {
+        this->actionType = action;
+        this->deleteConflictType = deleteConflict;
+        this->insertConflictType = insertConflict;
+        this->remoteClusterId = remoteClusterId;
+        this->remoteTimestamp = remoteTimestamp;
+        char signature[20];
+
+        if (existingMetaTableForDelete) {
+            this->existingMetaRowsForDelete = boost::shared_ptr<Table>(copyTable("existingMeta",
+                                                                                 existingMetaTableForDelete,
+                                                                                 signature));
+            this->existingTupleRowsForDelete = boost::shared_ptr<Table>(copyTable("existing",
+                                                                                  existingTupleTableForDelete,
+                                                                                  signature));
+        }
+
+        if (expectedMetaTableForDelete) {
+            this->expectedMetaRowsForDelete = boost::shared_ptr<Table>(copyTable("expectedMeta",
+                                                                                 expectedMetaTableForDelete,
+                                                                                 signature));
+            this->expectedTupleRowsForDelete = boost::shared_ptr<Table>(copyTable("expected",
+                                                                                  expectedTupleTableForDelete,
+                                                                                  signature));
+        }
+
+        if (existingMetaTableForInsert) {
+            this->existingMetaRowsForInsert = boost::shared_ptr<Table>(copyTable("existingMeta",
+                                                                                 existingMetaTableForInsert,
+                                                                                 signature));
+            this->existingTupleRowsForInsert = boost::shared_ptr<Table>(copyTable("existing",
+                                                                                  existingTupleTableForInsert,
+                                                                                  signature));
+        }
+
+        if (newMetaTableForInsert) {
+            this->newMetaRowsForInsert = boost::shared_ptr<Table>(copyTable("newMeta",
+                                                                            newMetaTableForInsert,
+                                                                            signature));
+            this->newTupleRowsForInsert = boost::shared_ptr<Table>(copyTable("new",
+                                                                             newTupleTableForInsert,
+                                                                             signature));
+        }
+
+        return 2; /*resolved but not apply remote change*/
     }
 
     void DummyTopend::fallbackToEEAllocatedBuffer(char *buffer, size_t length) {}
@@ -72,4 +159,25 @@ namespace voltdb {
         return "";
     }
 
-}
+    bool DummyTopend::storeLargeTempTableBlock(LargeTempTableBlock* block) {
+        return false;
+    }
+
+    bool DummyTopend::loadLargeTempTableBlock(LargeTempTableBlock* block) {
+        return false;
+    }
+
+    bool DummyTopend::releaseLargeTempTableBlock(LargeTempTableBlockId blockId) {
+        return false;
+    }
+
+    int32_t DummyTopend::callJavaUserDefinedFunction() {
+        // We do not call any UDF here, directly return zero which means success.
+        return 0;
+    }
+
+    void DummyTopend::resizeUDFBuffer(int32_t size) {
+        // We do nothing here.
+    }
+
+} // end namespace voltdb

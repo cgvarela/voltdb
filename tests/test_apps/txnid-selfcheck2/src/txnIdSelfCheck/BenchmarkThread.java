@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,10 +26,13 @@ package txnIdSelfCheck;
 import org.voltcore.logging.VoltLogger;
 import org.voltdb.ClientResponseImpl;
 import org.voltdb.client.ClientResponse;
+import org.voltdb.client.ProcCallException;
 
 class BenchmarkThread extends Thread {
 
     VoltLogger log;
+    boolean m_slowFlight = false;
+    int slowDownDelayMs = 1000;
 
     BenchmarkThread() {
         super();

@@ -24,11 +24,14 @@
        <fileset dir="${basedir}/../../../voltdb">
          <include name="voltdbclient*.jar"/>
        </fileset>
+       <fileset dir="${basedir}/../../../lib">
+         <include name="commons-lang3*.jar"/>
+       </fileset>
     </path>
 
     <target name="client-compile">
         <mkdir dir="${clientclasses.dir}"/>
-        <javac target="1.7" source="1.7" debug="on" srcdir="${clientsrc.dir}" destdir="${clientclasses.dir}" >
+        <javac srcdir="${clientsrc.dir}" destdir="${clientclasses.dir}" >
             <classpath refid="build-classpath"/>
         </javac>
     </target>

@@ -20,11 +20,9 @@ import static com.google_voltpatches.common.base.Preconditions.checkArgument;
 
 import com.google_voltpatches.common.annotations.Beta;
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
 import java.util.Comparator;
 import java.util.NoSuchElementException;
 import java.util.SortedMap;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -33,12 +31,16 @@ import javax.annotation_voltpatches.Nullable;
  * the backing sorted map as desired per the <a
  * href="http://en.wikipedia.org/wiki/Decorator_pattern">decorator pattern</a>.
  *
- * <p><i>Warning:</i> The methods of {@code ForwardingSortedMap} forward
+ * <p><b>Warning:</b> The methods of {@code ForwardingSortedMap} forward
  * <i>indiscriminately</i> to the methods of the delegate. For example,
  * overriding {@link #put} alone <i>will not</i> change the behavior of {@link
  * #putAll}, which can lead to unexpected behavior. In this case, you should
  * override {@code putAll} as well, either providing your own implementation, or
  * delegating to the provided {@code standardPutAll} method.
+ *
+ * <p><b>{@code default} method warning:</b> This class does <i>not</i> forward calls to {@code
+ * default} methods. Instead, it inherits their default implementations. When those implementations
+ * invoke methods, they invoke methods on the {@code ForwardingSortedMap}.
  *
  * <p>Each of the {@code standard} methods, where appropriate, use the
  * comparator of the map to test equality for both keys and values, unlike
@@ -50,17 +52,18 @@ import javax.annotation_voltpatches.Nullable;
  *
  * @author Mike Bostock
  * @author Louis Wasserman
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
 public abstract class ForwardingSortedMap<K, V> extends ForwardingMap<K, V>
     implements SortedMap<K, V> {
-  // TODO(user): identify places where thread safety is actually lost
+  // TODO(lowasser): identify places where thread safety is actually lost
 
   /** Constructor for use by subclasses. */
   protected ForwardingSortedMap() {}
 
-  @Override protected abstract SortedMap<K, V> delegate();
+  @Override
+  protected abstract SortedMap<K, V> delegate();
 
   @Override
   public Comparator<? super K> comparator() {
@@ -126,7 +129,9 @@ public abstract class ForwardingSortedMap<K, V> extends ForwardingMap<K, V>
    *
    * @since 7.0
    */
-  @Override @Beta protected boolean standardContainsKey(@Nullable Object key) {
+  @Override
+  @Beta
+  protected boolean standardContainsKey(@Nullable Object key) {
     try {
       // any CCE will be caught
       @SuppressWarnings("unchecked")
@@ -150,7 +155,8 @@ public abstract class ForwardingSortedMap<K, V> extends ForwardingMap<K, V>
    *
    * @since 7.0
    */
-  @Beta protected SortedMap<K, V> standardSubMap(K fromKey, K toKey) {
+  @Beta
+  protected SortedMap<K, V> standardSubMap(K fromKey, K toKey) {
     checkArgument(unsafeCompare(fromKey, toKey) <= 0, "fromKey must be <= toKey");
     return tailMap(fromKey).headMap(toKey);
   }

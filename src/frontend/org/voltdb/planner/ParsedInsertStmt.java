@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -46,12 +46,19 @@ public class ParsedInsertStmt extends AbstractParsedStmt {
      * linked hash map so we retain the order in which the user
      * specified the columns.
      */
-    public LinkedHashMap<Column, AbstractExpression> m_columns = new LinkedHashMap<Column, AbstractExpression>();
+    public LinkedHashMap<Column, AbstractExpression> m_columns = new LinkedHashMap<>();
 
     /**
      * The SELECT statement for INSERT INTO ... SELECT.
      */
     private StmtSubqueryScan m_subquery = null;
+    /**
+     * An empty list for INSERT ... VALUES statements
+     * until they support subquery-based expressions,
+     * OR a list with one entry for an INSERT ... SELECT statement,
+     * to represent the top-level SELECT.
+     */
+    private final List<StmtSubqueryScan> m_scans = new ArrayList<>();
 
 
 
@@ -60,8 +67,8 @@ public class ParsedInsertStmt extends AbstractParsedStmt {
     * @param paramValues
     * @param db
     */
-    public ParsedInsertStmt(String[] paramValues, Database db) {
-        super(paramValues, db);
+    public ParsedInsertStmt(AbstractParsedStmt parent, String[] paramValues, Database db) {
+        super(parent, paramValues, db);
     }
 
     @Override
@@ -79,17 +86,22 @@ public class ParsedInsertStmt extends AbstractParsedStmt {
         m_tableList.add(table);
 
         for (VoltXMLElement node : stmtNode.children) {
-            if (node.name.equalsIgnoreCase("columns")) {
+            if (node.name.equals("columns")) {
                 parseTargetColumns(node, table, m_columns);
             }
-            else if (node.name.equalsIgnoreCase(SELECT_NODE_NAME)) {
+            else if (node.name.equals(SELECT_NODE_NAME)) {
                 m_subquery = new StmtSubqueryScan (parseSubquery(node), "__VOLT_INSERT_SUBQUERY__");
+                // Until scalar subqueries are allowed in INSERT ... VALUES statements,
+                // The top-level SELECT subquery in an INSERT ... SELECT statement
+                // is the only possible subselect in an INSERT statement.
+                m_scans.add(m_subquery);
             }
-            else if (node.name.equalsIgnoreCase(UNION_NODE_NAME)) {
+            else if (node.name.equals(UNION_NODE_NAME)) {
                 throw new PlanningErrorException(
                         "INSERT INTO ... SELECT is not supported for UNION or other set operations.");
             }
         }
+        calculateContentDeterminismMessage();
     }
 
     @Override
@@ -187,15 +199,13 @@ public class ParsedInsertStmt extends AbstractParsedStmt {
      * Return the subqueries for this statement.  For INSERT statements,
      * there can be only one.
      */
+    @SuppressWarnings({ "rawtypes", "unchecked" })
     @Override
-    public List<StmtSubqueryScan> getSubqueryScans() {
-        List<StmtSubqueryScan> subqueries = new ArrayList<>();
-
-        if (m_subquery != null) {
-            subqueries.add(m_subquery);
-        }
-
-        return subqueries;
+    public List<StmtEphemeralTableScan> getEphemeralTableScans() {
+        // m_scans is a list of StmtSubqueryScan, which is
+        // a subclass of StmtEphemeralTableScan.  So this should
+        // be ok.
+        return (List)m_scans;
     }
 
     /**
@@ -228,9 +238,10 @@ public class ParsedInsertStmt extends AbstractParsedStmt {
         Set<AbstractExpression> exprs = super.findAllSubexpressionsOfClass(aeClass);
 
         for (AbstractExpression expr : m_columns.values()) {
-            if (expr != null) {
-                exprs.addAll(expr.findAllSubexpressionsOfClass(aeClass));
+            if (expr == null) {
+                continue;
             }
+            exprs.addAll(expr.findAllSubexpressionsOfClass(aeClass));
         }
 
         if (m_subquery != null) {
@@ -239,4 +250,38 @@ public class ParsedInsertStmt extends AbstractParsedStmt {
 
         return exprs;
     }
+
+    /**
+     * Return the content determinism string of the subquery if there is one.
+     */
+    @Override
+    public String calculateContentDeterminismMessage() {
+        String ans = getContentDeterminismMessage();
+        if (ans != null) {
+            return ans;
+        }
+        if (m_subquery != null) {
+            updateContentDeterminismMessage(m_subquery.calculateContentDeterminismMessage());
+            return getContentDeterminismMessage();
+        }
+        if (m_columns != null) {
+            for (AbstractExpression expr : m_columns.values()) {
+                String emsg = expr.getContentDeterminismMessage();
+                if (emsg != null) {
+                    updateContentDeterminismMessage(emsg);
+                    return emsg;
+                }
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public boolean isDML() { return true; }
+
+    @Override
+    protected void parseCommonTableExpressions(VoltXMLElement root) {
+        // No with statements here.
+    }
+
 }

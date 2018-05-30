@@ -16,9 +16,7 @@
 
 package com.google_voltpatches.common.collect;
 
-import com.google_voltpatches.common.annotations.Beta;
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
@@ -35,7 +33,6 @@ import java.util.SortedSet;
  * @since 8.0
  */
 @GwtCompatible
-@Beta
 public interface RowSortedTable<R, C, V> extends Table<R, C, V> {
   /**
    * {@inheritDoc}
@@ -43,7 +40,8 @@ public interface RowSortedTable<R, C, V> extends Table<R, C, V> {
    * <p>This method returns a {@link SortedSet}, instead of the {@code Set}
    * specified in the {@link Table} interface.
    */
-  @Override SortedSet<R> rowKeySet();
+  @Override
+  SortedSet<R> rowKeySet();
 
   /**
    * {@inheritDoc}
@@ -51,5 +49,6 @@ public interface RowSortedTable<R, C, V> extends Table<R, C, V> {
    * <p>This method returns a {@link SortedMap}, instead of the {@code Map}
    * specified in the {@link Table} interface.
    */
-  @Override SortedMap<R, Map<C, V>> rowMap();
+  @Override
+  SortedMap<R, Map<C, V>> rowMap();
 }

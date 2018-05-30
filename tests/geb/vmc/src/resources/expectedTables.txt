@@ -1,4 +1,4 @@
-# Tables: (for the genqa test app)
-EXPORT_MIRROR_PARTITIONED_TABLE
+# Expected Tables: (when running the default GEB VMC
+# test server; see ../../server/run_voltdb_server.sh)
 PARTITIONED_TABLE
 REPLICATED_TABLE

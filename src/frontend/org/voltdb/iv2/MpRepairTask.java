@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -26,7 +26,6 @@ import org.voltcore.logging.VoltLogger;
 import org.voltcore.utils.CoreUtils;
 import org.voltdb.SiteProcedureConnection;
 import org.voltdb.VoltDB;
-import org.voltdb.iv2.RepairAlgo.RepairResult;
 import org.voltdb.rejoin.TaskLog;
 
 import com.google_voltpatches.common.base.Suppliers;
@@ -56,13 +55,13 @@ public class MpRepairTask extends SiteTasker
     private final String whoami;
     private final RepairAlgo algo;
 
-    public MpRepairTask(InitiatorMailbox mailbox, List<Long> spMasters)
+    public MpRepairTask(InitiatorMailbox mailbox, List<Long> spMasters, boolean balanceSPI)
     {
         m_mailbox = mailbox;
         m_spMasters = new ArrayList<Long>(spMasters);
         whoami = "MP leader repair " +
                 CoreUtils.hsIdToString(m_mailbox.getHSId()) + " ";
-        algo = mailbox.constructRepairAlgo(Suppliers.ofInstance(m_spMasters), whoami);
+        algo = mailbox.constructRepairAlgo(Suppliers.ofInstance(m_spMasters), whoami, balanceSPI);
     }
 
     @Override
@@ -70,11 +69,9 @@ public class MpRepairTask extends SiteTasker
         synchronized (m_lock) {
             if (!m_repairRan) {
                 try {
-                    long txnid = Long.MIN_VALUE;
                     boolean success = false;
                     try {
-                        RepairResult res = algo.start().get();
-                        txnid = res.m_txnId;
+                        algo.start().get();
                         success = true;
                     } catch (CancellationException e) {}
                     if (success) {

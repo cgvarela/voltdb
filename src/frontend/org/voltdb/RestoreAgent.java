@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,11 +19,10 @@ package org.voltdb;
 
 import java.io.File;
 import java.io.FileFilter;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -51,14 +50,17 @@ import org.voltcore.logging.VoltLogger;
 import org.voltcore.messaging.HostMessenger;
 import org.voltcore.utils.InstanceId;
 import org.voltcore.utils.Pair;
-import org.voltdb.SystemProcedureCatalog.Config;
-import org.voltdb.catalog.Procedure;
+import org.voltdb.InvocationDispatcher.OverrideCheck;
 import org.voltdb.client.ClientResponse;
 import org.voltdb.common.Constants;
+import org.voltdb.compiler.deploymentfile.DrRoleType;
 import org.voltdb.dtxn.TransactionCreator;
+import org.voltdb.jni.ExecutionEngine;
+import org.voltdb.sysprocs.saverestore.SnapshotPathType;
 import org.voltdb.sysprocs.saverestore.SnapshotUtil;
 import org.voltdb.sysprocs.saverestore.SnapshotUtil.Snapshot;
 import org.voltdb.sysprocs.saverestore.SnapshotUtil.TableFiles;
+import org.voltdb.utils.CatalogUtil;
 import org.voltdb.utils.InMemoryJarfile;
 import org.voltdb.utils.MiscUtils;
 
@@ -84,13 +86,24 @@ SnapshotCompletionInterest, Promotable
     // Implement this callback to get notified when restore finishes.
     public interface Callback {
         /**
-         * Callback function executed when restore finishes.
+         * Callback function executed when the snapshot restore finishes but
+         * before command log replay starts on recover.
+         *
+         * For nodes that finish the restore faster, this callback may be called
+         * sooner, but command log replay will not start until all nodes have
+         * called this callback.
+         */
+        public void onSnapshotRestoreCompletion();
+
+        /**
+         * Callback function executed when command log replay finishes but
+         * before the truncation snapshot is taken.
          *
          * @param txnId
          *            The txnId of the truncation snapshot at the end of the
          *            restore, or Long.MIN if there is none.
          */
-        public void onRestoreCompletion(long txnId, Map<Integer, Long> perPartitionTxnIds);
+        public void onReplayCompletion(long txnId, Map<Integer, Long> perPartitionTxnIds);
     }
 
     private final static VoltLogger LOG = new VoltLogger("HOST");
@@ -102,6 +115,8 @@ SnapshotCompletionInterest, Promotable
 
     // Current state of the restore agent
     private volatile State m_state = State.RESTORE;
+
+    private static final int MAX_RESET_DR_APPLIED_TRACKER_TIMEOUT_MILLIS = 30000;
 
     // Restore adapter needs a completion functor.
     // Runnable here preferable to exposing all of RestoreAgent to RestoreAdapater.
@@ -117,6 +132,7 @@ SnapshotCompletionInterest, Promotable
         new SimpleClientResponseAdapter(ClientInterface.RESTORE_AGENT_CID, "RestoreAgentAdapter");
 
     private final ZooKeeper m_zk;
+    private final HostMessenger m_hostMessenger;
     private final SnapshotCompletionMonitor m_snapshotMonitor;
     private final Callback m_callback;
     private final Integer m_hostId;
@@ -143,6 +159,11 @@ SnapshotCompletionInterest, Promotable
 
     // Whether or not we have a snapshot to restore
     private boolean m_hasRestored = false;
+
+    /**
+     * Startup snapshot nonce (taken on shutdown save)
+     */
+    private final String m_terminusNonce;
 
     // A string builder to hold all snapshot validation errors, gets printed when no viable snapshot is found
     private final StringBuilder m_snapshotErrLogStr =
@@ -178,16 +199,21 @@ SnapshotCompletionInterest, Promotable
                     sendSnapshotTxnId(m_snapshotToRestore);
 
                     if (m_snapshotToRestore != null) {
-                        LOG.debug("Initiating snapshot " + m_snapshotToRestore.nonce +
-                                " in " + m_snapshotToRestore.path);
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("Initiating snapshot " + m_snapshotToRestore.nonce +
+                                    " in " + m_snapshotToRestore.path);
+                        }
                         JSONObject jsObj = new JSONObject();
                         jsObj.put(SnapshotUtil.JSON_PATH, m_snapshotToRestore.path);
+                        jsObj.put(SnapshotUtil.JSON_PATH_TYPE, m_snapshotToRestore.pathType);
                         jsObj.put(SnapshotUtil.JSON_NONCE, m_snapshotToRestore.nonce);
+                        jsObj.put(SnapshotUtil.JSON_IS_RECOVER, true);
+                        jsObj.put(SnapshotUtil.JSON_PARTITION_COUNT, m_snapshotToRestore.partitionCount);
+                        jsObj.put(SnapshotUtil.JSON_NEW_PARTITION_COUNT, m_snapshotToRestore.newPartitionCount);
                         if (m_action == StartAction.SAFE_RECOVER) {
                             jsObj.put(SnapshotUtil.JSON_DUPLICATES_PATH, m_voltdbrootPath);
                         }
-                        if (m_replayAgent.hasReplayedSegments() &&
-                            TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.ELASTIC) {
+                        if (m_replayAgent.hasReplayedSegments()) {
                             // Restore the hashinator if there's command log to replay and we're running elastic
                             jsObj.put(SnapshotUtil.JSON_HASHINATOR, true);
                         }
@@ -233,6 +259,8 @@ SnapshotCompletionInterest, Promotable
         public final Set<String> digestTables = new HashSet<String>();
         // Track the tables for which we found files on the node reporting this SnapshotInfo
         public final Set<String> fileTables = new HashSet<String>();
+        public final SnapshotPathType pathType;
+
 
         public void setPidToTxnIdMap(Map<Integer,Long> map) {
             partitionToTxnId.putAll(map);
@@ -241,7 +269,7 @@ SnapshotCompletionInterest, Promotable
         public SnapshotInfo(long txnId, String path, String nonce,
                             int partitions, int newPartitionCount,
                             long catalogCrc, int hostId, InstanceId instanceId,
-                            Set<String> digestTables)
+                            Set<String> digestTables, SnapshotPathType snaptype)
         {
             this.txnId = txnId;
             this.path = path;
@@ -252,13 +280,15 @@ SnapshotCompletionInterest, Promotable
             this.hostId = hostId;
             this.instanceId = instanceId;
             this.digestTables.addAll(digestTables);
+            this.pathType = snaptype;
         }
 
         public SnapshotInfo(JSONObject jo) throws JSONException
         {
             txnId = jo.getLong("txnId");
-            path = jo.getString("path");
-            nonce = jo.getString("nonce");
+            path = jo.getString(SnapshotUtil.JSON_PATH);
+            pathType = SnapshotPathType.valueOf(jo.getString(SnapshotUtil.JSON_PATH_TYPE));
+            nonce = jo.getString(SnapshotUtil.JSON_NONCE);
             partitionCount = jo.getInt("partitionCount");
             newPartitionCount = jo.getInt("newPartitionCount");
             catalogCrc = jo.getLong("catalogCrc");
@@ -302,17 +332,18 @@ SnapshotCompletionInterest, Promotable
             JSONStringer stringer = new JSONStringer();
             try {
                 stringer.object();
-                stringer.key("txnId").value(txnId);
-                stringer.key("path").value(path);
-                stringer.key("nonce").value(nonce);
-                stringer.key("partitionCount").value(partitionCount);
-                stringer.key("newPartitionCount").value(newPartitionCount);
-                stringer.key("catalogCrc").value(catalogCrc);
-                stringer.key("hostId").value(hostId);
+                stringer.keySymbolValuePair("txnId", txnId);
+                stringer.keySymbolValuePair("path", path);
+                stringer.keySymbolValuePair(SnapshotUtil.JSON_PATH_TYPE, pathType.name());
+                stringer.keySymbolValuePair("nonce", nonce);
+                stringer.keySymbolValuePair("partitionCount", partitionCount);
+                stringer.keySymbolValuePair("newPartitionCount", newPartitionCount);
+                stringer.keySymbolValuePair("catalogCrc", catalogCrc);
+                stringer.keySymbolValuePair("hostId", hostId);
                 stringer.key("tables").array();
                 for (Entry<String, Set<Integer>> p : partitions.entrySet()) {
                     stringer.object();
-                    stringer.key("name").value(p.getKey());
+                    stringer.keySymbolValuePair("name", p.getKey());
                     stringer.key("partitions").array();
                     for (int pid : p.getValue()) {
                         stringer.value(pid);
@@ -326,7 +357,7 @@ SnapshotCompletionInterest, Promotable
                     stringer.key(e.getKey().toString()).value(e.getValue());
                 }
                 stringer.endObject(); // partitionToTxnId
-                stringer.key("instanceId").value(instanceId.serializeToJSONObject());
+                stringer.key("instanceId").value( instanceId.serializeToJSONObject());
                 stringer.key("digestTables").array();
                 for (String digestTable : digestTables) {
                     stringer.value(digestTable);
@@ -446,13 +477,14 @@ SnapshotCompletionInterest, Promotable
                         Callback callback, StartAction action, boolean clEnabled,
                         String clPath, String clSnapshotPath,
                         String snapshotPath, int[] allPartitions,
-                        String voltdbrootPath)
+                        String voltdbrootPath, String terminusNonce)
     throws IOException {
         m_hostId = hostMessenger.getHostId();
         m_initiator = null;
         m_snapshotMonitor = snapshotMonitor;
         m_callback = callback;
         m_action = action;
+        m_hostMessenger = hostMessenger;
         m_zk = hostMessenger.getZK();
         m_clEnabled = VoltDB.instance().getConfig().m_isEnterprise ? clEnabled : false;
         m_clPath = clPath;
@@ -460,11 +492,12 @@ SnapshotCompletionInterest, Promotable
         m_snapshotPath = snapshotPath;
         m_liveHosts = ImmutableSet.copyOf(hostMessenger.getLiveHostIds());
         m_voltdbrootPath = voltdbrootPath;
+        m_terminusNonce = terminusNonce;
 
-        initialize(hostMessenger);
+        initialize(action);
     }
 
-    private void initialize(HostMessenger hostMessenger) {
+    private void initialize(StartAction startAction) {
         // Load command log reinitiator
         try {
             Class<?> replayClass = MiscUtils.loadProClass("org.voltdb.CommandLogReinitiatorImpl",
@@ -479,8 +512,8 @@ SnapshotCompletionInterest, Promotable
 
                 m_replayAgent =
                     (CommandLogReinitiator) constructor.newInstance(m_hostId,
-                                                                    m_action,
-                                                                    hostMessenger,
+                                                                    startAction,
+                                                                    m_hostMessenger,
                                                                     m_clPath,
                                                                     m_liveHosts);
             }
@@ -552,6 +585,10 @@ SnapshotCompletionInterest, Promotable
             m_zk.delete(m_generatedRestoreBarrier2, -1);
         } catch (Exception e) {
             VoltDB.crashLocalVoltDB("Unable to delete zk node " + m_generatedRestoreBarrier2, false, e);
+        }
+
+        if (m_callback != null) {
+            m_callback.onSnapshotRestoreCompletion();
         }
 
         LOG.debug("Waiting for all hosts to complete restore");
@@ -675,11 +712,19 @@ SnapshotCompletionInterest, Promotable
                 snapshotInfos.add(info);
             }
         }
-        LOG.debug("Gathered " + snapshotInfos.size() + " snapshot information");
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Gathered " + snapshotInfos.size() + " snapshot information");
+        }
         sendLocalRestoreInformation(maxLastSeenTxn, snapshotInfos);
 
         // Negotiate with other hosts about which snapshot to restore
         SnapshotInfo infoWithMinHostId = getRestorePlan();
+        if (infoWithMinHostId != null && infoWithMinHostId.nonce.equals(m_terminusNonce)) {
+            m_replayAgent.returnAllSegments();
+            initialize(StartAction.CREATE);
+            m_planned = true;
+            return infoWithMinHostId;
+        }
 
         /*
          * Generate the replay plan here so that we don't have to wait until the
@@ -690,7 +735,8 @@ SnapshotCompletionInterest, Promotable
                 // The expected partition count could be determined by the new partition count recorded
                 // in the truncation snapshot. Truncation snapshot taken at the end of the join process
                 // actually records the new partition count in the digest.
-                m_replayAgent.generateReplayPlan(infoWithMinHostId.newPartitionCount, m_isLeader);
+                m_replayAgent.generateReplayPlan(infoWithMinHostId.instanceId.getTimestamp(),
+                        infoWithMinHostId.txnId, infoWithMinHostId.newPartitionCount, m_isLeader);
             }
         }
 
@@ -702,17 +748,17 @@ SnapshotCompletionInterest, Promotable
     {
         int partitionCount = -1;
         for (TableFiles tf : s.m_tableFiles.values()) {
-            if (tf.m_isReplicated) {
-                continue;
+            // Check if the snapshot is complete
+            if (tf.m_completed.stream().anyMatch(b->!b)) {
+                m_snapshotErrLogStr.append("\nRejected snapshot ")
+                                   .append(s.getNonce())
+                                   .append(" because it was not completed.");
+                return null;
             }
 
-            for (boolean completed : tf.m_completed) {
-                if (!completed) {
-                    m_snapshotErrLogStr.append("\nRejected snapshot ")
-                                    .append(s.getNonce())
-                                    .append(" because it was not completed.");
-                    return null;
-                }
+            // Replicated table doesn't check partition count
+            if (tf.m_isReplicated) {
+                continue;
             }
 
             // Everyone has to agree on the total partition count
@@ -743,7 +789,7 @@ SnapshotCompletionInterest, Promotable
         Set<String> digestTableNames = new HashSet<String>();
         // Create a valid but meaningless InstanceId to support pre-instanceId checking versions
         InstanceId instanceId = new InstanceId(0, 0);
-        int newParitionCount = -1;
+        int newPartitionCount = -1;
         try
         {
             JSONObject digest_detail = SnapshotUtil.CRCCheck(digest, LOG);
@@ -752,7 +798,6 @@ SnapshotCompletionInterest, Promotable
 
             if (digest_detail.has("partitionTransactionIds")) {
                 JSONObject pidToTxnId = digest_detail.getJSONObject("partitionTransactionIds");
-                @SuppressWarnings("unchecked")
                 Iterator<String> it = pidToTxnId.keys();
                 while (it.hasNext()) {
                     String pidkey = it.next();
@@ -766,7 +811,7 @@ SnapshotCompletionInterest, Promotable
             }
 
             if (digest_detail.has("newPartitionCount")) {
-                newParitionCount = digest_detail.getInt("newPartitionCount");
+                newPartitionCount = digest_detail.getInt("newPartitionCount");
             }
 
             if (digest_detail.has("tables")) {
@@ -800,50 +845,37 @@ SnapshotCompletionInterest, Promotable
             return null;
         }
 
-        FileInputStream fin = null;
         try {
-            fin = new FileInputStream(s.m_catalogFile);
-            byte[] buffer = new byte[(int)s.m_catalogFile.length() + 1000];
-            int readBytes = 0;
-            int totalBytes = 0;
-            try {
-                while (readBytes >= 0) {
-                    totalBytes += readBytes;
-                    readBytes = fin.read(buffer, totalBytes, buffer.length - totalBytes - 1);
-                }
-            } finally {
-                fin.close();
-                fin = null;
-            }
-            byte[] catalogBytes = Arrays.copyOf(buffer, totalBytes);
-            InMemoryJarfile jarfile = new InMemoryJarfile(catalogBytes);
+            byte[] bytes = MiscUtils.fileToBytes(s.m_catalogFile);
+            InMemoryJarfile jarfile = CatalogUtil.loadInMemoryJarFile(bytes);
             if (jarfile.getCRC() != catalog_crc) {
                 m_snapshotErrLogStr.append("\nRejected snapshot ")
                                 .append(s.getNonce())
                                 .append(" because catalog CRC did not match digest.");
                 return null;
             }
-        }
-        catch (IOException ioe) {
+            // Make sure this is not a partial snapshot.
+            // Compare digestTableNames with all normal table names in catalog file.
+            // A normal table is one that's NOT a materialized view, nor an export table.
+            Set<String> catalogNormalTableNames = CatalogUtil.getNormalTableNamesFromInMemoryJar(jarfile);
+            if (!catalogNormalTableNames.equals(digestTableNames)) {
+                m_snapshotErrLogStr.append("\nRejected snapshot ")
+                                .append(s.getNonce())
+                                .append(" because this is a partial snapshot.");
+                return null;
+            }
+        } catch (IOException ioe) {
             m_snapshotErrLogStr.append("\nRejected snapshot ")
                             .append(s.getNonce())
-                            .append(" because catalog CRC could not be validated");
+                            .append(" because catalog file could not be validated");
             return null;
-        }
-        finally {
-            if (fin != null) {
-                try {
-                    fin.close();
-                }
-                catch (Exception e) {}
-            }
         }
 
         SnapshotInfo info =
             new SnapshotInfo(key, digest.getParent(),
                     SnapshotUtil.parseNonceFromDigestFilename(digest.getName()),
-                    partitionCount, newParitionCount, catalog_crc, m_hostId, instanceId,
-                    digestTableNames);
+                    partitionCount, newPartitionCount, catalog_crc, m_hostId, instanceId,
+                    digestTableNames, s.m_stype);
         // populate table to partition map.
         for (Entry<String, TableFiles> te : s.m_tableFiles.entrySet()) {
             TableFiles tableFile = te.getValue();
@@ -952,7 +984,7 @@ SnapshotCompletionInterest, Promotable
         String jsonData = serializeRestoreInformation(max, snapshots);
         String zkNode = VoltZK.restore + "/" + m_hostId;
         try {
-            m_zk.create(zkNode, jsonData.getBytes(Constants.UTF8ENCODING),
+            m_zk.create(zkNode, jsonData.getBytes(StandardCharsets.UTF_8),
                         Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
         } catch (Exception e) {
             throw new RuntimeException("Failed to create Zookeeper node: " +
@@ -1000,7 +1032,7 @@ SnapshotCompletionInterest, Promotable
         List<String> children = waitOnVoltZK_restore();
 
         // If not recovering, nothing to do.
-        if (m_action == StartAction.CREATE) {
+        if (m_action.doesRequireEmptyDirectories()) {
             return null;
         }
 
@@ -1011,8 +1043,9 @@ SnapshotCompletionInterest, Promotable
         if (clStartTxnId != null && clStartTxnId == Long.MIN_VALUE) {
             snapshotFragments.clear();
         }
-
-        LOG.debug("There are " + snapshotFragments.size() + " restore candidate snapshots available in the cluster");
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("There are " + snapshotFragments.size() + " restore candidate snapshots available in the cluster");
+        }
 
         // Find the last complete snapshot and use it
         HashMap<String, Map<String, Set<Integer>>> snapshotTablePartitions =
@@ -1034,8 +1067,10 @@ SnapshotCompletionInterest, Promotable
             boolean inconsistent = false;
             Set<SnapshotInfo> fragments = e.getValue();
             for (SnapshotInfo s : fragments) {
-                LOG.debug("SnapshotInfo " + s.nonce + " claims digest tables: " + s.digestTables);
-                LOG.debug("SnapshotInfo " + s.nonce + " claims files for tables: " + s.fileTables);
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("SnapshotInfo " + s.nonce + " claims digest tables: " + s.digestTables);
+                    LOG.debug("SnapshotInfo " + s.nonce + " claims files for tables: " + s.fileTables);
+                }
                 if (digestTables == null) {
                     digestTables = new HashSet<String>(s.digestTables);
                 }
@@ -1161,9 +1196,9 @@ SnapshotCompletionInterest, Promotable
                 }
                 int remoteRecover = json.getInt("action");
                 if (remoteRecover != recover) {
-                    String msg = "Database actions are not consistent, please enter " +
-                        "the same database action on the command-line.";
-                    throw new RuntimeException(msg);
+                    String msg = "Database actions are not consistent. Remote node action is not 'recover'. " +
+                                 "Please enter the same database action on the command-line.";
+                    VoltDB.crashLocalVoltDB(msg, false, null);
                 }
 
                 JSONArray snapInfos = json.getJSONArray("snapInfos");
@@ -1198,10 +1233,10 @@ SnapshotCompletionInterest, Promotable
             stringer.object();
             // optional max value.
             if (max != null) {
-                stringer.key("max").value(max);
+                stringer.keySymbolValuePair("max", max);
             }
             // 1 means recover, 0 means to create new DB
-            stringer.key("action").value(m_action.ordinal());
+            stringer.keySymbolValuePair("action", m_action.ordinal());
             stringer.key("snapInfos").array();
             for (SnapshotInfo snapshot : snapshots) {
                 stringer.value(snapshot.toJSONObject());
@@ -1221,10 +1256,8 @@ SnapshotCompletionInterest, Promotable
      */
     private void initSnapshotWork(final Object[] procParams) {
         final String procedureName = "@SnapshotRestore";
-        Config restore = SystemProcedureCatalog.listing.get(procedureName);
-        Procedure restoreProc = restore.asCatalogProcedure();
         StoredProcedureInvocation spi = new StoredProcedureInvocation();
-        spi.procName = procedureName;
+        spi.setProcName(procedureName);
         spi.params = new FutureTask<ParameterSet>(new Callable<ParameterSet>() {
             @Override
             public ParameterSet call() throws Exception {
@@ -1233,14 +1266,11 @@ SnapshotCompletionInterest, Promotable
             }
         });
         spi.setClientHandle(m_restoreAdapter.registerCallback(m_clientAdapterCallback));
-
-        m_initiator.createTransaction(m_restoreAdapter.connectionId(), spi,
-                                      restoreProc.getReadonly(),
-                                      restoreProc.getSinglepartition(),
-                                      restoreProc.getEverysite(),
-                                      0,//Can provide anything for multi-part
-                                      0,
-                                      System.nanoTime());
+        // admin mode invocation as per third parameter
+        ClientResponseImpl cr = m_initiator.dispatch(spi, m_restoreAdapter, true, OverrideCheck.INVOCATION);
+        if (cr != null) {
+            m_clientAdapterCallback.handleResponse(cr);
+        }
     }
 
     /**
@@ -1264,7 +1294,7 @@ SnapshotCompletionInterest, Promotable
         } else if (m_state == State.TRUNCATE) {
             m_snapshotMonitor.removeInterest(this);
             if (m_callback != null) {
-                m_callback.onRestoreCompletion(m_truncationSnapshot, m_truncationSnapshotPerPartition);
+                m_callback.onReplayCompletion(m_truncationSnapshot, m_truncationSnapshotPerPartition);
             }
 
             // Call balance partitions after enabling transactions on the node to shorten the recovery time
@@ -1292,6 +1322,29 @@ SnapshotCompletionInterest, Promotable
 
         changeState();
 
+        // ENG-10651: if the cluster is recovering and has completed replaying
+        // command log, check if it is recovered as a producer cluster for
+        // active-passive DR. If it is, the DR applied trackers in sites should
+        // be reset and cleared as they are no longer valid.
+        if (m_isLeader && m_action.doesRecover()) {
+            VoltDBInterface instance = VoltDB.instance();
+            if (DrRoleType.MASTER.value().equals(instance.getCatalogContext().getCluster().getDrrole())) {
+                ByteBuffer params = ByteBuffer.allocate(4);
+                params.putInt(ExecutionEngine.TaskType.RESET_DR_APPLIED_TRACKER.ordinal());
+                try {
+                    ClientResponse cr = instance.getClientInterface()
+                            .callExecuteTask(MAX_RESET_DR_APPLIED_TRACKER_TIMEOUT_MILLIS, params.array());
+                    if (cr == null) {
+                        LOG.warn("Failed to reset DR applied tracker due to timeout");
+                    }
+                } catch (IOException e) {
+                    LOG.warn("Failed to reset DR applied tracker due to an IOException", e);
+                } catch (InterruptedException e) {
+                    LOG.warn("Failed to reset DR applied tracker due to an InterruptedException", e);
+                }
+            }
+        }
+
         /*
          * ENG-1516: Use truncation snapshot to save the catalog if CL is
          * enabled.
@@ -1302,15 +1355,12 @@ SnapshotCompletionInterest, Promotable
              * will truncate the logs
              */
             if (m_isLeader) {
+                String truncationRequest = "";
                 try {
-                    try {
-                        m_zk.create(VoltZK.truncation_snapshot_path,
-                                    m_clSnapshotPath.getBytes(),
-                                    Ids.OPEN_ACL_UNSAFE,
-                                    CreateMode.PERSISTENT);
-                    } catch (KeeperException.NodeExistsException e) {}
-                    m_zk.create(VoltZK.request_truncation_snapshot_node, null,
-                            Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+                    truncationRequest = m_zk.create(VoltZK.request_truncation_snapshot_node, null, Ids.OPEN_ACL_UNSAFE,
+                              CreateMode.PERSISTENT_SEQUENTIAL);
+                } catch (KeeperException.NodeExistsException e) {
+                    LOG.info("Initial Truncation request failed as one is in progress: " + truncationRequest);
                 } catch (Exception e) {
                     VoltDB.crashGlobalVoltDB("Requesting a truncation snapshot " +
                                              "via ZK should always succeed",
@@ -1331,20 +1381,20 @@ SnapshotCompletionInterest, Promotable
          * Use the individual snapshot directories instead of voltroot, because
          * they can be set individually
          */
-        List<String> paths = new ArrayList<String>();
+        Map<String, SnapshotPathType> paths = new HashMap<String, SnapshotPathType>();
         if (VoltDB.instance().getConfig().m_isEnterprise) {
             if (m_clSnapshotPath != null) {
-                paths.add(m_clSnapshotPath);
+                paths.put(m_clSnapshotPath, SnapshotPathType.SNAP_CL);
             }
         }
         if (m_snapshotPath != null) {
-            paths.add(m_snapshotPath);
+            paths.put(m_snapshotPath, SnapshotPathType.SNAP_AUTO);
         }
         HashMap<String, Snapshot> snapshots = new HashMap<String, Snapshot>();
         FileFilter filter = new SnapshotUtil.SnapshotFilter();
 
-        for (String path : paths) {
-            SnapshotUtil.retrieveSnapshotFiles(new File(path), snapshots, filter, false, LOG);
+        for (String path : paths.keySet()) {
+            SnapshotUtil.retrieveSnapshotFiles(new File(path), snapshots, filter, false, paths.get(path), LOG);
         }
 
         return snapshots;
@@ -1372,5 +1422,11 @@ SnapshotCompletionInterest, Promotable
     public void acceptPromotion() throws InterruptedException, ExecutionException, KeeperException
     {
         m_isLeader = true;
+    }
+
+    public boolean willRestoreShutdownSnaphot() {
+        return m_terminusNonce != null
+            && m_snapshotToRestore != null
+            && m_terminusNonce.equals(m_snapshotToRestore.nonce);
     }
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,21 +26,30 @@ package org.voltdb.exportclient;
 import org.voltdb.VoltTable;
 import org.voltdb.VoltType;
 import org.voltdb.export.AdvertisedDataSource;
+import org.voltdb.types.GeographyPointValue;
+import org.voltdb.types.GeographyValue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 
 public class ExportClientTestBase {
+
+    static final GeographyPointValue GEOG_POINT = GeographyPointValue.fromWKT("point(-122 37)");
+    static final GeographyValue GEOG = GeographyValue.fromWKT("polygon((0 0, 1 1, 0 1, 0 0))");
+
+
     static final String[] COLUMN_NAMES = {"tid", "ts", "sq", "pid", "site", "op",
-            "tinyint", "smallint", "integer", "bigint", "float", "timestamp", "string", "decimal"};
+            "tinyint", "smallint", "integer", "bigint", "float", "timestamp", "string", "decimal",
+            "geog_point", "geog"};
 
     static final VoltType[] COLUMN_TYPES
             = {VoltType.BIGINT, VoltType.BIGINT, VoltType.BIGINT, VoltType.BIGINT, VoltType.BIGINT, VoltType.BIGINT,
             VoltType.TINYINT, VoltType.SMALLINT, VoltType.INTEGER,
-            VoltType.BIGINT, VoltType.FLOAT, VoltType.TIMESTAMP,VoltType.STRING, VoltType.DECIMAL};
+            VoltType.BIGINT, VoltType.FLOAT, VoltType.TIMESTAMP,VoltType.STRING, VoltType.DECIMAL,
+            VoltType.GEOGRAPHY_POINT, VoltType.GEOGRAPHY};
 
     static final Integer COLUMN_LENGTHS[] = {
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 2048
     };
 
     static VoltTable vtable = new VoltTable(
@@ -48,7 +57,7 @@ public class ExportClientTestBase {
             new VoltTable.ColumnInfo("VOLT_EXPORT_TIMESTAMP", VoltType.BIGINT),
             new VoltTable.ColumnInfo("VOLT_EXPORT_SEQUENCE_NUMBER", VoltType.BIGINT),
             new VoltTable.ColumnInfo("VOLT_PARTITION_ID", VoltType.BIGINT),
-            new VoltTable.ColumnInfo("VOLT_TRANSACTION_ID", VoltType.BIGINT),
+            new VoltTable.ColumnInfo("VOLT_OP", VoltType.BIGINT),
             new VoltTable.ColumnInfo("VOLT_SITE_ID", VoltType.BIGINT),
             new VoltTable.ColumnInfo("tinyint", VoltType.TINYINT),
             new VoltTable.ColumnInfo("smallint", VoltType.SMALLINT),
@@ -57,20 +66,19 @@ public class ExportClientTestBase {
             new VoltTable.ColumnInfo("float", VoltType.FLOAT),
             new VoltTable.ColumnInfo("timestamp", VoltType.TIMESTAMP),
             new VoltTable.ColumnInfo("string", VoltType.STRING),
-            new VoltTable.ColumnInfo("decimal", VoltType.DECIMAL)
+            new VoltTable.ColumnInfo("decimal", VoltType.DECIMAL),
+            new VoltTable.ColumnInfo("geog_point", VoltType.GEOGRAPHY_POINT),
+            new VoltTable.ColumnInfo("geog", VoltType.GEOGRAPHY)
     );
 
-    static AdvertisedDataSource constructTestSource(boolean replicated, int partition)
-    {
+    static AdvertisedDataSource constructTestSource(boolean replicated, int partition) {
         return constructTestSource(replicated, partition, "yankeelover");
     }
 
-    static AdvertisedDataSource constructTestSource(boolean replicated, int partition, String tableName)
-    {
+    static AdvertisedDataSource constructTestSource(boolean replicated, int partition, String tableName) {
         ArrayList<String> col_names = new ArrayList<String>();
         ArrayList<VoltType> col_types = new ArrayList<VoltType>();
-        for (int i = 0; i < COLUMN_TYPES.length; i++)
-        {
+        for (int i = 0; i < COLUMN_TYPES.length; i++) {
             col_names.add(COLUMN_NAMES[i]);
             col_types.add(COLUMN_TYPES[i]);
         }
@@ -79,12 +87,11 @@ public class ExportClientTestBase {
         vtable.clearRowData();
         AdvertisedDataSource source = new AdvertisedDataSource(partition, "foo", tableName,
                 partCol, 0, 32, col_names, col_types, Arrays.asList(COLUMN_LENGTHS),
-                AdvertisedDataSource.ExportFormat.FOURDOTFOUR);
+                AdvertisedDataSource.ExportFormat.SEVENDOTX);
         return source;
     }
 
-    protected void setup()
-    {
+    protected void setup() {
         vtable.clearRowData();
     }
 }

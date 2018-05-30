@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,9 +23,12 @@
 
 package org.voltdb.iv2;
 
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyLong;
 import static org.mockito.Matchers.anyObject;
 import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -35,45 +38,59 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-import junit.framework.TestCase;
-
 import org.json_voltpatches.JSONException;
 import org.json_voltpatches.JSONObject;
+import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.voltcore.messaging.Mailbox;
 import org.voltcore.messaging.VoltMessage;
+import org.voltcore.utils.CoreUtils;
 import org.voltcore.zk.MapCache;
 import org.voltdb.ClientResponseImpl;
 import org.voltdb.CommandLog;
+import org.voltdb.MockVoltDB;
 import org.voltdb.ParameterSet;
 import org.voltdb.ProcedureRunner;
 import org.voltdb.SnapshotCompletionMonitor;
 import org.voltdb.StarvationTracker;
 import org.voltdb.StoredProcedureInvocation;
-import org.voltdb.VoltDBInterface;
+import org.voltdb.VoltDB;
 import org.voltdb.messaging.FragmentResponseMessage;
 import org.voltdb.messaging.FragmentTaskMessage;
 import org.voltdb.messaging.InitiateResponseMessage;
 import org.voltdb.messaging.Iv2InitiateTaskMessage;
+import org.voltdb.messaging.TestVoltMessageSerialization;
 
 import com.google_voltpatches.common.collect.ImmutableMap;
 
-public class TestSpSchedulerDedupe extends TestCase
+public class TestSpSchedulerDedupe
 {
     Mailbox mbox;
     SnapshotCompletionMonitor snapMonitor;
     MapCache iv2masters;
-    VoltDBInterface vdbi;
     ProcedureRunner runner;
     Scheduler dut;
+    private static MockVoltDB s_mockVoltDB = new MockVoltDB();
 
     static final String MockSPName = "MOCKSP";
     static final long dut_hsid = 11223344l;
 
+    @BeforeClass
+    public static void setupClass() {
+        VoltDB.replaceVoltDBInstanceForTest(s_mockVoltDB);
+    }
+
+    @Before
+    public void setup() {
+        s_mockVoltDB.setKFactor(0);
+    }
+
     private static SiteTaskerQueue getSiteTaskerQueue() {
-        SiteTaskerQueue queue = new SiteTaskerQueue();
+        SiteTaskerQueue queue = new SiteTaskerQueue(0);
         queue.setStarvationTracker(new StarvationTracker(0));
+        queue.setupQueueDepthTracker(0);
         return queue;
     }
 
@@ -89,9 +106,14 @@ public class TestSpSchedulerDedupe extends TestCase
         fakecache.put("0", new JSONObject("{hsid:0}"));
         when(iv2masters.pointInTimeCache()).thenReturn(ImmutableMap.copyOf(fakecache));
 
-        dut = new SpScheduler(0, getSiteTaskerQueue(), snapMonitor);
+        final CommandLog cl = mock(CommandLog.class);
+        doReturn(CoreUtils.COMPLETED_FUTURE).when(cl).log(any(Iv2InitiateTaskMessage.class), anyLong(), any(int[].class),
+                                                          any(CommandLog.DurabilityListener.class),
+                                                          any(TransactionTask.class));
+
+        dut = new SpScheduler(0, getSiteTaskerQueue(), snapMonitor, true);
         dut.setMailbox(mbox);
-        dut.setCommandLog(mock(CommandLog.class));
+        dut.setCommandLog(cl);
         dut.setLock(mbox);
     }
 
@@ -108,7 +130,7 @@ public class TestSpSchedulerDedupe extends TestCase
                                        Long.MIN_VALUE, // coordHSID
                                        txnId - 1, // truncationHandle
                                        txnId,     // txnId
-                                       System.currentTimeMillis(), // timestamp
+                                       UniqueIdGenerator.makeIdFromComponents(System.currentTimeMillis(), 0, 0), // uniqueID
                                        readOnly, // readonly
                                        singlePart, // single-part
                                        spi, // invocation
@@ -117,21 +139,8 @@ public class TestSpSchedulerDedupe extends TestCase
                                        false); // isForReplay
         // sp: sphandle == txnid
         task.setTxnId(txnId);
+        task.setSpHandle(txnId);
         return task;
-    }
-
-    private FragmentTaskMessage createFrag(long txnId, boolean readOnly, long destHSId)
-    {
-        FragmentTaskMessage frag =
-            new FragmentTaskMessage(destHSId, // don't care
-                                    destHSId, // don't care
-                                    txnId,
-                                    System.currentTimeMillis(),
-                                    readOnly,
-                                    false,
-                                    false);
-        frag.setSpHandle(TxnEgo.makeZero(0).getTxnId());
-        return frag;
     }
 
     @Test
@@ -176,7 +185,9 @@ public class TestSpSchedulerDedupe extends TestCase
         long primary_hsid = 1111l;
 
         createObjs();
-        FragmentTaskMessage sptask = createFrag(txnid, true, primary_hsid);
+        Iv2InitiateTaskMessage initTask = createMsg(txnid, false, true, primary_hsid);
+        // read only message will not be received on replicas.
+        FragmentTaskMessage sptask = TestVoltMessageSerialization.createFragmentTaskMessage(txnid, false, primary_hsid, initTask);
         dut.deliver(sptask);
         // verify no response sent yet
         verify(mbox, times(0)).send(anyLong(), (VoltMessage)anyObject());
@@ -194,7 +205,7 @@ public class TestSpSchedulerDedupe extends TestCase
 
         createObjs();
         dut.setLeaderState(true);
-        dut.updateReplicas(new ArrayList<Long>(), null);
+        dut.updateReplicas(new ArrayList<Long>(), null, -1);
         Iv2InitiateTaskMessage sptask = createMsg(txnid, true, true, primary_hsid);
         dut.deliver(sptask);
         // verify no response sent yet
@@ -213,8 +224,8 @@ public class TestSpSchedulerDedupe extends TestCase
 
         createObjs();
         dut.setLeaderState(true);
-        dut.updateReplicas(new ArrayList<Long>(), null);
-        FragmentTaskMessage sptask = createFrag(txnid, true, primary_hsid);
+        dut.updateReplicas(new ArrayList<Long>(), null, -1);
+        FragmentTaskMessage sptask = TestVoltMessageSerialization.createFragmentTaskMessage(txnid, true, primary_hsid, null);
         dut.deliver(sptask);
         // verify no response sent yet
         verify(mbox, times(0)).send(anyLong(), (VoltMessage)anyObject());
@@ -227,6 +238,8 @@ public class TestSpSchedulerDedupe extends TestCase
     @Test
     public void testPrimaryInitiateTaskResponseReplicas() throws Exception
     {
+        s_mockVoltDB.setKFactor(2);
+
         long txnid = TxnEgo.makeZero(0).getTxnId();
         long primary_hsid = 1111l;
 
@@ -234,7 +247,7 @@ public class TestSpSchedulerDedupe extends TestCase
         dut.setLeaderState(true);
         List<Long> replicas = new ArrayList<Long>();
         replicas.add(2l);
-        dut.updateReplicas(replicas, null);
+        dut.updateReplicas(replicas, null, -1);
         Iv2InitiateTaskMessage sptask = createMsg(txnid, false, true, primary_hsid);
         dut.deliver(sptask);
         verify(mbox, times(0)).send(anyLong(), (VoltMessage)anyObject());
@@ -256,6 +269,8 @@ public class TestSpSchedulerDedupe extends TestCase
     @Test
     public void testPrimaryFragmentTaskResponseReplicas() throws Exception
     {
+        s_mockVoltDB.setKFactor(2);
+
         long txnid = TxnEgo.makeZero(0).getTxnId();
         long primary_hsid = 1111l;
 
@@ -263,8 +278,9 @@ public class TestSpSchedulerDedupe extends TestCase
         dut.setLeaderState(true);
         List<Long> replicas = new ArrayList<Long>();
         replicas.add(2l);
-        dut.updateReplicas(replicas, null);
-        FragmentTaskMessage sptask = createFrag(txnid, false, primary_hsid);
+        dut.updateReplicas(replicas, null, -1);
+        Iv2InitiateTaskMessage initTask = createMsg(txnid, false, true, primary_hsid);
+        FragmentTaskMessage sptask = TestVoltMessageSerialization.createFragmentTaskMessage(txnid, false, primary_hsid, initTask);
         dut.deliver(sptask);
         // verify no response sent yet
         verify(mbox, times(0)).send(anyLong(), (VoltMessage)anyObject());

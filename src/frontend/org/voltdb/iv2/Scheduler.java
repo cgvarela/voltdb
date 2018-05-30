@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -25,9 +25,12 @@ import org.voltcore.logging.VoltLogger;
 import org.voltcore.messaging.Mailbox;
 import org.voltcore.messaging.TransactionInfoBaseMessage;
 import org.voltcore.messaging.VoltMessage;
+import org.voltdb.LoadedProcedureSet;
+import org.voltdb.QueueDepthTracker;
 import org.voltdb.SiteProcedureConnection;
 import org.voltdb.StarvationTracker;
 import org.voltdb.VoltDB;
+import org.voltdb.iv2.SpScheduler.DurableUniqueIdListener;
 import org.voltdb.messaging.MultiPartitionParticipantMessage;
 import org.voltdb.rejoin.TaskLog;
 
@@ -52,7 +55,7 @@ import org.voltdb.rejoin.TaskLog;
  */
 abstract public class Scheduler implements InitiatorMessageHandler
 {
-    protected static VoltLogger hostLog = new VoltLogger("HOST");
+    protected static final VoltLogger hostLog = new VoltLogger("HOST");
 
     // A null task that unblocks the site task queue, used during shutdown
     static final SiteTasker m_nullTask = new SiteTasker() {
@@ -77,6 +80,7 @@ abstract public class Scheduler implements InitiatorMessageHandler
     protected boolean m_isLeader = false;
     private TxnEgo m_txnEgo;
     final protected int m_partitionId;
+    protected LoadedProcedureSet m_procSet;
 
     // helper class to put command log work in order
     protected final ReplaySequencer m_replaySequencer = new ReplaySequencer();
@@ -116,7 +120,9 @@ abstract public class Scheduler implements InitiatorMessageHandler
                     "Received a transaction id at partition " + m_txnEgo.getPartitionId() +
                     " for partition " + ego.getPartitionId() + ". The partition ids should match.", true, null);
         }
-        m_txnEgo = ego;
+        if (m_txnEgo.getTxnId() < ego.getTxnId()) {
+            m_txnEgo = ego;
+        }
     }
 
     final protected TxnEgo advanceTxnEgo()
@@ -141,6 +147,10 @@ abstract public class Scheduler implements InitiatorMessageHandler
         m_isLeader = isLeader;
     }
 
+    public boolean isLeader() {
+        return m_isLeader;
+    }
+
     public SiteTaskerQueue getQueue()
     {
         return m_tasks;
@@ -150,42 +160,43 @@ abstract public class Scheduler implements InitiatorMessageHandler
         m_tasks.setStarvationTracker(tracker);
     }
 
+    public QueueDepthTracker setupQueueDepthTracker(long siteId) {
+        return m_tasks.setupQueueDepthTracker(siteId);
+    }
+
     public void setLock(Object o) {
         m_lock = o;
     }
 
+    public void configureDurableUniqueIdListener(final DurableUniqueIdListener listener, final boolean install) {
+        // Durability Listeners should never be assigned to the MP Scheduler
+        assert false;
+    }
+
+    public void setProcedureSet(LoadedProcedureSet procSet) {
+        m_procSet = procSet;
+    }
+
     /**
-     * Update last seen txnIds in the replay sequencer. This is used on MPI repair.
+     * Update last seen uniqueIds in the replay sequencer. This is used on MPI repair.
      * @param message
      */
-    public void updateLastSeenTxnIds(VoltMessage message)
+    public void updateLastSeenUniqueIds(VoltMessage message)
     {
-        long sequenceWithTxnId = Long.MIN_VALUE;
+        long sequenceWithUniqueId = Long.MIN_VALUE;
 
         boolean commandLog = (message instanceof TransactionInfoBaseMessage &&
                 (((TransactionInfoBaseMessage)message).isForReplay()));
 
-        boolean dr = ((message instanceof TransactionInfoBaseMessage &&
-                ((TransactionInfoBaseMessage)message).isForDR()));
-
         boolean sentinel = message instanceof MultiPartitionParticipantMessage;
 
-        boolean replay = commandLog || sentinel || dr;
-
-        assert(!(commandLog && dr));
-
+        // if replay
         if (commandLog || sentinel) {
-            sequenceWithTxnId = ((TransactionInfoBaseMessage)message).getTxnId();
-        }
-        else if (dr) {
-            sequenceWithTxnId = ((TransactionInfoBaseMessage)message).getOriginalTxnId();
-        }
-
-        if (replay) {
+            sequenceWithUniqueId = ((TransactionInfoBaseMessage)message).getUniqueId();
             // Update last seen and last polled txnId for replicas
-            m_replaySequencer.updateLastSeenTxnId(sequenceWithTxnId,
+            m_replaySequencer.updateLastSeenUniqueId(sequenceWithUniqueId,
                     (TransactionInfoBaseMessage) message);
-            m_replaySequencer.updateLastPolledTxnId(sequenceWithTxnId,
+            m_replaySequencer.updateLastPolledUniqueId(sequenceWithUniqueId,
                     (TransactionInfoBaseMessage) message);
         }
     }
@@ -196,7 +207,7 @@ abstract public class Scheduler implements InitiatorMessageHandler
     abstract public void shutdown();
 
     @Override
-    abstract public void updateReplicas(List<Long> replicas, Map<Integer, Long> partitionMasters);
+    abstract public long[] updateReplicas(List<Long> replicas, Map<Integer, Long> partitionMasters, long mpTxnId);
 
     @Override
     abstract public void deliver(VoltMessage message);
@@ -204,4 +215,7 @@ abstract public class Scheduler implements InitiatorMessageHandler
     abstract public void enableWritingIv2FaultLog();
 
     abstract public boolean sequenceForReplay(VoltMessage m);
+
+    //flush out read only transactions upon host failure
+    public void cleanupTransactionBacklogOnRepair() {}
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,15 +17,19 @@
 
 package org.voltdb.importer;
 
+import java.net.URI;
 import java.util.Properties;
 import java.util.Set;
+
+import org.voltdb.InternalConnectionContext;
+import org.voltdb.client.ProcedureCallback;
 
 /**
  *
  * @author akhanzode
  */
 
-public interface ImportContext {
+public interface ImportContext extends InternalConnectionContext {
 
     /**
      * This is called to configure properties. Just save or configure anything you want here.
@@ -50,24 +54,18 @@ public interface ImportContext {
 
     /**
      * Call this to get the ingested data passed to procedure.
-     * @param procName procedure to invoke.
-     * @param fieldList parameters to the procedure.
-     * @return true if successfully accepted the work.
-     */
-    public boolean callProcedure(String procName, Object... fieldList);
-
-    /**
-     * Call this to get the ingested data passed to procedure.
      * @param invocation indicating what kind of data is passed in for this.
      * @return true if successfully accepted the work.
      */
     public boolean callProcedure(Invocation invocation);
 
     /**
-     * Returns max time in nanoseconds a call to callProcedure waits in backpressure.
-     * @return
+     * Call this to get the ingested data passed to procedure.
+     * @param cb callback for results.
+     * @param invocation indicating what kind of data is passed in for this.
+     * @return true if successfully accepted the work.
      */
-    public long getBackpressureTimeout();
+    public boolean callProcedure(ProcedureCallback cb, Invocation invocation);
 
     /**
      * This is the real handler dont need to call or extend anything
@@ -80,6 +78,7 @@ public interface ImportContext {
      * Give a friendly name for the importer.
      * @return
      */
+    @Override
     public String getName();
 
     /**
@@ -97,15 +96,7 @@ public interface ImportContext {
      * @return list of resources identifier that will be persisted in Volt ZK for watching.
      * TODO make sure to get correct naming.
      */
-    public Set<String> getAllResponsibleResources();
-
-    /**
-     * This is called after importer system has allocated part of the responsible resources to the importer running on this node.
-     * This may get invoked during node failuers which may distribute additional resources this importer is now responsible for.
-     * @param allocated
-     * TODO make sure to get correct naming.
-     */
-    public void setAllocatedResources(Set<String> allocated);
+    public Set<URI> getAllResponsibleResources();
 
     /**
      * log info message
@@ -115,8 +106,42 @@ public interface ImportContext {
 
     /**
      * log error message
+     * @param format message to log to Volt server logging system.
+     * @param t throwable to be logged.
+     * @param args arguments to formatter
+     */
+    public void error(Throwable t, String format, Object...args);
+
+    /**
+     * log error message
      * @param message message to log to Volt server logging system.
      */
     public void error(String message);
 
+    /**
+     * log error message
+     * @param message message to log to Volt server logging system.
+     * @param t cause of error
+     */
+    public void error(String message, Throwable t);
+
+    /**
+     * log warn message
+     * @param message message to log to Volt server logging system.
+     */
+    public void warn(String message);
+
+    public void warn(Throwable t, String format, Object...args);
+
+    /**
+     * log debug message
+     * @param message message to log to Volt server logging system.
+     */
+    public void debug(String message);
+
+    public boolean isDebugEnabled();
+    public boolean isTraceEnabled();
+    public boolean isInfoEnabled();
+
+    public void trace(String message);
 }

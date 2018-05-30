@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,11 +18,12 @@
 package org.voltdb.planner;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import org.hsqldb_voltpatches.VoltXMLElement;
@@ -52,11 +53,11 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
     };
 
     // Limit plan node information.
-    private LimitOffset m_limitOffset = new LimitOffset();
+    private final LimitOffset m_limitOffset = new LimitOffset();
     // Order by
-    private ArrayList<ParsedColInfo> m_orderColumns = new ArrayList<ParsedColInfo>();
+    private final ArrayList<ParsedColInfo> m_orderColumns = new ArrayList<>();
 
-    public ArrayList<AbstractParsedStmt> m_children = new ArrayList<AbstractParsedStmt>();
+    public ArrayList<AbstractParsedStmt> m_children = new ArrayList<>();
     public UnionType m_unionType = UnionType.NOUNION;
 
     /**
@@ -64,8 +65,8 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
     * @param paramValues
     * @param db
     */
-    public ParsedUnionStmt(String[] paramValues, Database db) {
-        super(paramValues, db);
+    public ParsedUnionStmt(AbstractParsedStmt parent, String[] paramValues, Database db) {
+        super(parent, paramValues, db);
     }
 
     @Override
@@ -82,11 +83,14 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
                 assert(idx < m_children.size());
                 AbstractParsedStmt nextStmt = m_children.get(idx++);
                 nextStmt.parse(child);
-            } else if (child.name.equalsIgnoreCase("limit")) {
+            }
+            else if (child.name.equals("limit")) {
                 limitElement = child;
-            } else if (child.name.equalsIgnoreCase("offset")) {
+            }
+            else if (child.name.equals("offset")) {
                 offsetElement = child;
-            } else if (child.name.equalsIgnoreCase("ordercolumns")) {
+            }
+            else if (child.name.equals("ordercolumns")) {
                 orderbyElement = child;
             }
 
@@ -120,18 +124,20 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
         assert(stmtNode.children.size() > 1);
         AbstractParsedStmt childStmt = null;
         for (VoltXMLElement childSQL : stmtNode.children) {
-            if (childSQL.name.equalsIgnoreCase(SELECT_NODE_NAME)) {
-                childStmt = new ParsedSelectStmt(m_paramValues, m_db);
+            if (childSQL.name.equals(SELECT_NODE_NAME)) {
+                childStmt = new ParsedSelectStmt(null, m_paramValues, m_db);
                 // Assign every child a unique ID
-                childStmt.m_stmtId = AbstractParsedStmt.NEXT_STMT_ID++;
+                childStmt.setStmtId(AbstractParsedStmt.NEXT_STMT_ID++);
                 childStmt.m_parentStmt = m_parentStmt;
                 childStmt.setParentAsUnionClause();
 
-            } else if (childSQL.name.equalsIgnoreCase(UNION_NODE_NAME)) {
-                childStmt = new ParsedUnionStmt(m_paramValues, m_db);
+            }
+            else if (childSQL.name.equals(UNION_NODE_NAME)) {
+                childStmt = new ParsedUnionStmt(null, m_paramValues, m_db);
                 // Set the parent before recursing to children.
                 childStmt.m_parentStmt = m_parentStmt;
-            } else {
+            }
+            else {
                 // skip Order By, Limit/Offset. They will be processed later
                 // by the 'parse' method
                 continue;
@@ -145,7 +151,7 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
 
             // m_tableAliasListAsJoinOrder is not interesting for UNION
             // m_tableAliasMap may have same alias table from different children
-            addStmtTablesFromChildren(childStmt.m_tableAliasMap);
+            addStmtTablesFromChildren(childStmt.getScanEntrySet());
         }
     }
 
@@ -166,19 +172,98 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
 
     @Override
     public boolean isOrderDeterministic() {
-        ArrayList<AbstractExpression> nonOrdered = new ArrayList<AbstractExpression>();
-        return orderByColumnsDetermineAllDisplayColumns(nonOrdered);
+
+        switch (m_unionType) {
+        case EXCEPT:
+        case EXCEPT_ALL:
+        case INTERSECT:
+        case INTERSECT_ALL:
+            // In the back end, these set operators all use boost unordered containers
+            // to define the output table.  We're not sure that iterating over these
+            // containers will produce deterministic results, so we need to rely on
+            // the ORDER BY clause on the outermost set operator (if any) to determine
+            // if order is defined deterministically.
+            //
+            // Order by columns always refer to the leftmost select statement.
+            //
+            // If the ordering of the left child is deterministically defined by
+            // order by columns on the outermost set operator, then this is sufficient
+            // for the whole statement to be order deterministic since both EXCEPT and INTERSECT
+            // produce results that are subsets of rows produced by the left child of the
+            // set operator.
+            return orderIsDeterminedByOrderColumns(m_children.get(0), m_orderColumns);
+
+        case UNION:
+        case UNION_ALL:
+
+            if (m_orderColumns.isEmpty()) {
+
+                // The outer ORDER BY on a UNION can undo any ordering imposed on the
+                // children of the union.  E.g.,
+                //
+                // ((select a, b from t order by a, b)
+                //   union
+                //  (select a, b from r order by a, b)
+                // ) order by a
+                //
+                // The above statement is non-deterministic.
+                //
+                // So, only check child-level determinism if there is no outer ORDER BY.
+
+                for (int i = 0; i < m_children.size(); ++i) {
+                    if (! m_children.get(i).isOrderDeterministic()) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            return orderIsDeterminedByOrderColumns(this, m_orderColumns);
+
+        default:
+            return false;
+        }
+    }
+
+    private static boolean orderIsDeterminedByOrderColumns(AbstractParsedStmt stmt, List<ParsedColInfo> orderColumns) {
+
+        if (orderColumns.isEmpty()) {
+            return false;
+        }
+
+        if (stmt instanceof ParsedSelectStmt) {
+            ParsedSelectStmt selectStmt = (ParsedSelectStmt) stmt;
+            ArrayList<AbstractExpression> nonOrdered = new ArrayList<>();
+            return selectStmt.orderByColumnsDetermineAllDisplayColumns(selectStmt.displayColumns(), orderColumns, nonOrdered);
+        }
+        else {
+            ParsedUnionStmt setOpStmt = (ParsedUnionStmt) stmt;
+            switch (setOpStmt.m_unionType) {
+            case EXCEPT:
+            case EXCEPT_ALL:
+            case INTERSECT:
+            case INTERSECT_ALL:
+                return orderIsDeterminedByOrderColumns(setOpStmt.m_children.get(0), orderColumns);
+
+            case UNION:
+            case UNION_ALL:
+                // We can return true here if the order by columns
+                // list all the columns on the select list of the leftmost statement.
+                // Otherwise, we must return false.
+                return setOpStmt.getLeftmostSelectStmt().orderByColumnsDetermineAllDisplayColumnsForUnion(orderColumns);
+
+            default:
+                return false;
+
+            }
+        }
     }
 
     @Override
     public boolean isOrderDeterministicInSpiteOfUnorderedSubqueries() {
         // Set OP should not have its own subqueries
         return isOrderDeterministic();
-    }
-
-    private boolean orderByColumnsDetermineAllDisplayColumns(List<AbstractExpression> nonOrdered)
-    {
-        return ParsedSelectStmt.orderByColumnsDetermineAllDisplayColumns(getLeftmostSelectStmt().displayColumns(), m_orderColumns, nonOrdered);
     }
 
     @Override
@@ -197,21 +282,22 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
         }
     }
 
-    private void addStmtTablesFromChildren(HashMap<String, StmtTableScan> tableAliasMap) {
-        for (String alias: tableAliasMap.keySet()) {
-            StmtTableScan tableScan = tableAliasMap.get(alias);
+    private void addStmtTablesFromChildren(Set<Entry<String, StmtTableScan>> entries) {
+        for (Entry<String, StmtTableScan> entry : entries) {
+            String alias = entry.getKey();
+            StmtTableScan tableScan = entry.getValue();
 
-            if (m_tableAliasMap.get(alias) == null) {
-                m_tableAliasMap.put(alias, tableScan);
+            if (getStmtTableScanByAlias(alias) == null) {
+                defineTableScanByAlias(alias, tableScan);
             } else {
                 // if there is a duplicate table alias in the map,
                 // find a new unique name for the key
                 // the value in the map are more interesting
                 alias += "_" + System.currentTimeMillis();
-                HashMap<String, StmtTableScan> duplicates = new HashMap<String, StmtTableScan>();
+                HashMap<String, StmtTableScan> duplicates = new HashMap<>();
                 duplicates.put(alias, tableScan);
 
-                addStmtTablesFromChildren(duplicates);
+                addStmtTablesFromChildren(duplicates.entrySet());
             }
         }
     }
@@ -233,7 +319,7 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
             }
         };
         // Get the display columns from the first child
-        List<ParsedColInfo> displayColumns = leftmostSelectChild.orderByColumns();
+        List<ParsedColInfo> displayColumns = leftmostSelectChild.displayColumns();
         ParsedColInfo order_col = ParsedColInfo.fromOrderByXml(leftmostSelectChild, orderByNode, adjuster);
 
         AbstractExpression order_exp = order_col.expression;
@@ -283,33 +369,6 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
     @Override
     public boolean hasOrderByColumns() {
         return ! m_orderColumns.isEmpty();
-    }
-
-    @Override
-    public List<StmtSubqueryScan> findAllFromSubqueries() {
-        List<StmtSubqueryScan> subqueries = new ArrayList<StmtSubqueryScan>();
-        for (AbstractParsedStmt childStmt : m_children) {
-            subqueries.addAll(childStmt.findAllFromSubqueries());
-        }
-        return subqueries;
-    }
-
-    @Override
-    public List<AbstractExpression> findAllSubexpressionsOfType(ExpressionType exprType) {
-        List<AbstractExpression> exprs = new ArrayList<AbstractExpression>();
-        for (AbstractParsedStmt childStmt : m_children) {
-            exprs.addAll(childStmt.findAllSubexpressionsOfType(exprType));
-        }
-        return exprs;
-    }
-
-    @Override
-    public Set<AbstractExpression> findAllSubexpressionsOfClass(Class< ? extends AbstractExpression> aeClass) {
-        Set<AbstractExpression> exprs = new HashSet<AbstractExpression>();
-        for (AbstractParsedStmt childStmt : m_children) {
-            exprs.addAll(childStmt.findAllSubexpressionsOfClass(aeClass));
-        }
-        return exprs;
     }
 
     /**
@@ -373,7 +432,7 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
             }
             newExpr.setExpressionType(expr.getExpressionType());
             if (ExpressionType.COMPARE_EQUAL == expr.getExpressionType()) {
-                newExpr.setLeft((AbstractExpression) expr.getLeft().clone());
+                newExpr.setLeft(expr.getLeft().clone());
                 newExpr.setRight(childSubqueryExpr);
                 assert(newExpr instanceof ComparisonExpression);
                 ((ComparisonExpression)newExpr).setQuantifier(((ComparisonExpression)expr).getQuantifier());
@@ -392,8 +451,8 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
     }
 
     private void placeTVEsForOrderby () {
-        Map <AbstractExpression, Integer> displayIndexMap = new HashMap <AbstractExpression,Integer>();
-        Map <Integer, ParsedColInfo> displayIndexToColumnMap = new HashMap <Integer, ParsedColInfo>();
+        Map <AbstractExpression, Integer> displayIndexMap = new HashMap <>();
+        Map <Integer, ParsedColInfo> displayIndexToColumnMap = new HashMap <>();
 
         int orderByIndex = 0;
         ParsedSelectStmt leftmostSelectChild = getLeftmostSelectStmt();
@@ -410,4 +469,41 @@ public class ParsedUnionStmt extends AbstractParsedStmt {
             orderCol.expression = expr;
         }
     }
+
+    /**
+     * Here we search all the children, finding if each is content
+     * deterministic. If it is we return right away.
+     */
+    @Override
+    public String calculateContentDeterminismMessage() {
+        String ans = null;
+        for (AbstractParsedStmt child : m_children) {
+            ans = child.getContentDeterminismMessage();
+            if (ans != null) {
+                return ans;
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public boolean isDML() { return false; }
+
+    @Override
+    public Collection<String> calculateUDFDependees() {
+        List<String> answer = new ArrayList<>();
+        for (AbstractParsedStmt child : m_children) {
+            Collection<String> chdeps = child.calculateUDFDependees();
+            if (chdeps != null) {
+                answer.addAll(chdeps);
+            }
+        }
+        return answer;
+    }
+
+    @Override
+    protected void parseCommonTableExpressions(VoltXMLElement root) {
+        // No with statements here.
+    }
+
 }

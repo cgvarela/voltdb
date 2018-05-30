@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,33 +23,36 @@
 
 package org.voltdb.regressionsuites;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.security.SecureRandom;
 
-import static junit.framework.Assert.fail;
-import junit.framework.TestCase;
-
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
 import org.voltdb.BackendTarget;
 import org.voltdb.compiler.VoltProjectBuilder;
 
-public class TestInternalPort extends TestCase {
+public class TestInternalPort extends JUnit4LocalClusterTest {
 
     PortListener ncprocess;
     PipeToFile pf;
     int rport;
 
-    public TestInternalPort(String name) {
-        super(name);
+    public TestInternalPort() {
     }
 
     /**
      * JUnit special method called to setup the test. This instance will start
      * the VoltDB server using the VoltServerConfig instance provided.
      */
-    @Override
+    @Before
     public void setUp() throws Exception {
         rport = SecureRandom.getInstance("SHA1PRNG").nextInt(2000) + 22000;
         System.out.println("Random Internal port is: " + rport);
@@ -62,8 +65,6 @@ public class TestInternalPort extends TestCase {
 
             LocalCluster config = new LocalCluster(catalogJar, 2, 1, 0, BackendTarget.NATIVE_EE_JNI);
 
-            config.portGenerator.enablePortProvider();
-            config.portGenerator.pprovider.setInternalPort(rport);
             //We dont expect the process to initialize as its goint to wait for leader.
             config.setExpectedToInitialize(false);
             config.setHasLocalServer(false);
@@ -71,9 +72,12 @@ public class TestInternalPort extends TestCase {
             boolean success = config.compile(builder);
             assertTrue(success);
 
+            config.portGenerator.enablePortProvider();
+            config.portGenerator.pprovider.setInternalPort(rport);
+
             config.startUp();
             pf = config.m_pipes.get(0);
-            Thread.currentThread().sleep(10000);
+            Thread.sleep(10000);
         } catch (IOException ex) {
             fail(ex.getMessage());
         } finally {
@@ -84,7 +88,7 @@ public class TestInternalPort extends TestCase {
      * JUnit special method called to shutdown the test. This instance will
      * stop the VoltDB server using the VoltServerConfig instance provided.
      */
-    @Override
+    @After
     public void tearDown() throws Exception {
         if (ncprocess != null) {
             ncprocess.close();
@@ -94,11 +98,12 @@ public class TestInternalPort extends TestCase {
     /*
      *
      */
+    @Test
     public void testInternalPort() throws Exception {
         BufferedReader bi = new BufferedReader(new FileReader(new File(pf.m_filename)));
         String line;
         boolean failed = true;
-        final CharSequence cs = "Connecting to the VoltDB cluster leader";
+        final CharSequence cs = "Beginning inter-node communication on port " + Integer.toString(rport);
         while ((line = bi.readLine()) != null) {
             System.out.println(line);
             if (line.contains(cs)) {
@@ -107,5 +112,6 @@ public class TestInternalPort extends TestCase {
             }
         }
         assertFalse(failed);
+        bi.close();
     }
 }

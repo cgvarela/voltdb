@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -30,8 +30,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.json_voltpatches.JSONObject;
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.utils.CoreUtils;
-import org.voltcore.utils.Pair;
 import org.voltdb.DevNullSnapshotTarget;
+import org.voltdb.ExtensibleSnapshotDigestData;
 import org.voltdb.SnapshotDataTarget;
 import org.voltdb.SnapshotTableTask;
 import org.voltdb.SystemProcedureExecutionContext;
@@ -131,15 +131,14 @@ public abstract class SnapshotWritePlan
      * artifacts.  Will dispatch to a subclass appropriate method call based on
      * the snapshot type.  Returns a callable for deferred setup, null if there
      * is nothing to do for deferred setup.
+     * @return returns a Callable
      */
     abstract public Callable<Boolean> createSetup(
-            String file_path, String file_nonce,
+            String file_path, String pathType, String file_nonce,
             long txnId, Map<Integer, Long> partitionTransactionIds,
-            Map<Integer, Map<Integer, Pair<Long, Long>>> remoteDCLastIds,
             JSONObject jsData, SystemProcedureExecutionContext context,
             final VoltTable result,
-            Map<String, Map<Integer, Pair<Long, Long>>> exportSequenceNumbers,
-            Map<Integer, Pair<Long, Long>> drTupleStreamInfo,
+            ExtensibleSnapshotDigestData extraSnapshotData,
             SiteTracker tracker,
             HashinatorSnapshotData hashinatorData,
             long timestamp);
@@ -166,7 +165,7 @@ public abstract class SnapshotWritePlan
      * This method will close all existing data targets and replace all with DevNullDataTargets
      * so that snapshot can be drained.
      */
-    public void createAllDevNullTargets()
+    public void createAllDevNullTargets(Exception lastWriteException)
     {
         Map<Integer, SnapshotDataTarget> targets = Maps.newHashMap();
         final AtomicInteger numTargets = new AtomicInteger();
@@ -184,7 +183,7 @@ public abstract class SnapshotWritePlan
 
                 SnapshotDataTarget target = targets.get(task.m_table.getRelativeIndex());
                 if (target == null) {
-                    target = new DevNullSnapshotTarget();
+                    target = new DevNullSnapshotTarget(lastWriteException);
                     final Runnable onClose = new TargetStatsClosure(target,
                             task.m_table.getTypeName(),
                             numTargets,
@@ -230,7 +229,7 @@ public abstract class SnapshotWritePlan
             ArrayList<Long> robin = new ArrayList<Long>();
             robin.add(hsids.get(siteIndex));
             placeTask(task, robin);
-            siteIndex = siteIndex++ % hsids.size();
+            siteIndex = (siteIndex + 1) % hsids.size();
         }
     }
 }

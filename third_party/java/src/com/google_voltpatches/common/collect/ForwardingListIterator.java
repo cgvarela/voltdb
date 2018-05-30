@@ -17,7 +17,7 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.ListIterator;
 
 /**
@@ -26,8 +26,15 @@ import java.util.ListIterator;
  * behavior of the backing iterator as desired per the <a
  * href="http://en.wikipedia.org/wiki/Decorator_pattern">decorator pattern</a>.
  *
+ * <p><b>{@code default} method warning:</b> This class forwards calls to <i>only some</i> {@code
+ * default} methods. Specifically, it forwards calls only for methods that existed <a
+ * href="https://docs.oracle.com/javase/7/docs/api/java/util/ListIterator.html">before {@code
+ * default} methods were introduced</a>. For newer methods, like {@code forEachRemaining}, it
+ * inherits their default implementations. When those implementations invoke methods, they invoke
+ * methods on the {@code ForwardingListIterator}.
+ *
  * @author Mike Bostock
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
 public abstract class ForwardingListIterator<E> extends ForwardingIterator<E>
@@ -36,7 +43,8 @@ public abstract class ForwardingListIterator<E> extends ForwardingIterator<E>
   /** Constructor for use by subclasses. */
   protected ForwardingListIterator() {}
 
-  @Override protected abstract ListIterator<E> delegate();
+  @Override
+  protected abstract ListIterator<E> delegate();
 
   @Override
   public void add(E element) {
@@ -53,6 +61,7 @@ public abstract class ForwardingListIterator<E> extends ForwardingIterator<E>
     return delegate().nextIndex();
   }
 
+  @CanIgnoreReturnValue
   @Override
   public E previous() {
     return delegate().previous();

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,6 +23,11 @@
 
 package org.voltdb;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import org.junit.Test;
 import org.voltdb.VoltDB.Configuration;
 import org.voltdb.client.ProcCallException;
 import org.voltdb.compiler.VoltProjectBuilder;
@@ -30,6 +35,33 @@ import org.voltdb.utils.MiscUtils;
 
 public class TestAdhocCreateStatementProc extends AdhocDDLTestBase {
 
+    @Test
+    public void testENG13271() throws Exception {
+        String pathToCatalog = Configuration.getPathToCatalogForTest("adhocddl.jar");
+        VoltProjectBuilder builder = new VoltProjectBuilder();
+        builder.addLiteralSchema(
+                "CREATE TABLE T (\n" +
+                "   COLUMN_CASE tinyint,\n" +
+                "   CASE_COLUMN tinyint,\n" +
+                "   AS_BEGIN tinyint,\n" +
+                "   END_COLUMN tinyint\n" +
+                ");\n" +
+                "CREATE PROCEDURE PROC1\n" +
+                "AS BEGIN\n" +
+                "   INSERT INTO T (COLUMN_CASE) VALUES (?);\n" +
+                "   INSERT INTO T (CASE_COLUMN) VALUES (?);\n" +
+                "END;\n" +
+                "CREATE PROCEDURE PROC2\n" +
+                "AS BEGIN\n" +
+                "   SELECT * FROM T;\n" +
+                "END;\n"
+            );
+        builder.setUseDDLSchema(true);
+        boolean success = builder.compile(pathToCatalog, 2, 1, 0);
+        assertTrue("Schema compilation failed", success);
+    }
+
+    @Test
     public void testBasicCreateStatementProc() throws Exception
     {
         String pathToCatalog = Configuration.getPathToCatalogForTest("adhocddl.jar");
@@ -158,6 +190,27 @@ public class TestAdhocCreateStatementProc extends AdhocDDLTestBase {
                 fail("Should be able to drop procedure FOOCOUNT");
             }
             assertFalse(findProcedureInSystemCatalog("FOOCOUNT"));
+
+            // trying adding invalid procedure
+            try {
+                m_client.callProcedure("@AdHoc",
+                        "create procedure FOOCOUNT as select CHAR_LENGTH(ID) from FOO where ID=?");
+              fail("Should not be able to insert procedure with incompatible data type");
+            }
+            catch (ProcCallException pce) {
+                assertTrue(pce.getMessage().contains("incompatible data type in operation"));
+            }
+            assertFalse(findProcedureInSystemCatalog("FOOCOUNT"));
+
+            try {
+                m_client.callProcedure("@AdHoc",
+                        "create procedure MULTIFOO as begin select * from FOO where ID=?; select * from foo; end;");
+            }
+            catch (ProcCallException pce) {
+                pce.printStackTrace();
+                fail("Should be able to create statement procedure");
+            }
+            assertTrue(findProcedureInSystemCatalog("MULTIFOO"));
         }
         finally {
             teardownSystem();

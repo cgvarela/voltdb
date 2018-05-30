@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,6 +20,7 @@ package org.voltdb;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
+import org.hsqldb_voltpatches.HSQLInterface;
 import org.json_voltpatches.JSONException;
 import org.json_voltpatches.JSONObject;
 import org.voltcore.logging.VoltLogger;
@@ -30,6 +31,7 @@ import org.voltdb.catalog.ColumnRef;
 import org.voltdb.catalog.Connector;
 import org.voltdb.catalog.Constraint;
 import org.voltdb.catalog.Database;
+import org.voltdb.catalog.Function;
 import org.voltdb.catalog.Index;
 import org.voltdb.catalog.ProcParameter;
 import org.voltdb.catalog.Procedure;
@@ -122,6 +124,14 @@ public class JdbcDatabaseMetaDataGenerator
                           new ColumnInfo("PK_NAME", VoltType.STRING)
         };
 
+    static public final ColumnInfo[] FUNCTIONS_SCHEMA =
+            new ColumnInfo[] {
+                              new ColumnInfo("FUNCTION_TYPE", VoltType.STRING),
+                              new ColumnInfo("FUNCTION_NAME", VoltType.STRING),
+                              new ColumnInfo("CLASS_NAME", VoltType.STRING),
+                              new ColumnInfo("METHOD_NAME", VoltType.STRING)
+            };
+
     static public final ColumnInfo[] PROCEDURES_SCHEMA =
         new ColumnInfo[] {
                           new ColumnInfo("PROCEDURE_CAT", VoltType.STRING),
@@ -188,6 +198,13 @@ public class JdbcDatabaseMetaDataGenerator
             new ColumnInfo("ACTIVE_PROC", VoltType.TINYINT)
         };
 
+    static public final ColumnInfo[] CONFIG_SCHEMA =
+        new ColumnInfo[] {
+            new ColumnInfo("CONFIG_NAME", VoltType.STRING),
+            new ColumnInfo("CONFIG_VALUE", VoltType.STRING),
+            new ColumnInfo("CONFIG_DESCRIPTION", VoltType.STRING)
+        };
+
     JdbcDatabaseMetaDataGenerator(Catalog catalog, DefaultProcedureManager defaultProcs, InMemoryJarfile jarfile)
     {
         m_catalog = catalog;
@@ -218,6 +235,10 @@ public class JdbcDatabaseMetaDataGenerator
         else if (selector.equalsIgnoreCase("PROCEDURES"))
         {
             result = getProcedures();
+        }
+        else if (selector.equalsIgnoreCase("FUNCTIONS"))
+        {
+            result = getFunctions();
         }
         else if (selector.equalsIgnoreCase("PROCEDURECOLUMNS"))
         {
@@ -549,10 +570,19 @@ public class JdbcDatabaseMetaDataGenerator
                 {
                     for (ColumnRef column : c.getIndex().getColumns())
                     {
+                        String columnName;
+
+                        // if the index name is "MATVIEW_PK_CONSTRAINT", the column name for the materialized view is obtained
+                        // from its column information - ENG-6927
+                        if (c.getTypeName().equals(HSQLInterface.AUTO_GEN_MATVIEW_CONST) ) {
+                            columnName = column.getColumn().getTypeName();
+                        } else {
+                            columnName = column.getTypeName();
+                        }
                         results.addRow(null,
                                        null, // table schema
                                        table.getTypeName(), // table name
-                                       column.getTypeName(), // column name
+                                       columnName, // column name
                                        column.getRelativeIndex(), // key_seq
                                        c.getTypeName() // PK_NAME
                                       );
@@ -560,6 +590,21 @@ public class JdbcDatabaseMetaDataGenerator
                 }
             }
         }
+        return results;
+    }
+
+    VoltTable getFunctions()
+    {
+        VoltTable results = new VoltTable(FUNCTIONS_SCHEMA);
+
+        for (Function func : m_database.getFunctions()) {
+            results.addRow(
+                           "scalar",                // Function Type
+                           func.getFunctionname(),  // Function Name
+                           func.getClassname(),     // Class Name
+                           func.getMethodname());   // Method Name
+        }
+
         return results;
     }
 
@@ -691,10 +736,9 @@ public class JdbcDatabaseMetaDataGenerator
             }
         }
 
-        for (Procedure proc : procedures)
-        {
-            for (ProcParameter param : proc.getParameters())
-            {
+        for (Procedure proc : procedures) {
+            for (ProcParameter param : proc.getParameters()) {
+                Integer paramPrecisionAndRadix[] = getParamPrecisionAndRadix(param);
                 results.addRow(
                                null, // procedure catalog
                                null, // procedure schema
@@ -703,10 +747,10 @@ public class JdbcDatabaseMetaDataGenerator
                                java.sql.DatabaseMetaData.procedureColumnIn, // param type, all are IN
                                getColumnSqlDataType(VoltType.get((byte)param.getType())), // data type
                                getColumnSqlTypeName(VoltType.get((byte)param.getType())), // type name
-                               getParamPrecisionAndRadix(param)[0], // precision
+                               paramPrecisionAndRadix[0], // precision
                                getParamLength(param), // length
                                getColumnDecimalDigits(VoltType.get((byte)param.getType())),
-                               getParamPrecisionAndRadix(param)[1], // radix
+                               paramPrecisionAndRadix[1], // radix
                                java.sql.DatabaseMetaData.procedureNullableUnknown, // nullable
                                getProcedureColumnRemarks(param, proc), // remarks
                                null, // column default.  always null for us
@@ -725,33 +769,34 @@ public class JdbcDatabaseMetaDataGenerator
     VoltTable getTypeInfo()
     {
         VoltTable results = new VoltTable(TYPEINFO_SCHEMA);
-        for (VoltType type : VoltType.values())
-        {
-            if (type.isJdbcVisible()) {
-                Byte unsigned = null;
-                if (type.isUnsigned() != null) {
-                    unsigned = (byte)(type.isUnsigned() ? 1 : 0);
-                }
-                results.addRow(type.toSQLString().toUpperCase(),
-                        type.getJdbcSqlType(),
-                        type.getTypePrecisionAndRadix()[0],
-                        type.getLiteralPrefix(),
-                        type.getLiteralSuffix(),
-                        type.getCreateParams(),
-                        type.getNullable(),
-                        type.isCaseSensitive() ? 1 : 0,
-                        type.getSearchable(),
-                        unsigned,
-                        0,  // no money types (according to definition) in Volt?
-                        0,  // no auto-increment
-                        type.toSQLString().toUpperCase(),
-                        type.getMinimumScale(),
-                        type.getMaximumScale(),
-                        null,
-                        null,
-                        type.getTypePrecisionAndRadix()[1]
-                        );
+        for (VoltType type : VoltType.values()) {
+            if (!type.isJdbcVisible()) {
+                continue;
             }
+            Byte unsigned = null;
+            if (type.isUnsigned() != null) {
+                unsigned = (byte)(type.isUnsigned() ? 1 : 0);
+            }
+            Integer typePrecisionAndRadix[] = type.getTypePrecisionAndRadix();
+            results.addRow(type.toSQLString().toUpperCase(),
+                    type.getJdbcSqlType(),
+                    typePrecisionAndRadix[0],
+                    type.getLiteralPrefix(),
+                    type.getLiteralSuffix(),
+                    type.getCreateParams(),
+                    type.getNullable(),
+                    type.isCaseSensitive() ? 1 : 0,
+                    type.getSearchable(),
+                    unsigned,
+                    0,  // no money types (according to definition) in Volt?
+                    0,  // no auto-increment
+                    type.toSQLString().toUpperCase(),
+                    type.getMinimumScale(),
+                    type.getMaximumScale(),
+                    null,
+                    null,
+                    typePrecisionAndRadix[1]
+                    );
         }
         return results;
     }

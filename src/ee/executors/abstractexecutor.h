@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -47,14 +47,20 @@
 #define VOLTDBNODEABSTRACTEXECUTOR_H
 
 #include "common/InterruptException.h"
+#include "common/tabletuple.h"
+#include "common/types.h"
 #include "execution/VoltDBEngine.h"
 #include "plannodes/abstractplannode.h"
-#include "storage/temptable.h"
+#include "storage/AbstractTempTable.hpp"
+#include "common/SynchronizedThreadLock.h"
 
 #include <cassert>
+#include <vector>
 
 namespace voltdb {
 
+class AbstractExpression;
+class ExecutorVector;
 class TempTableLimits;
 class VoltDBEngine;
 
@@ -66,29 +72,29 @@ class AbstractExecutor {
     virtual ~AbstractExecutor();
 
     /** Executors are initialized once when the catalog is loaded */
-    bool init(VoltDBEngine*, TempTableLimits* limits);
+    bool init(VoltDBEngine*, const ExecutorVector& executorVector);
 
     /** Invoke a plannode's associated executor */
     bool execute(const NValueArray& params);
+
+    /** The temp output table for this executor.  May be an instance
+     *  of either TempTable or LargeTempTable.  May be null for a SEND
+     *  node!  */
+    const AbstractTempTable* getTempOutputTable() const {
+        return m_tmpOutputTable;
+    }
 
     /**
      * Returns the plannode that generated this executor.
      */
     inline AbstractPlanNode* getPlanNode() { return m_abstractNode; }
+    inline const AbstractPlanNode* getPlanNode() const { return m_abstractNode; }
 
     inline void cleanupTempOutputTable()
     {
         if (m_tmpOutputTable) {
             VOLT_TRACE("Clearing output table...");
-            m_tmpOutputTable->deleteAllTuplesNonVirtual(false);
-        }
-    }
-
-    inline void cleanupInputTempTable(Table * input_table) {
-        TempTable* tmp_input_table = dynamic_cast<TempTable*>(input_table);
-        if (tmp_input_table) {
-            // No need of its input temp table
-            tmp_input_table->deleteAllTuplesNonVirtual(false);
+            m_tmpOutputTable->deleteAllTempTuples();
         }
     }
 
@@ -104,48 +110,94 @@ class AbstractExecutor {
         return true;
     }
 
+    inline void disableReplicatedFlag() {
+        m_replicatedTableOperation = false;
+    }
+
+    // Compares two tuples based on the provided sets of expressions and sort directions
+    struct TupleComparer
+    {
+        TupleComparer(const std::vector<AbstractExpression*>& keys,
+                  const std::vector<SortDirectionType>& dirs);
+
+        bool operator()(TableTuple ta, TableTuple tb) const;
+
+    private:
+        const std::vector<AbstractExpression*>& m_keys;
+        const std::vector<SortDirectionType>& m_dirs;
+        size_t m_keyCount;
+    };
+
+    // Return a string with useful debug info
+    virtual std::string debug() const;
+
   protected:
     AbstractExecutor(VoltDBEngine* engine, AbstractPlanNode* abstractNode) {
         m_abstractNode = abstractNode;
         m_tmpOutputTable = NULL;
         m_engine = engine;
+        m_replicatedTableOperation = false;
     }
 
     /** Concrete executor classes implement initialization in p_init() */
     virtual bool p_init(AbstractPlanNode*,
-                        TempTableLimits* limits) = 0;
+                        const ExecutorVector& executorVector) = 0;
 
-    /** Concrete executor classes impelmenet execution in p_execute() */
+    /** Concrete executor classes implement execution in p_execute() */
     virtual bool p_execute(const NValueArray& params) = 0;
 
     /**
-     * Set up a multi-column temp output table for those executors that require one.
+     * Set up a multi-column temporary output table for those executors that require one.
      * Called from p_init.
      */
-    void setTempOutputTable(TempTableLimits* limits, const std::string tempTableName="temp");
+    void setTempOutputTable(const ExecutorVector& executorVector, const std::string tempTableName="temp");
 
     /**
-     * Set up a single-column temp output table for DML executors that require one to return their counts.
+     * Set up a single-column temporary output table for DML executors that require one to return their counts.
      * Called from p_init.
      */
     void setDMLCountOutputTable(TempTableLimits* limits);
 
     // execution engine owns the plannode allocation.
     AbstractPlanNode* m_abstractNode;
-    TempTable* m_tmpOutputTable;
+    AbstractTempTable* m_tmpOutputTable;
 
     /** reference to the engine to call up to the top end */
     VoltDBEngine* m_engine;
+
+    /** when true, indicates that we should use the SynchronizedThreadLock for any OperationNode */
+    bool m_replicatedTableOperation;
 };
 
 
 inline bool AbstractExecutor::execute(const NValueArray& params)
 {
-    assert(m_abstractNode);
-    VOLT_TRACE("Starting execution of plannode(id=%d)...",  m_abstractNode->getPlanNodeId());
+    AbstractPlanNode *planNode = getPlanNode();
+    VOLT_TRACE("Starting execution of plannode(id=%d)...",  planNode->getPlanNodeId());
 
     // run the executor
-    return p_execute(params);
+    bool executorSucceeded = p_execute(params);
+
+    // For large queries, unpin the last tuple block so that it may be
+    // stored on disk if needed.  (This is a no-op for normal temp
+    // tables.)
+    if (m_tmpOutputTable != NULL) {
+        m_tmpOutputTable->finishInserts();
+    }
+
+    // Delete data from any temporary input tables to free up memory
+    size_t inputTableCount = planNode->getInputTableCount();
+    for (size_t i = 0; i < inputTableCount; ++i) {
+        AbstractTempTable *table = dynamic_cast<AbstractTempTable*>(planNode->getInputTable(i));
+        if (table != NULL && m_tmpOutputTable != table) {
+            // For simple no-op sequential scan nodes, sometimes the
+            // input table and output table are the same table, hence
+            // the check above.
+            table->deleteAllTempTuples();
+        }
+    }
+
+    return executorSucceeded;
 }
 
 }

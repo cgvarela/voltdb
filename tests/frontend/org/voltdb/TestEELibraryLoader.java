@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,16 +23,19 @@
 
 package org.voltdb;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.when;
 
 import org.junit.Test;
+import org.voltdb.catalog.Cluster;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
 
 public class TestEELibraryLoader
 {
     @Test
     public void testLoader() {
-        final VoltDB.Configuration configuration = new VoltDB.Configuration();
+        VoltDB.Configuration configuration = new VoltDB.Configuration();
         configuration.m_noLoadLibVOLTDB = true;
         MockVoltDB mockvolt = new MockVoltDB();
         VoltDB.ignoreCrash = true;
@@ -53,5 +56,22 @@ public class TestEELibraryLoader
         VoltDB.initialize(configuration);
         assertFalse(EELibraryLoader.loadExecutionEngineLibrary(true));
         assertFalse(VoltDB.wasCrashCalled);
+
+        // Now test SUCCESS case
+        configuration = new VoltDB.Configuration();
+        VoltDBInterface mockitovolt = mock(VoltDBInterface.class);
+        VoltDBInterface realvolt = new RealVoltDB();
+        when(mockitovolt.getEELibraryVersionString())
+            .thenReturn(realvolt.getEELibraryVersionString());
+        CatalogContext catContext = mock(CatalogContext.class);
+        Cluster cluster = mock(Cluster.class);
+        when(catContext.getCluster())
+            .thenReturn(cluster);
+        when(mockitovolt.getCatalogContext())
+            .thenReturn(catContext);
+
+        VoltDB.replaceVoltDBInstanceForTest(mockitovolt);
+        VoltDB.initialize(configuration);
+        assertTrue(EELibraryLoader.loadExecutionEngineLibrary(true));
     }
 }

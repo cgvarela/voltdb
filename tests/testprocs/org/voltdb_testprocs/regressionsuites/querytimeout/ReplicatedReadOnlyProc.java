@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -28,13 +28,13 @@ import org.voltdb.VoltProcedure;
 import org.voltdb.VoltTable;
 
 public class ReplicatedReadOnlyProc extends VoltProcedure {
-    public final SQLStmt selfJoinSelect = new SQLStmt
+    public final SQLStmt longRunningCrossJoinAgg = new SQLStmt
             ("SELECT t1.contestant_number, t2.state, COUNT(*) "
             + "FROM R1 t1, R1 t2 "
             + "GROUP BY t1.contestant_number, t2.state;");
 
     public VoltTable[] run() {
-        voltQueueSQL(selfJoinSelect);
+        voltQueueSQL(longRunningCrossJoinAgg);
         return voltExecuteSQL(true);
     }
 }

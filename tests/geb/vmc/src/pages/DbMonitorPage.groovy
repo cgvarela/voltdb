@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -36,132 +36,234 @@ import java.util.Calendar
  */
 class DbMonitorPage extends VoltDBManagementCenterPage {
     static content = {
-        activeIcon      		        { $('.activeIcon') }
-        activeCount     		        { activeIcon.find('#activeCount') }
-        missingIcon     		        { $('.missingIcon') }
-        missingCount    		        { missingIcon.find('#missingCount') }
-        alertIcon       		        (required: false) { $('.alertIcon') }
-        alertCount      		        (required: false) { alertIcon.find('span') }
-        joiningIcon     		        (required: false) { $('.joiningIcon') }
-        joiningCount    		        (required: false) { joiningIcon.find('span') }
-        serverButton    		        { $('#btnPopServerList') }
-        serverList     			        { $('#popServerList') }
-        servers         		        { serverList.find('.active') }
-        servName        		        { servers.find('a') }
-        servMemory      		        { servers.find('.memory-status') }
-        showHideGraph  		 	        { $('#showHideGraphBlock') }
-        graphsArea      		        { $('#graphChart') }
-        showHideData    		        { $('#ShowHideBlock') }
-        dataArea        		        { $('.menu_body') }
+        activeIcon                      { $('.activeIcon') }
+        activeCount                     { activeIcon.find('#activeCount') }
+        missingIcon                     { $('.missingIcon') }
+        missingCount                    { missingIcon.find('#missingCount') }
+        alertIcon                       (required: false) { $('.alertIcon') }
+        alertCount                      (required: false) { alertIcon.find('span') }
+        joiningIcon                     (required: false) { $('.joiningIcon') }
+        joiningCount                    (required: false) { joiningIcon.find('span') }
+        serverButton                    { $('#btnPopServerList') }
+        serverList                      { $('#popServerList') }
+        servers                         { serverList.find('.active') }
+        servName                        { servers.find('a') }
+        servMemory                      { servers.next().next().find('.memory-status') }
+        showHideGraph                   { $('#showHideGraphBlock') }
+        graphsArea                      { $('#graphChart') }
+        showHideData                    { $('#ShowHideBlock') }
+        dataArea                        { $('.menu_body') }
 
-        serverCpu			            { $("#chartServerCPU") }
-        serverRam			            { $("#chartServerRAM") }
-        clusterLatency			        { $("#chartClusterLatency") }
-        clusterTransactions		        { $("#chartClusterTransactions") }
-        partitionIdleTime		        { $("#chartPartitionIdleTime") }
-        storedProcedures 		        { $("#tblStoredProcedures") }
-        dataTables			            { $("#tblDataTables") }
+        serverCpu                       { $("#chartServerCPU") }
+        serverRam                       { $("#chartServerRAM") }
+        clusterLatency                  { $("#chartClusterLatency") }
+        clusterTransactions             { $("#chartClusterTransactions") }
+        partitionIdleTime               { $("#chartPartitionIdleTime") }
+        commandLogStatistics            { $("#chartCommandLogging") }
+        databaseReplication             { $("#ChartDrReplicationRate") }
+        storedProcedures                { $("#divSPSection") }
+        dataTables                      { $("#tblDT") }
 
-        serverCpuCheckbox		        { $("#ServerCPU") }
-        serverRamCheckbox		        { $("#ServerRAM") }
-        clusterLatencyCheckbox		    { $("#ClusterLatency") }
-        clusterTransactionsCheckbox	    { $("#ClusterTransactions") }
-        partitionIdleTimeCheckbox	    { $("#PartitionIdleTime") }
-        storedProceduresCheckbox	    { $("#StoredProcedures") }
-        dataTablesCheckbox		        { $("#DatabaseTables") }
+        serverCpuCheckbox               { $("#ServerCPU") }
+        serverRamCheckbox               { $("#ServerRAM") }
+        clusterLatencyCheckbox          { $("#ClusterLatency") }
+        clusterTransactionsCheckbox     { $("#ClusterTransactions") }
+        partitionIdleTimeCheckbox       { $("#PartitionIdleTime") }
+        commandLogStatisticsCheckbox    { $("#CommandLogStat") }
+        databaseReplicationCheckbox     { $("#DrReplicationRate") }
+        storedProceduresCheckbox        { $("#StoredProcedures") }
+        dataTablesCheckbox              { $("#DatabaseTables") }
 
-        filterStoredProcedure		    { $("#filterStoredProc") }
-        filterDatabaseTable		        { $("#filterDatabaseTable") }
+        filterStoredProcedure           { $("#filterStoredProc") }
+        filterDatabaseTable             { $("#filterDT") }
 
-        databaseTableCurrentPage	    { $("#lblPreviousTable") }
-        databaseTableTotalPage		    { $("#lblTotalPagesofTables") }
+        databaseTableCurrentPage        { $("#tblDT_paginate > div > span.pageIndex") }
+        databaseTableTotalPage          { $("#tblDT_paginate > div > span.totalPages") }
 
-        displayPreference       	    { $("#showMyPreference") }
-        graphView			            { $('#graphView') }
-        timeOne				            { $(class:"nv-axisMaxMin", transform:"translate(0,0)") }
+        displayPreference               { $("#showMyPreference") }
+        graphView                       { $('#graphView') }
+        timeOne                         { $(class:"nv-axisMaxMin", transform:"translate(0,0)") }
 
-        table				            { $("#TABLE_NAME") }
-        rowcount			            { $("#TUPLE_COUNT") }
-        maxrows				            { $("#MAX_ROWS") }
-        minrows				            { $("#MIN_ROWS") }
-        avgrows				            { $("#AVG_ROWS") }
-        tabletype			            { $("#TABLE_TYPE") }
+        table                           { $("#TABLE_NAME") }
+        rowcount                        { $("#TUPLE_COUNT") }
+        maxrows                         { $("#MAX_ROWS") }
+        minrows                         { $("#MIN_ROWS") }
+        avgrows                         { $("#AVG_ROWS") }
+        tabletype                       { $("#TABLE_TYPE") }
 
-        ascending			            { $(class:"sorttable_sorted") }
-        descending			            { $(class:"sorttable_sorted_reverse") }
+        ascending                       (required: false) { $(class:"sorttable_sorted") }
+        descending                      (required: false) { $(class:"sorttable_sorted_reverse") }
 
-        alertThreshold			        { $("#threshold") }
-        saveThreshold			        { $("#saveThreshold") }
+        alertThreshold                  { $("#threshold") }
+        saveThreshold                   { $("#saveThreshold") }
 
-        storedProceduresNodataMsg	    { $("html body div.page-wrap div#wrapper div.contents div#containerMain.container div.data div#firstpane.menu_list div.menu_body div#tblStoredProcedures.storedProcWrapper div.tblScroll table.storeTbl tbody#storeProcedureBody tr td") }
+        storedProceduresNodataMsg       { $("html body div.page-wrap div#wrapper div.contents div#containerMain.container div.data div#firstpane.menu_list div.menu_body div#tblStoredProcedures.storedProcWrapper div.tblScroll table.storeTbl tbody#storeProcedureBody tr td") }
 
-        databasetableNoDataMsg		    { $("html body div.page-wrap div#wrapper div.contents div#containerMain.container div.data div#firstpane.menu_list div.menu_body div#tblDataTables.dataTablesWrapper div.tblScroll table.storeTbl tbody#tablesBody tr td") }
+        databasetableNoDataMsg          { $("html body div.page-wrap div#wrapper div.contents div#containerMain.container div.data div#firstpane.menu_list div.menu_body div#tblDataTables.dataTablesWrapper div.tblScroll table.storeTbl tbody#tablesBody tr td") }
 
-        preferencesTitle		        { $(class:"overlay-title", text:"Graph/Data Preferences") }
-        savePreferencesBtn		        { $("#savePreference") }
-        popupClose				        { $(class:"popup_close") }
+        preferencesTitle                { $(class:"overlay-title", text:"Graph/Data Preferences") }
+        savePreferencesBtn              { $("#savePreference") }
+        popupClose                      { $(class:"popup_close") }
 
-        serverbutton			        { $("#serverName") }
-        serverconfirmation		        { $("#serverConfigAdmin > div > div.slide-pop-title > div.icon-server.searchLeft.searchLeftAdmin") }
+        serverbutton                    { $("#serverName") }
+        serverconfirmation              { $("#serverConfigAdmin > div > div.slide-pop-title > div.icon-server.searchLeft.searchLeftAdmin") }
 
-        deerwalkserver3stopbutton   	{ $("#stopServer_deerwalk3")}
-        deeerwalkservercancelbutton 	{ $("#StopConfirmCancel")}
-        deerwalkserverstopok        	{ $("#StopConfirmOK")}
+        deerwalkserver3stopbutton       { $("#stopServer_deerwalk3")}
+        deeerwalkservercancelbutton     { $("#StopConfirmCancel")}
+        deerwalkserverstopok            { $("#StopConfirmOK")}
 
-        deerwalkserver4stopbutton   	{ $("#stopServer_deerwalk4")}
+        deerwalkserver4stopbutton       { $("#stopServer_deerwalk4")}
 
-        storedProcedure			        { $("#PROCEDURE") }
-        invocations			            { $("#INVOCATIONS") }
-        minLatency			            { $("#MIN_LATENCY") }
-        maxLatency			            { $("#MAX_LATENCY") }
-        avgLatency			            { $("#AVG_LATENCY") }
-        timeOfExecution			        { $("#PERC_EXECUTION") }
-
+        storedProcedure                 { $("#PROCEDURE") }
+        invocations                     { $("#INVOCATIONS") }
+        minLatency                      { $("#MIN_LATENCY") }
+        maxLatency                      { $("#MAX_LATENCY") }
+        avgLatency                      { $("#AVG_LATENCY") }
+        timeOfExecution                 { $("#PERC_EXECUTION") }
 
         //DBmonitor part for server
-        dbmonitorbutton			        { $("#navDbmonitor > a")}
-        clusterserverbutton		        { $("#btnPopServerList")}
-        servernamefourthbtn		        { $("#serversList > li:nth-child(1) > a")}
-        servernamesecondbtn		        { $("#serversList > li:nth-child(2) > a")}
-        servernamethirdbtn		        { $("#serversList > li:nth-child(3) > a")}
-        serveractivechk    		        { $("#serversList > li.active.monitoring > a")}
-        serversearch			        { $("input", type: "text", id: "popServerSearch")}
-        checkserverTitle		        { $("#popServerList > div > div.slide-pop-title > div.icon-server.searchLeft")}
-        setthreshhold			        { $("#threshold")}
-        clickthreshholdset		        { $("#saveThreshold")}
+        dbmonitorbutton                 { $("#navDbmonitor > a")}
+        clusterserverbutton             { $("#btnPopServerList")}
+        servernamefourthbtn             { $("#serversList > li:nth-child(1) > a")}
+        servernamesecondbtn             { $("#serversList > li:nth-child(2) > a")}
+        servernamethirdbtn              { $("#serversList > li:nth-child(3) > a")}
+        serveractivechk                 { $("#serversList > li.active.monitoring > a")}
+        serversearch                    { $("input", type: "text", id: "popServerSearch")}
+        checkserverTitle                { $("#popServerList > div > div.slide-pop-title > div.icon-server.searchLeft")}
+        setthreshhold                   { $("#threshold")}
+        clickthreshholdset              { $("#saveThreshold")}
 
         // dbmonitor graph
-        servercpumin		        { $("#visualisationCpu > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text")}
-        servercpumax		        { $("#visualisationCpu > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text")}
+        servercpumin                { $("#visualisationCpu > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text")}
+        servercpumax                { $("#visualisationCpu > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text")}
 
-        selecttypeindrop		        { $("#graphView")}
-        selecttypedays			        { $("#graphView > option:nth-child(3)")}
-        selecttypemin			        { $("#graphView > option:nth-child(2)")}
-        selecttypesec			        { $("#graphView > option:nth-child(1)")}
+        selecttypeindrop                { $("#graphView")}
+        selecttypedays                  { $("#graphView > option:nth-child(3)")}
+        selecttypemin                   { $("#graphView > option:nth-child(2)")}
+        selecttypesec                   { $("#graphView > option:nth-child(1)")}
 
-        serverrammin		        { $("#visualisationRam > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text")}
-        serverrammax		        { $("#visualisationRam > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text")}
+        serverrammin                { $("#visualisationRam > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text")}
+        serverrammax                { $("#visualisationRam > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text")}
 
-        clusterlatencymin		    { $("#visualisationLatency > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text")}
-        clusterlatencymax		    { $("#visualisationLatency > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text")}
+        clusterlatencymin           { $("#visualisationLatency > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text")}
+        clusterlatencymax           { $("#visualisationLatency > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text")}
 
-        clustertransactionmin	    { $("#visualisationTransaction > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text")}
-        clustertransactionmax	    { $("#visualisationTransaction > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text")}
+        clustertransactionmin       { $("#visualisationTransaction > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text")}
+        clustertransactionmax       { $("#visualisationTransaction > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text")}
 
         //partition idle graph
-        partitiongraphmin 		        { $("#visualisationPartitionIdleTime > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text")}
-        partitiongraphmax		        { $("#visualisationPartitionIdleTime > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text")}
-        
-        partitionstatus			        { $("#visualisationPartitionIdleTime > g > g > g.nv-y.nv-axis > g > g:nth-child(1) > g:nth-child(2) > text")}
-        localpartition			        { $("#chartPartitionIdleTime > div.legend > ul > li:nth-child(1)")}
-        clusterwide			            { $("#chartPartitionIdleTime > div.legend > ul > li:nth-child(2)")}
-        multipartition			        { $("#chartPartitionIdleTime > div.legend > ul > li:nth-child(3)")}
+        partitiongraphmin               (required: false) { $("#visualisationPartitionIdleTime > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text")}
+        partitiongraphmax               { $("#visualisationPartitionIdleTime > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text")}
 
-        storedProceduresMsg		        { $("#storeProcedureBody") }
-        databaseTableMsg		        { $("#tablesBody") }
+        //command log statistics graph
+        commandLogStatisticsMin         { $("#visualisationCommandLog > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text") }
+        commandLogStatisticsMax         { $("#visualisationCommandLog > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text") }
 
-        header          		        { module Header }
-        footer          		        { module Footer }
+        //database replication graph
+        databaseReplicationMin          { $("#visualizationDrReplicationRate > g > g > g.nv-x.nv-axis > g > g:nth-child(2) > text") }
+        databaseReplicationMax          { $("#visualizationDrReplicationRate > g > g > g.nv-x.nv-axis > g > g:nth-child(3) > text") }
+
+        partitionstatus                 { $("#visualisationPartitionIdleTime > g > g > g.nv-y.nv-axis > g > g:nth-child(1) > g:nth-child(2) > text")}
+        localpartition                  { $("#chartPartitionIdleTime > div.legend > ul > li:nth-child(1)")}
+        clusterwide                     { $("#chartPartitionIdleTime > div.legend > ul > li:nth-child(2)")}
+        multipartition                  { $("#chartPartitionIdleTime > div.legend > ul > li:nth-child(3)")}
+
+        storedProceduresMsg             { $("#tblSP > tbody > tr > td") }
+        databaseTableMsg                { $("#tblDT > tbody > tr > td") }
+
+        header                          { module Header }
+        footer                          { module Footer }
+
+        //DR Section
+
+        showHideDrBlock {$("#showHideDrBlock")}
+        drSection {$("#drSection")}
+
+        //DR Master Columns
+
+        partitionID {$("#partitionID")}
+
+        status {$("#status")}
+
+        ascendingDT                 { $(class:"sorting_asc") }
+        descendingDT                { $(class:"sorting_desc") }
+
+        dbDrMode {$("#dbDrMode")}
+
+        filterPartitionId {$("#filterPartitionId")}
+
+        partitionIdRows{$("#tblDrMAster").find(class:"sorting_1")}
+
+        //Dr Replica Section
+
+        replicaStatus{$("#replicaStatus")}
+        replicationRate1 {$("#replicationRate1")}
+        replicationRate5 {$("#replicationRate5")}
+
+        filterReplicaServerRows{$("#tblDrReplica").find(class:"sorting_1")}
+
+        filterHostID {($("#filterHostID"))}
+
+        // Command Log Table
+
+        showHideCLPBlock (required:false) {$("#showHideCLPBlock")}
+        clpSection {$("#clpSection")}
+
+        cmdServer {$("#cmdServer")}
+        cmdPendingBytes {$("#cmdPendingBytes")}
+        cmdPendingTrans {$("#cmdPendingTrans")}
+        cmdTotalSegments {$("#cmdTotalSegments")}
+        cmdSegmentsInUse {$("#cmdSegmentsInUse")}
+        cmdFsyncInterval {$("#cmdFsyncInterval")}
+
+        drMasterTitle {$("#drMasterTitle")}
+        drReplicaTitle {$("#drReplicaTitle")}
+        drCLPTitle {$("#drCLPTitle")}
+
+        filterServer {$("#filterServer")}
+
+        clpServerRows {$("#tblCmdLog").find(class:"sorting_1")}
+
+        // UAT
+        drTableModeTypeText         { $("#dbDrMode") }
+        drTableBlock                { $("#showHideDrBlock") }
+        drTableCurrentPageReplica   { $("#tblDrReplica_paginate > div > span.pageIndex") }
+        drTableTotalPagesReplica    { $("#tblDrReplica_paginate > div > span.totalPages") }
+        drTableNextReplicaDisabled  { $("#tblDrReplica_paginate > span.paginate_disabled_next.paginate_button") }
+        drTablePrevReplicaDisabled  { $("#tblDrReplica_paginate > span.paginate_disabled_previous.paginate_button") }
+        drTableNextReplicaEnabled   { $("#tblDrReplica_paginate > span.paginate_enabled_next.paginate_button") }
+        drTablePrevReplicaEnabled   { $("#tblDrReplica_paginate > span.paginate_enabled_previous.paginate_button") }
+
+        drTableCurrentPageMaster    { $("#tblDrMAster_paginate > div > span.pageIndex") }
+        drTableTotalPagesMaster     { $("#tblDrMAster_paginate > div > span.totalPages") }
+        drTableNextMasterEnabled    { $("#tblDrMAster_paginate > span.paginate_enabled_next.paginate_button") }
+        drTablePrevMasterEnabled    { $("#tblDrMAster_paginate > span.paginate_enabled_previous.paginate_button") }
+        drTableNextMasterDisabled   { $("#tblDrMAster_paginate > span.paginate_disabled_next.paginate_button") }
+        drTablePrevMasterDisabled   { $("#tblDrMAster_paginate > span.paginate_disabled_previous.paginate_button") }
+
+        //
+        clpPrevDisabled             { $("#tblCmdLog_paginate > span.paginate_disabled_previous.paginate_button") }
+        clpNextDisabled             { $("#tblCmdLog_paginate > span.paginate_disabled_next.paginate_button") }
+        clpPrevEnabled              { $("#tblCmdLog_paginate > span.paginate_enabled_previous.paginate_button") }
+        clpNextEnabled              { $("#tblCmdLog_paginate > span.paginate_enabled_next.paginate_button") }
+
+        clpCurrentPage              { $("#tblCmdLog_paginate > div > span.pageIndex") }
+        clpTotalPages               { $("#tblCmdLog_paginate > div > span.totalPages") }
+
+        //
+        storedProcPrev              { $("#previousProcedures") }
+        storedProcNext              { $("#nextProcedures") }
+        storedProcCurrentPage       { $("#lblPrevious") }
+        storedProcTotalPages        { $("#lblTotalPages") }
+
+        //
+        tablesPrev                  { $("#previousTables") }
+        tablesNext                  { $("#nextTables") }
+
+        serverListHeader            { $("#tblServerListHeader") }
+        serverNameHeader            { $("#thServerName") }
+        serverIpAddressHeader       { $("#thIpAddress") }
+        serverMemoryUsageHeader     { $("#thMemoryUsage") }
     }
 
     static at = {
@@ -273,6 +375,10 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
         return true
     }
 
+    def boolean isDrSectionOpen(){
+        return divDrReplication.displayed
+    }
+
     /**
      * Closes the Server list, by clicking on the "Server" button (if it's not
      * closed already).
@@ -340,8 +446,8 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
      */
     def String getMemoryUsage(String serverName) {
         openServerList()
-        waitFor { servName.filter(text: serverName).next('.memory-status').displayed }
-        String text = servName.filter(text: serverName).next('.memory-status').text()
+        waitFor { servName.filter(text: serverName).parent().next().next().find('.memory-status').displayed }
+        String text = servName.filter(text: serverName).parent().next().next().find('.memory-status').text()
         closeServerList()
         return text
     }
@@ -386,6 +492,8 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
         return true
     }
 
+
+
     /**
      * Returns true if the "Data" area (containing Stored Procedures and
      * Database Tables info) is currently open (displayed).
@@ -395,12 +503,34 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
         return dataArea.displayed
     }
 
+    def boolean isDrAreaOpen() {
+        return drSection.displayed
+    }
+
+    def boolean isCmdLogSectionOpen() {
+        return showHideCLPBlock.displayed
+    }
+
+    def boolean isCLPAreaOpen() {
+        return clpSection.displayed
+    }
+
     /**
      * Opens the "Data" area (containing Stored Procedures and Database Tables
      * info), by clicking on "Show/Hide Data" (if it's not open already).
      */
     def boolean openDataArea() {
         clickToDisplay(showHideData, dataArea)
+        return true
+    }
+
+    def boolean openDrArea(){
+        clickToDisplay(showHideDrBlock, drSection)
+        return true
+    }
+
+    def boolean openCLPArea(){
+        clickToDisplay(showHideCLPBlock, clpSection)
         return true
     }
 
@@ -413,8 +543,18 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
         return true
     }
 
+    def boolean closeDrArea() {
+        clickToNotDisplay(showHideDrBlock, drSection)
+        return true
+    }
+
+    def boolean closeCLPArea() {
+        clickToNotDisplay(showHideCLPBlock, clpSection)
+        return true
+    }
+
     /**
-     *	Edits from here
+     *  Edits from here
      */
 
     /**
@@ -436,6 +576,18 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
      */
     def boolean preferencesTitleDisplayed() {
         return preferencesTitle.displayed
+    }
+
+    def boolean drMasterTitleDisplayed(){
+        return drMasterTitle.displayed
+    }
+
+    def boolean drReplicaTitleDisplayed(){
+        return drReplicaTitle.displayed
+    }
+
+    def boolean drCLPTitleDisplayed(){
+        return drCLPTitle.displayed
     }
 
     /**
@@ -502,119 +654,119 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
     }
 
     /*
-     *	Returns true if Checkbox for Server CPU in preferences
+     *  Returns true if Checkbox for Server CPU in preferences
      */
     def boolean serverCpuCheckboxDisplayed() {
         return serverCpuCheckbox.displayed
     }
 
     /*
-     *	Returns true if Checkbox for Server RAM in preferences
+     *  Returns true if Checkbox for Server RAM in preferences
      */
     def boolean serverRamCheckboxDisplayed() {
         return serverRamCheckbox.displayed
     }
 
     /*
-     *	Returns true if Checkbox for Cluster Latency in preferences
+     *  Returns true if Checkbox for Cluster Latency in preferences
      */
     def boolean clusterLatencyCheckboxDisplayed() {
         return clusterLatencyCheckbox.displayed
     }
 
     /*
-     *	Returns true if Checkbox for Cluster Transactions in preferences
+     *  Returns true if Checkbox for Cluster Transactions in preferences
      */
     def boolean clusterTransactionsCheckboxDisplayed() {
         return clusterTransactionsCheckbox.displayed
     }
 
     /*
-     *	Returns true if Checkbox for Partition Idle Time in preferences
+     *  Returns true if Checkbox for Partition Idle Time in preferences
      */
     def boolean partitionIdleTimeCheckboxDisplayed() {
         return partitionIdleTimeCheckbox.displayed
     }
 
     /*
-     *	Returns true if Checkbox for Stored Procedures in preferences
+     *  Returns true if Checkbox for Stored Procedures in preferences
      */
     def boolean storedProceduresCheckboxDisplayed() {
         return storedProceduresCheckbox.displayed
     }
 
     /*
-     *	Returns true if Checkbox for Data Tables in preferences
+     *  Returns true if Checkbox for Data Tables in preferences
      */
     def boolean dataTablesCheckboxDisplayed() {
         return dataTablesCheckbox.displayed
     }
 
     /*
-     *	Returns true if display preferences is clicked
+     *  Returns true if display preferences is clicked
      */
     def boolean openDisplayPreference() {
         displayPreference.click()
     }
 
     /*
-     *	Returns true if save button of preferences is clicked
+     *  Returns true if save button of preferences is clicked
      */
     def boolean savePreferences() {
         savePreferencesBtn.click()
     }
 
     /*
-     *	Returns true if close popup button is clicked
+     *  Returns true if close popup button is clicked
      */
     def boolean closePreferences() {
         popupClose.click()
     }
 
     /*
-     *	Click the check in Server CPU Checkbox
+     *  Click the check in Server CPU Checkbox
      */
     def boolean serverCpuCheckboxClick() {
         serverCpuCheckbox.click()
     }
 
     /*
-     *	Click the check in Server RAM Checkbox
+     *  Click the check in Server RAM Checkbox
      */
     def boolean serverRamCheckboxClick() {
         serverRamCheckbox.click()
     }
 
     /*
-     *	Click the check in Cluster Latency Checkbox
+     *  Click the check in Cluster Latency Checkbox
      */
     def boolean clusterLatencyCheckboxClick() {
         clusterLatencyCheckbox.click()
     }
 
     /*
-     *	Click the check in Cluster Transactions Checkbox
+     *  Click the check in Cluster Transactions Checkbox
      */
     def boolean clusterTransactionsCheckboxClick() {
         clusterTransactionsCheckbox.click()
     }
 
     /*
-     *	Click the check in Partition Idle Time Checkbox
+     *  Click the check in Partition Idle Time Checkbox
      */
     def boolean partitionIdleTimeCheckboxClick() {
         partitionIdleTimeCheckbox.click()
     }
 
     /*
-     *	Click the check in Stored Procedures Checkbox
+     *  Click the check in Stored Procedures Checkbox
      */
     def boolean storedProceduresCheckboxClick() {
         storedProceduresCheckbox.click()
     }
 
     /*
-     *	Click the check in Data Tables Checkbox
+     *  Click the check in Data Tables Checkbox
      */
     def boolean dataTablesCheckboxClick() {
         dataTablesCheckbox.click()
@@ -641,11 +793,12 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
         int dateInt = Integer.parseInt(date)
         return dateInt
     }
-    
+
     def String changeToMonth(String string) {
         String date = string.substring(3, string.length()-9)
         return date
     }
+
     /*
      * click SQL Query to go to SqlQueryPage
      */
@@ -673,9 +826,9 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
     }
 
     /*
- * get query to delete a table
- */
-    def String getQueryToDeleteTable() {
+     * get query to delete a table
+     */
+    def String getQueryToDeleteTableAndView() {
         BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
         String line;
         String query = ""
@@ -683,7 +836,102 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
         while((line = br.readLine()) != "#delete") {
         }
 
+        while ((line = br.readLine()) != "#deleteOnly") {
+            // process the line.
+            query = query + line + "\n"
+        }
+
+        return query
+    }
+
+    /*
+
+     */
+    def String getQueryToDeleteTableOnly() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
+        String line;
+        String query = ""
+
+        while((line = br.readLine()) != "#deleteOnly") {
+        }
+
         while ((line = br.readLine()) != "#name") {
+            // process the line.
+            query = query + line + "\n"
+        }
+
+        return query
+    }
+
+    /*
+
+     */
+    def String getQueryToCreateStoredProcedure() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
+        String line;
+        String query = ""
+
+        while((line = br.readLine()) != "#createStoredProcedure") {
+        }
+
+        while ((line = br.readLine()) != "#executeStoredProcedure") {
+            // process the line.
+            query = query + line + "\n"
+        }
+
+        return query
+    }
+
+    /*
+
+     */
+    def String getQueryToExecuteProcedureQuery() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
+        String line;
+        String query = ""
+
+        while((line = br.readLine()) != "#executeStoredProcedure") {
+        }
+
+        while ((line = br.readLine()) != "#dropStoredProcedure") {
+            // process the line.
+            query = query + line + "\n"
+        }
+
+        return query
+    }
+
+    /*
+
+     */
+    def String getQueryToDropProcedureQuery() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
+        String line;
+        String query = ""
+
+        while((line = br.readLine()) != "#dropStoredProcedure") {
+        }
+
+        while ((line = br.readLine()) != "#procedureName") {
+            // process the line.
+            query = query + line + "\n"
+        }
+
+        return query
+    }
+
+    /*
+
+     */
+    def String getNameOfStoredProcedure() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
+        String line;
+        String query = ""
+
+        while((line = br.readLine()) != "#procedureName") {
+        }
+
+        while ((line = br.readLine()) != null) {
             // process the line.
             query = query + line + "\n"
         }
@@ -702,13 +950,14 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
         while((line = br.readLine()) != "#name") {
         }
 
-        while ((line = br.readLine()) != null) {
+        /*while ((line = br.readLine()) != null) {
             query = query + line + "\n"
-        }
+        }*/
+
+        query = br.readLine()
 
         return query
     }
-
 
     //server search
 
@@ -741,71 +990,159 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
     }
 
     /*
-     *	search the tablename in Database Tables
+     *  search the tablename in Database Tables
      */
     def boolean searchDatabaseTable(String tablename) {
         filterDatabaseTable.value(tablename)
     }
 
     /*
-     *	return true if table is in ascending order
+     *  return true if table is in ascending order
      *  to check ascending order, check the class "sorttable_sorted" displayed
      */
     def boolean tableInAscendingOrder() {
-        if ( ascending.displayed )
+        if ( ascendingDT.displayed )
             return true
         else
             return false
     }
 
     /*
-     *	return true if table is in ascending order
+     *  return true if table is in ascending order
      *  to check ascending order, check the class "sorttable_sorted" displayed
      */
     def boolean tableInDescendingOrder() {
-        if ( descending.displayed )
+        if ( descendingDT.displayed )
             return true
         else
-            return falsez
+            return false
     }
 
     /*
-     *	click the table column in database table
+     *  return true if table is in descending order
+     *  to check descending order, check the class "sorting_desc" displayed
+     */
+    def boolean tableInDescendingOrderDT() {
+        if ( descendingDT.displayed )
+            return true
+        else
+            return false
+    }
+
+    /*
+     *  click the table column in database table
      */
     def boolean clickTable() {
         table.click()
     }
 
     /*
-     *	click the row count column in database table
+     *  click the row count column in database table
      */
     def boolean clickRowcount() {
         rowcount.click()
     }
 
     /*
-     *	click the max rows column in database table
+     *  click the max rows column in database table
      */
     def boolean clickMaxRows() {
         maxrows.click()
     }
 
     /*
-     *	click the min rows column in database table
+     *  click the partitionID column in database table
+     */
+    def boolean clickPartitionID() {
+        partitionID.click()
+    }
+
+    /*
+     *  click the status column in DR MAster table
+     */
+    def boolean clickStatus() {
+        status.click()
+    }
+
+    /*
+     *  click the status column in DR Replica table
+     */
+    def boolean clickReplicaStatus() {
+        replicaStatus.click()
+    }
+
+    /*
+     *  click the status column in Replication Rate 1min table
+     */
+    def boolean clickReplicationRate1() {
+        replicationRate1.click()
+    }
+
+    /*
+     *  click the ReplicationRate5 column in DR Replica table
+     */
+    def boolean clickReplicationRate5() {
+        replicationRate5.click()
+    }
+
+    /*
+     *  click the cmdServer column in  Command log table
+     */
+    def boolean clickCmdServer() {
+        cmdServer.click()
+    }
+
+    /*
+     *  click the CmdPendingBytes column in  Command log table
+     */
+    def boolean clickCmdPendingBytes() {
+        cmdPendingBytes.click()
+    }
+
+    /*
+     *  click the CmdPendingTrans column in  Command log table
+     */
+    def boolean clickCmdPendingTrans() {
+        cmdPendingTrans.click()
+    }
+
+    /*
+     *  click the TotalSegments column in  Command log table
+     */
+    def boolean clickCmdTotalSegments() {
+        cmdTotalSegments.click()
+    }
+
+    /*
+   *    click the SegmentsInUse column in  Command log table
+   */
+    def boolean clickCmdSegmentsInUse() {
+        cmdSegmentsInUse.click()
+    }
+
+    /*
+     *    click the FsyncInterval column in  Command log table
+     */
+    def boolean clickCmdFsyncInterval() {
+        cmdFsyncInterval.click()
+    }
+
+    /*
+     *  click the min rows column in database table
      */
     def boolean clickMinRows() {
         minrows.click()
     }
 
     /*
-     *	click the avg rows column in database table
+     *  click the avg rows column in database table
      */
     def boolean clickAvgRows() {
         avgrows.click()
     }
 
     /*
-     *	click the type column in database table
+     *  click the type column in database table
      */
     def boolean clickTabletype() {
         tabletype.click()
@@ -814,80 +1151,80 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
     // for stored procedure
 
     /*
-     *	return true if stored procedures table is displayed
+     *  return true if stored procedures table is displayed
      */
     def boolean storedProceduresTableDisplayed() {
-        waitFor		{ storedProcedures.displayed }
+        waitFor     { storedProcedures.displayed }
     }
 
     /*
-     *	return true if data in stored procedures table is displayed
+     *  return true if data in stored procedures table is displayed
      */
     def boolean storedProceduresDataDisplayed() {
-        waitFor(20)	{ storedProceduresNodataMsg.displayed }
+        waitFor(20) { storedProceduresNodataMsg.displayed }
     }
 
     /*
-     *	return true if stored procedures table is displayed
+     *  return true if stored procedures table is displayed
      */
     def boolean databaseTableDisplayed() {
-        waitFor		{ dataTables.displayed }
+        waitFor     { dataTables.displayed }
     }
 
     /*
-     *	return true if data in stored procedures table is displayed
+     *  return true if data in stored procedures table is displayed
      */
     def boolean sdatabaseTableDisplayed() {
-        waitFor(20)	{ databasetableNoDataMsg.displayed }
+        waitFor(20) { databasetableNoDataMsg.displayed }
     }
 
     // for ascending descending in the stored procedures
 
     /*
-     *	click the stored procedure in database table
+     *  click the stored procedure in database table
      */
     def boolean clickStoredProcedure() {
         storedProcedure.click()
     }
 
     /*
-     *	click the row count column in database table
+     *  click the row count column in database table
      */
     def boolean clickInvocations() {
         invocations.click()
     }
 
     /*
-     *	click the max rows column in database table
+     *  click the max rows column in database table
      */
     def boolean clickMinLatency() {
         minLatency.click()
     }
 
     /*
-     *	click the min rows column in database table
+     *  click the min rows column in database table
      */
     def boolean clickMaxLatency() {
         maxLatency.click()
     }
 
     /*
-     *	 click the avg rows column in database table
+     *   click the avg rows column in database table
      */
     def boolean clickAvgLatency() {
         avgLatency.click()
     }
 
     /*
-     *	click the type column in database table
+     *  click the type column in database table
      */
     def boolean clickTimeOfExecution() {
         timeOfExecution.click()
     }
 
     /*
-	 *	set value in alert threshold and save
-	 */
+     *  set value in alert threshold and save
+     */
     def boolean setAlertThreshold(int threshold) {
         serverButton.click()
 
@@ -896,24 +1233,24 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
             return false
         }
 
-        waitFor		{ alertThreshold.displayed }
-        waitFor		{ saveThreshold.displayed }
+        waitFor     { alertThreshold.displayed }
+        waitFor     { saveThreshold.displayed }
 
         alertThreshold.value(threshold)
         saveThreshold.click()
     }
-    
+
     /*
      *
      */
-    def String compareTime(String stringOne, String stringTwo) {
+    def String compareTime(String stringTwo, String stringOne) {
         int hourOne = changeToHour(stringOne)
         int hourTwo = changeToHour(stringTwo)
         int minuteOne = changeToMinute(stringOne)
         int minuteTwo = changeToMinute(stringTwo)
-        
+
         String result = ""
-        
+
         if(hourTwo-hourOne == 0) {
             result = "seconds"
         }
@@ -925,7 +1262,43 @@ class DbMonitorPage extends VoltDBManagementCenterPage {
                 result = "minutes"
             }
         }
-        
+
         return result
+    }
+
+    /*
+     *  openPartitionIdleGraph opens and checks the
+     *
+     */
+    def boolean openPartitionIdleGraph() {
+        openDisplayPreference()
+        preferencesTitleDisplayed()
+        savePreferencesBtnDisplayed()
+        popupCloseDisplayed()
+
+        partitionIdleTimeCheckboxDisplayed()
+        partitionIdleTimeCheckboxClick()
+        savePreferences()
+
+        if (partitionIdleTimeDisplayed())
+            return true
+        else
+            return false
+    }
+
+    def boolean closePartitionIdleGraph() {
+        openDisplayPreference()
+        preferencesTitleDisplayed()
+        savePreferencesBtnDisplayed()
+        popupCloseDisplayed()
+
+        partitionIdleTimeCheckboxDisplayed()
+        partitionIdleTimeCheckboxClick()
+        savePreferences()
+
+        if (partitionIdleTimeDisplayed())
+            return false
+        else
+            return true
     }
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -45,14 +45,10 @@
 
 #include "unionexecutor.h"
 
-#include "common/tabletuple.h"
 #include "plannodes/unionnode.h"
-#include "storage/temptable.h"
 #include "storage/tableiterator.h"
 #include "storage/tablefactory.h"
-
-#include "boost/unordered_set.hpp"
-#include "boost/unordered_map.hpp"
+#include "storage/temptable.h"
 
 namespace voltdb {
 
@@ -66,7 +62,7 @@ struct SetOperator {
     typedef AbstractPlanNode::TableReference TableReference;
 
     SetOperator(const std::vector<TableReference>& input_tablerefs,
-                TempTable* output_table,
+                AbstractTempTable* output_table,
                 bool is_all)
         : m_input_tablerefs(input_tablerefs), m_output_table(output_table), m_is_all(is_all)
     { }
@@ -82,13 +78,13 @@ struct SetOperator {
 
 protected:
     const std::vector<TableReference>& m_input_tablerefs;
-    TempTable* const m_output_table;
+    AbstractTempTable* const m_output_table;
     bool const m_is_all;
 };
 
 struct UnionSetOperator : public SetOperator {
     UnionSetOperator(const std::vector<TableReference>& input_tablerefs,
-                     TempTable* output_table,
+                     AbstractTempTable* output_table,
                      bool is_all)
         : SetOperator(input_tablerefs, output_table, is_all)
     { }
@@ -138,7 +134,7 @@ struct TableSizeLess {
 
 struct ExceptIntersectSetOperator : public SetOperator {
     ExceptIntersectSetOperator(const std::vector<TableReference>& input_tablerefs,
-                               TempTable* output_table,
+                               AbstractTempTable* output_table,
                                bool is_all,
                                bool is_except)
         : SetOperator(input_tablerefs, output_table, is_all)
@@ -308,9 +304,10 @@ UnionExecutor::UnionExecutor(VoltDBEngine *engine, AbstractPlanNode* abstract_no
 { }
 
 bool UnionExecutor::p_init(AbstractPlanNode* abstract_node,
-                           TempTableLimits* limits)
+                           const ExecutorVector& executorVector)
 {
     VOLT_TRACE("init Union Executor");
+    assert(! executorVector.isLargeQuery());
 
     UnionPlanNode* node = dynamic_cast<UnionPlanNode*>(abstract_node);
     assert(node);
@@ -364,10 +361,9 @@ bool UnionExecutor::p_init(AbstractPlanNode* abstract_node,
     // Since we're are assuming that all of the tables have the same number of columns with
     // the same format. Therefore, we will just grab the first table in the list
     //
-    node->setOutputTable(TableFactory::getCopiedTempTable(node->databaseId(),
-                                                          node->getInputTable(0)->name(),
-                                                          node->getInputTable(0),
-                                                          limits));
+    node->setOutputTable(TableFactory::buildCopiedTempTable(node->getInputTable(0)->name(),
+                                                            node->getInputTable(0),
+                                                            executorVector));
 
     m_setOperator.reset(detail::SetOperator::getSetOperator(node));
     return true;

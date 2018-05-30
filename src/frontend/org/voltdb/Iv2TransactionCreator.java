@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,6 +18,8 @@
 package org.voltdb;
 
 import org.voltcore.network.Connection;
+import org.voltdb.AuthSystem.AuthUser;
+import org.voltdb.InvocationDispatcher.OverrideCheck;
 import org.voltdb.dtxn.TransactionCreator;
 
 /**
@@ -38,12 +40,12 @@ public class Iv2TransactionCreator implements TransactionCreator
             StoredProcedureInvocation invocation, boolean isReadOnly,
             boolean isSinglePartition, boolean isEverySite, int partition, int messageSize, long nowNanos)
     {
-        return m_ci.createTransaction(connectionId,
+        return m_ci.getDispatcher().createTransaction(connectionId,
                 invocation,
                 isReadOnly,
                 isSinglePartition,
                 isEverySite,
-                partition,
+                new int[] { partition },
                 messageSize,
                 nowNanos);
     }
@@ -55,22 +57,46 @@ public class Iv2TransactionCreator implements TransactionCreator
             StoredProcedureInvocation invocation, boolean isReadOnly,
             boolean isSinglePartition, boolean isEverySite, int partition, int messageSize, long nowNanos)
     {
-        return m_ci.createTransaction(connectionId,
+        return m_ci.getDispatcher().createTransaction(connectionId,
                 txnId,
                 uniqueId,
                 invocation,
                 isReadOnly,
                 isSinglePartition,
                 isEverySite,
-                partition,
+                new int[] { partition },
                 messageSize,
                 nowNanos,
                 true);
     }
 
     @Override
-    public void sendSentinel(long txnId, int partitionId) {
-        m_ci.sendSentinel(txnId, partitionId);
+    public ClientResponseImpl dispatch(StoredProcedureInvocation invocation,
+            Connection connection, boolean isAdmin, OverrideCheck bypass) {
+
+        final InvocationClientHandler handler = new InvocationClientHandler() {
+
+            final boolean adminFlag = isAdmin;
+            final long connectionId = connection.connectionId();
+
+            @Override
+            public boolean isAdmin() {
+                return adminFlag;
+            }
+
+            @Override
+            public long connectionId() {
+                return connectionId;
+            }
+        };
+
+        AuthUser admin = m_ci.getCatalogContext().authSystem.getInternalAdminUser();
+        return m_ci.getDispatcher().dispatch(invocation, handler, connection, admin, bypass, false);
+    }
+
+    @Override
+    public void sendSentinel(long uniqueId, int partitionId) {
+        m_ci.sendSentinel(uniqueId, partitionId);
     }
 
     @Override

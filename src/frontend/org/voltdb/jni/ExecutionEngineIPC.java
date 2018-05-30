@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,6 +20,7 @@ package org.voltdb.jni;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.lang.reflect.InvocationTargetException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
@@ -36,13 +37,18 @@ import org.voltdb.PrivateVoltTableFactory;
 import org.voltdb.StatsSelector;
 import org.voltdb.TableStreamType;
 import org.voltdb.TheHashinator.HashinatorConfig;
+import org.voltdb.UserDefinedFunctionManager.UserDefinedFunctionRunner;
 import org.voltdb.VoltTable;
+import org.voltdb.common.Constants;
 import org.voltdb.exceptions.EEException;
 import org.voltdb.exceptions.SerializableException;
 import org.voltdb.export.ExportManager;
+import org.voltdb.iv2.DeterminismHash;
+import org.voltdb.messaging.FastDeserializer;
 import org.voltdb.messaging.FastSerializer;
 import org.voltdb.sysprocs.saverestore.SnapshotUtil;
-import org.voltdb.utils.Encoder;
+import org.voltdb.utils.SerializationHelper;
+import org.voltdb.utils.CompressionService;
 
 import com.google_voltpatches.common.base.Charsets;
 import com.google_voltpatches.common.base.Throwables;
@@ -122,9 +128,10 @@ public class ExecutionEngineIPC extends ExecutionEngine {
         Hashinate(23),
         GetPoolAllocations(24),
         GetUSOs(25),
-        updateHashinator(27),
-        executeTask(28),
-        applyBinaryLog(29);
+        UpdateHashinator(27),
+        ExecuteTask(28),
+        ApplyBinaryLog(29),
+        ShutDown(30);
         Commands(final int id) {
             m_id = id;
         }
@@ -171,7 +178,7 @@ public class ExecutionEngineIPC extends ExecutionEngine {
                     }
                 }
                 if (!connected && retries == 1 && target == BackendTarget.NATIVE_EE_IPC) {
-                    System.out.printf("Ready to connect to voltdbipc process on port %d\n", port);
+                    System.out.println("Ready to connect to voltdbipc process on port " + port);
                     System.out.println("Press Enter after you have started the EE process to initiate the connection to the EE");
                     try {
                         System.in.read();
@@ -251,6 +258,24 @@ public class ExecutionEngineIPC extends ExecutionEngine {
          */
         static final int kErrorCode_getQueuedExportBytes = 105;
 
+        /**
+         * An error code that can be sent at any time indicating that
+         * a per-fragment statistics buffer follows
+         */
+        static final int kErrorCode_pushPerFragmentStatsBuffer = 106;
+
+        /**
+         * Instruct the Java side to invoke a user-defined function and
+         * return the result.
+         */
+        static final int kErrorCode_callJavaUserDefinedFunction = 107;
+
+        /**
+         * An error code that can be sent at any time indicating that
+         * an export stream is dropped
+         */
+        static final int kErrorCode_pushEndOfStream = 113;
+
         ByteBuffer getBytes(int size) throws IOException {
             ByteBuffer header = ByteBuffer.allocate(size);
             while (header.hasRemaining()) {
@@ -261,6 +286,91 @@ public class ExecutionEngineIPC extends ExecutionEngine {
             }
             header.flip();
             return header;
+        }
+
+        // Read per-fragment stats from the wire.
+        void extractPerFragmentStatsInternal() {
+            try {
+                int bufferSize = m_connection.readInt();
+                final ByteBuffer perFragmentStatsBuffer = ByteBuffer.allocate(bufferSize);
+                while (perFragmentStatsBuffer.hasRemaining()) {
+                    int read = m_socketChannel.read(perFragmentStatsBuffer);
+                    if (read == -1) {
+                        throw new EOFException();
+                    }
+                }
+                perFragmentStatsBuffer.flip();
+                // Skip the perFragmentTimingEnabled flag.
+                perFragmentStatsBuffer.get();
+                m_succeededFragmentsCount = perFragmentStatsBuffer.getInt();
+                if (m_perFragmentTimingEnabled) {
+                    for (int i = 0; i < m_succeededFragmentsCount; i++) {
+                        m_executionTimes[i] = perFragmentStatsBuffer.getLong();
+                    }
+                    // This is the time for the failed fragment.
+                    if (m_succeededFragmentsCount < m_executionTimes.length) {
+                        m_executionTimes[m_succeededFragmentsCount] = perFragmentStatsBuffer.getLong();
+                    }
+                }
+            }
+            catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        // Internal function to receive and execute the UDF invocation request.
+        void callJavaUserDefinedFunctionInternal() {
+            try {
+                // Read the request content from the wire.
+                int bufferSize = m_connection.readInt();
+                final ByteBuffer udfBuffer = ByteBuffer.allocate(bufferSize);
+                while (udfBuffer.hasRemaining()) {
+                    int read = m_socketChannel.read(udfBuffer);
+                    if (read == -1) {
+                        throw new EOFException();
+                    }
+                }
+                udfBuffer.flip();
+
+                int functionId = udfBuffer.getInt();
+                UserDefinedFunctionRunner udfRunner = m_functionManager.getFunctionRunnerById(functionId);
+                assert(udfRunner != null);
+                Throwable throwable = null;
+                Object returnValue = null;
+                try {
+                    // Call the user-defined function.
+                    returnValue = udfRunner.call(udfBuffer);
+                    m_data.clear();
+                    // Put the status code for success (zero) into the buffer.
+                    m_data.putInt(0);
+                    // Write the result to the buffer.
+                    UserDefinedFunctionRunner.writeValueToBuffer(m_data, udfRunner.getReturnType(), returnValue);
+                    m_data.flip();
+                    m_connection.write();
+                    return;
+                }
+                catch (InvocationTargetException ex1) {
+                    // Exceptions thrown during Java reflection will be wrapped into this InvocationTargetException.
+                    // We need to get its cause and throw that to the user.
+                    throwable = ex1.getCause();
+                }
+                catch (Throwable ex2) {
+                    throwable = ex2;
+                }
+                // Getting here means the execution was not successful.
+                m_data.clear();
+                if (throwable != null) {
+                    // Exception thrown, put return code = -1.
+                    m_data.putInt(-1);
+                    byte[] errorMsg = throwable.toString().getBytes(Constants.UTF8ENCODING);
+                    SerializationHelper.writeVarbinary(errorMsg, m_data);
+                }
+                m_data.flip();
+                m_connection.write();
+            }
+            catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
 
         /**
@@ -291,9 +401,117 @@ public class ExecutionEngineIPC extends ExecutionEngine {
                     }
                     dependencyIdBuffer.rewind();
                     sendDependencyTable(dependencyIdBuffer.getInt());
-                    continue;
                 }
-                if (status == kErrorCode_CrashVoltDB) {
+                else if (status == ExecutionEngine.ERRORCODE_PROGRESS_UPDATE) {
+                    m_history.append("GOT PROGRESS_UPDATE... ");
+                    int batchIndex = m_connection.readInt();
+                    int planNodeTypeAsInt = m_connection.readInt();
+                    long tuplesFound = m_connection.readLong();
+                    long currMemoryInBytes = m_connection.readLong();
+                    long peakMemoryInBytes = m_connection.readLong();
+                    long nextStep = fragmentProgressUpdate(batchIndex, planNodeTypeAsInt, tuplesFound,
+                            currMemoryInBytes, peakMemoryInBytes);
+                    m_history.append("...RESPONDING TO PROGRESS_UPDATE...nextStep=" + nextStep);
+                    m_data.clear();
+                    m_data.putLong(nextStep);
+                    m_data.flip();
+                    m_connection.write();
+                    m_history.append(" WROTE RESPONSE TO PROGRESS_UPDATE\n");
+                }
+                else if (status == kErrorCode_pushExportBuffer) {
+                    // Message structure:
+                    // pushExportBuffer error code - 1 byte
+                    // partition id - 4 bytes
+                    // signature length (in bytes) - 4 bytes
+                    // signature - signature length bytes
+                    // uso - 8 bytes
+                    // sync - 1 byte
+                    // export buffer length - 4 bytes
+                    // export buffer - export buffer length bytes
+                    int partitionId = getBytes(4).getInt();
+                    int signatureLength = getBytes(4).getInt();
+                    byte signatureBytes[] = new byte[signatureLength];
+                    getBytes(signatureLength).get(signatureBytes);
+                    String signature = new String(signatureBytes, "UTF-8");
+                    long uso = getBytes(8).getLong();
+                    boolean sync = getBytes(1).get() == 1 ? true : false;
+                    int length = getBytes(4).getInt();
+                    ExportManager.pushExportBuffer(
+                            partitionId,
+                            signature,
+                            uso,
+                            0,
+                            length == 0 ? null : getBytes(length),
+                            sync);
+                }
+                else if (status == kErrorCode_getQueuedExportBytes) {
+                    ByteBuffer header = ByteBuffer.allocate(8);
+                    while (header.hasRemaining()) {
+                        final int read = m_socket.getChannel().read(header);
+                        if (read == -1) {
+                            throw new EOFException();
+                        }
+                    }
+                    header.flip();
+
+                    int partitionId = header.getInt();
+                    int signatureLength = header.getInt();
+                    ByteBuffer sigbuf = ByteBuffer.allocate(signatureLength);
+                    while (sigbuf.hasRemaining()) {
+                        final int read = m_socket.getChannel().read(sigbuf);
+                        if (read == -1) {
+                            throw new EOFException();
+                        }
+                    }
+                    sigbuf.flip();
+                    byte signatureBytes[] = new byte[signatureLength];
+                    sigbuf.get(signatureBytes);
+                    String signature = new String(signatureBytes, "UTF-8");
+
+                    long retval = ExportManager.getQueuedExportBytes(partitionId, signature);
+                    ByteBuffer buf = ByteBuffer.allocate(8);
+                    buf.putLong(retval).flip();
+
+                    while (buf.hasRemaining()) {
+                        m_socketChannel.write(buf);
+                    }
+                }
+                else if (status == kErrorCode_pushEndOfStream) {
+                    ByteBuffer header = ByteBuffer.allocate(8);
+                    while (header.hasRemaining()) {
+                        final int read = m_socket.getChannel().read(header);
+                        if (read == -1) {
+                            throw new EOFException();
+                        }
+                    }
+                    header.flip();
+
+                    int partitionId = header.getInt();
+                    int signatureLength = header.getInt();
+                    ByteBuffer sigbuf = ByteBuffer.allocate(signatureLength);
+                    while (sigbuf.hasRemaining()) {
+                        final int read = m_socket.getChannel().read(sigbuf);
+                        if (read == -1) {
+                            throw new EOFException();
+                        }
+                    }
+                    sigbuf.flip();
+                    byte signatureBytes[] = new byte[signatureLength];
+                    sigbuf.get(signatureBytes);
+                    String signature = new String(signatureBytes, "UTF-8");
+
+                    ExportManager.pushEndOfStream(partitionId, signature);
+                }
+                else if (status == ExecutionEngine.ERRORCODE_DECODE_BASE64_AND_DECOMPRESS) {
+                    int dataLength = m_connection.readInt();
+                    String data = m_connection.readString(dataLength);
+                    byte[] decodedDecompressedData = CompressionService.decodeBase64AndDecompressToBytes(data);
+                    m_data.clear();
+                    m_data.put(decodedDecompressedData);
+                    m_data.flip();
+                    m_connection.write();
+                }
+                else if (status == kErrorCode_CrashVoltDB) {
                     ByteBuffer lengthBuffer = ByteBuffer.allocate(4);
                     while (lengthBuffer.hasRemaining()) {
                         final int read = m_socket.getChannel().read(lengthBuffer);
@@ -335,97 +553,28 @@ public class ExecutionEngineIPC extends ExecutionEngine {
 
                     ExecutionEngine.crashVoltDB(message, traces, filename, lineno);
                 }
-                if (status == kErrorCode_pushExportBuffer) {
-                    // Message structure:
-                    // pushExportBuffer error code - 1 byte
-                    // export generation - 8 bytes
-                    // partition id - 4 bytes
-                    // signature length (in bytes) - 4 bytes
-                    // signature - signature length bytes
-                    // uso - 8 bytes
-                    // sync - 1 byte
-                    // end of generation flag - 1 byte
-                    // export buffer length - 4 bytes
-                    // export buffer - export buffer length bytes
-                    long exportGeneration = getBytes(8).getLong();
-                    int partitionId = getBytes(4).getInt();
-                    int signatureLength = getBytes(4).getInt();
-                    byte signatureBytes[] = new byte[signatureLength];
-                    getBytes(signatureLength).get(signatureBytes);
-                    String signature = new String(signatureBytes, "UTF-8");
-                    long uso = getBytes(8).getLong();
-                    boolean sync = getBytes(1).get() == 1 ? true : false;
-                    boolean isEndOfGeneration = getBytes(1).get() == 1 ? true : false;
-                    int length = getBytes(4).getInt();
-                    ExportManager.pushExportBuffer(
-                            exportGeneration,
-                            partitionId,
-                            signature,
-                            uso,
-                            0,
-                            length == 0 ? null : getBytes(length),
-                            sync,
-                            isEndOfGeneration);
-                    continue;
+                else if (status == kErrorCode_pushPerFragmentStatsBuffer) {
+                    // The per-fragment stats are in the very beginning.
+                    extractPerFragmentStatsInternal();
                 }
-                if (status == kErrorCode_getQueuedExportBytes) {
-                    ByteBuffer header = ByteBuffer.allocate(8);
-                    while (header.hasRemaining()) {
-                        final int read = m_socket.getChannel().read(header);
-                        if (read == -1) {
-                            throw new EOFException();
-                        }
-                    }
-                    header.flip();
-
-                    int partitionId = header.getInt();
-                    int signatureLength = header.getInt();
-                    ByteBuffer sigbuf = ByteBuffer.allocate(signatureLength);
-                    while (sigbuf.hasRemaining()) {
-                        final int read = m_socket.getChannel().read(sigbuf);
-                        if (read == -1) {
-                            throw new EOFException();
-                        }
-                    }
-                    sigbuf.flip();
-                    byte signatureBytes[] = new byte[signatureLength];
-                    sigbuf.get(signatureBytes);
-                    String signature = new String(signatureBytes, "UTF-8");
-
-                    long retval = ExportManager.getQueuedExportBytes(partitionId, signature);
-                    ByteBuffer buf = ByteBuffer.allocate(8);
-                    buf.putLong(retval).flip();
-
-                    while (buf.hasRemaining()) {
-                        m_socketChannel.write(buf);
-                    }
-                    continue;
+                else if (status == kErrorCode_callJavaUserDefinedFunction) {
+                    callJavaUserDefinedFunctionInternal();
                 }
-                if (status == ExecutionEngine.ERRORCODE_DECODE_BASE64_AND_DECOMPRESS) {
-                    int dataLength = m_connection.readInt();
-                    String data = m_connection.readString(dataLength);
-                    byte[] decodedDecompressedData = Encoder.decodeBase64AndDecompressToBytes(data);
-                    m_data.clear();
-                    m_data.put(decodedDecompressedData);
-                    m_data.flip();
-                    m_connection.write();
-                    continue;
-                }
-
-                try {
-                    checkErrorCode(status);
+                else {
                     break;
-                }
-                catch (final RuntimeException e) {
-                    if (e instanceof SerializableException) {
-                        throw e;
-                    } else {
-                        throw (IOException)e.getCause();
-                    }
                 }
             }
 
-            return status;
+            try {
+                checkErrorCode(status);
+                return status;
+            }
+            catch (SerializableException e) {
+                throw e;
+            }
+            catch (RuntimeException e) {
+                throw (IOException)e.getCause();
+            }
         }
 
 
@@ -447,6 +596,24 @@ public class ExecutionEngineIPC extends ExecutionEngine {
             resultTablesLengthBytes.flip();
 
             final int resultTablesLength = resultTablesLengthBytes.getInt();
+
+            // check the dirty-ness of the batch
+            final ByteBuffer dirtyBytes = ByteBuffer.allocate(1);
+            while (dirtyBytes.hasRemaining()) {
+                int read = m_socketChannel.read(dirtyBytes);
+                if (read == -1) {
+                    throw new EOFException();
+                }
+            }
+            dirtyBytes.flip();
+            // check if anything was changed
+            final boolean dirty  = dirtyBytes.get() > 0;
+            if (dirty)
+                m_dirty = true;
+
+            if (resultTablesLength <= 0)
+                return;
+
             final ByteBuffer resultTablesBuffer = ByteBuffer
                     .allocate(resultTablesLength);
             //resultTablesBuffer.order(ByteOrder.LITTLE_ENDIAN);
@@ -458,17 +625,53 @@ public class ExecutionEngineIPC extends ExecutionEngine {
             }
             resultTablesBuffer.flip();
 
-            // check if anything was changed
-            final boolean dirty = resultTablesBuffer.get() > 0;
-            if (dirty)
-                m_dirty = true;
-
             for (int ii = 0; ii < tables.length; ii++) {
                 final int dependencyCount = resultTablesBuffer.getInt(); // ignore the table count
                 assert(dependencyCount == 1); //Expect one dependency generated per plan fragment
                 resultTablesBuffer.getInt(); // ignore the dependency ID
                 tables[ii] = PrivateVoltTableFactory.createVoltTableFromSharedBuffer(resultTablesBuffer);
             }
+        }
+
+        public ByteBuffer readResultsBuffer() throws IOException {
+            // check the dirty-ness of the batch
+            final ByteBuffer dirtyBytes = ByteBuffer.allocate(1);
+            while (dirtyBytes.hasRemaining()) {
+                int read = m_socketChannel.read(dirtyBytes);
+                if (read == -1) {
+                    throw new EOFException();
+                }
+            }
+            dirtyBytes.flip();
+            // check if anything was changed
+            m_dirty |= dirtyBytes.get() > 0;
+
+            final ByteBuffer resultTablesLengthBytes = ByteBuffer.allocate(4);
+            //resultTablesLengthBytes.order(ByteOrder.LITTLE_ENDIAN);
+            while (resultTablesLengthBytes.hasRemaining()) {
+                int read = m_socketChannel.read(resultTablesLengthBytes);
+                if (read == -1) {
+                    throw new EOFException();
+                }
+            }
+            resultTablesLengthBytes.flip();
+            final int resultTablesLength = resultTablesLengthBytes.getInt();
+
+            if (resultTablesLength <= 0)
+                return resultTablesLengthBytes;
+
+            final ByteBuffer resultTablesBuffer = ByteBuffer
+                    .allocate(resultTablesLength+4);
+            //resultTablesBuffer.order(ByteOrder.LITTLE_ENDIAN);
+            resultTablesBuffer.putInt(resultTablesLength);
+            while (resultTablesBuffer.hasRemaining()) {
+                int read = m_socketChannel.read(resultTablesBuffer);
+                if (read == -1) {
+                    throw new EOFException();
+                }
+            }
+            resultTablesBuffer.flip();
+            return resultTablesBuffer;
         }
 
         /**
@@ -529,7 +732,26 @@ public class ExecutionEngineIPC extends ExecutionEngine {
         }
 
         /**
-         * Read and deserialize a int from the wire.
+         * Read and deserialize a byte from the wire.
+         */
+        public byte readByte() throws IOException {
+            final ByteBuffer bytes = ByteBuffer.allocate(1);
+
+            //resultTablesLengthBytes.order(ByteOrder.LITTLE_ENDIAN);
+            while (bytes.hasRemaining()) {
+                int read = m_socketChannel.read(bytes);
+                if (read == -1) {
+                    throw new EOFException();
+                }
+            }
+            bytes.flip();
+
+            final byte retval = bytes.get();
+            return retval;
+        }
+
+        /**
+         * Read and deserialize a string from the wire.
          */
         public String readString(int size) throws IOException {
             final ByteBuffer stringBytes = ByteBuffer.allocate(size);
@@ -543,7 +765,7 @@ public class ExecutionEngineIPC extends ExecutionEngine {
             }
             stringBytes.flip();
 
-            final String retval = new String(stringBytes.array());
+            final String retval = new String(stringBytes.array(), Constants.UTF8ENCODING);
             return retval;
         }
 
@@ -583,23 +805,36 @@ public class ExecutionEngineIPC extends ExecutionEngine {
     private final String m_hostname;
     // private final FastSerializer m_fser;
     private final Connection m_connection;
-    private final BBContainer m_dataNetworkOrigin;
-    private final ByteBuffer m_dataNetwork;
+    private BBContainer m_dataNetworkOrigin;
+    private ByteBuffer m_dataNetwork;
     private ByteBuffer m_data;
 
     // private int m_counter;
+
+    private void verifyDataCapacity(int size) {
+        if (size+4 > m_dataNetwork.capacity()) {
+            m_dataNetworkOrigin.discard();
+            m_dataNetworkOrigin = org.voltcore.utils.DBBPool.allocateDirect(size+4);
+            m_dataNetwork = m_dataNetworkOrigin.b();
+            m_dataNetwork.position(4);
+            m_data = m_dataNetwork.slice();
+        }
+    }
 
     public ExecutionEngineIPC(
             final int clusterIndex,
             final long siteId,
             final int partitionId,
+            final int sitesPerHost,
             final int hostId,
             final String hostname,
+            final int drClusterId,
+            final int defaultDrBufferSize,
             final int tempTableMemory,
             final BackendTarget target,
             final int port,
             final HashinatorConfig hashinatorConfig,
-            final boolean createDrReplicatedStream) {
+            final boolean isLowestSiteId) {
         super(siteId, partitionId);
 
         // m_counter = 0;
@@ -622,11 +857,14 @@ public class ExecutionEngineIPC extends ExecutionEngine {
                 m_clusterIndex,
                 m_siteId,
                 m_partitionId,
+                sitesPerHost,
                 m_hostId,
                 m_hostname,
+                drClusterId,
+                defaultDrBufferSize,
                 1024 * 1024 * tempTableMemory,
                 hashinatorConfig,
-                createDrReplicatedStream);
+                isLowestSiteId);
     }
 
     /** Utility method to generate an EEXception that can be overriden by derived classes**/
@@ -639,12 +877,30 @@ public class ExecutionEngineIPC extends ExecutionEngine {
         }
     }
 
+    private StringBuffer m_history = new StringBuffer();
     @Override
     public void release() throws EEException, InterruptedException {
         System.out.println("Shutdown IPC connection in progress.");
+        System.out.println("But first, a little history:\n" + m_history );
+        shutDown();
         m_connection.close();
-        System.out.println("Shutdown IPC connection in done.");
+        System.out.println("Shutdown IPC connection done.");
         m_dataNetworkOrigin.discard();
+    }
+
+    private void shutDown() {
+        int result = ExecutionEngine.ERRORCODE_ERROR;
+        m_data.clear();
+        m_data.putInt(Commands.ShutDown.m_id);
+        try {
+            m_data.flip();
+            m_connection.write();
+            result = m_connection.readStatusByte();
+        } catch (final IOException e) {
+            System.out.println("Excpeption: " + e.getMessage());
+            throw new RuntimeException();
+        }
+        checkErrorCode(result);
     }
 
     private static final Object printLockObject = new Object();
@@ -656,8 +912,11 @@ public class ExecutionEngineIPC extends ExecutionEngine {
             final int clusterIndex,
             final long siteId,
             final int partitionId,
+            final int sitesPerHost,
             final int hostId,
             final String hostname,
+            final int drClusterId,
+            final int defaultDrBufferSize,
             final long tempTableMemory,
             final HashinatorConfig hashinatorConfig,
             final boolean createDrReplicatedStream)
@@ -671,7 +930,10 @@ public class ExecutionEngineIPC extends ExecutionEngine {
         m_data.putInt(clusterIndex);
         m_data.putLong(siteId);
         m_data.putInt(partitionId);
+        m_data.putInt(sitesPerHost);
         m_data.putInt(hostId);
+        m_data.putInt(drClusterId);
+        m_data.putInt(defaultDrBufferSize);
         m_data.putLong(EELoggers.getLogLevels());
         m_data.putLong(tempTableMemory);
         m_data.putInt(createDrReplicatedStream ? 1 : 0);
@@ -691,13 +953,10 @@ public class ExecutionEngineIPC extends ExecutionEngine {
 
     /** write the catalog as a UTF-8 byte string via connection */
     @Override
-    protected void loadCatalog(final long timestamp, final byte[] catalogBytes) throws EEException {
+    protected void coreLoadCatalog(final long timestamp, final byte[] catalogBytes) throws EEException {
         int result = ExecutionEngine.ERRORCODE_ERROR;
+        verifyDataCapacity(catalogBytes.length + 100);
         m_data.clear();
-
-        if (m_data.capacity() < catalogBytes.length + 100) {
-            m_data = ByteBuffer.allocate(catalogBytes.length + 100);
-        }
         m_data.putInt(Commands.LoadCatalog.m_id);
         m_data.putLong(timestamp);
         m_data.put(catalogBytes);
@@ -716,17 +975,16 @@ public class ExecutionEngineIPC extends ExecutionEngine {
 
     /** write the diffs as a UTF-8 byte string via connection */
     @Override
-    public void updateCatalog(final long timestamp, final String catalogDiffs) throws EEException {
+    public void coreUpdateCatalog(final long timestamp, final boolean isStreamUpdate, final String catalogDiffs) throws EEException {
         int result = ExecutionEngine.ERRORCODE_ERROR;
-        m_data.clear();
 
         try {
             final byte catalogBytes[] = catalogDiffs.getBytes("UTF-8");
-            if (m_data.capacity() < catalogBytes.length + 100) {
-                m_data = ByteBuffer.allocate(catalogBytes.length + 100);
-            }
+            verifyDataCapacity(catalogBytes.length + 100);
+            m_data.clear();
             m_data.putInt(Commands.UpdateCatalog.m_id);
             m_data.putLong(timestamp);
+            m_data.putInt(isStreamUpdate ? 1 : 0);
             m_data.put(catalogBytes);
             m_data.put((byte)'\0');
         } catch (final UnsupportedEncodingException ex) {
@@ -786,6 +1044,9 @@ public class ExecutionEngineIPC extends ExecutionEngine {
             final long[] planFragmentIds,
             long[] inputDepIdsIn,
             final Object[] parameterSets,
+            DeterminismHash determinismHash,
+            boolean[] isWriteFrags,
+            int[] sqlCRCs,
             final long txnId,
             final long spHandle,
             final long lastCommittedSpHandle,
@@ -796,19 +1057,22 @@ public class ExecutionEngineIPC extends ExecutionEngine {
         final FastSerializer fser = new FastSerializer();
         try {
             for (int i = 0; i < numFragmentIds; ++i) {
+                Object params = parameterSets[i];
                 // pset can be ByteBuffer or ParameterSet instance
-                if (parameterSets[i] instanceof ByteBuffer) {
-                    fser.write((ByteBuffer) parameterSets[i]);
-                }
-                else {
-                    ParameterSet pset = (ParameterSet) parameterSets[i];
-                    ByteBuffer buf = ByteBuffer.allocate(pset.getSerializedSize());
-                    pset.flattenToBuffer(buf);
-                    buf.flip();
+                int paramStart = fser.getPosition();
+                if (params instanceof ByteBuffer) {
+                    ByteBuffer buf = (ByteBuffer) params;
                     fser.write(buf);
                 }
+                else {
+                    ParameterSet pset = (ParameterSet) params;
+                    fser.writeParameterSet(pset);
+                }
+                if (determinismHash != null && isWriteFrags[i]) {
+                    determinismHash.offerStatement(sqlCRCs[i], paramStart, fser.getContainerNoFlip().b());
+                }
             }
-        } catch (final IOException exception) {
+        } catch (final Exception exception) { // ParameterSet serialization can throw RuntimeExceptions
             fser.discard();
             throw new RuntimeException(exception);
         }
@@ -823,19 +1087,23 @@ public class ExecutionEngineIPC extends ExecutionEngine {
         }
 
         m_data.clear();
-        m_data.putInt(cmd.m_id);
-        m_data.putLong(txnId);
-        m_data.putLong(spHandle);
-        m_data.putLong(lastCommittedSpHandle);
-        m_data.putLong(uniqueId);
-        m_data.putLong(undoToken);
-        m_data.putInt(numFragmentIds);
-        for (int i = 0; i < numFragmentIds; ++i) {
-            m_data.putLong(planFragmentIds[i]);
-        }
-        for (int i = 0; i < numFragmentIds; ++i) {
-            m_data.putLong(inputDepIds[i]);
-        }
+        do {
+            m_data.putInt(cmd.m_id);
+            m_data.putLong(txnId);
+            m_data.putLong(spHandle);
+            m_data.putLong(lastCommittedSpHandle);
+            m_data.putLong(uniqueId);
+            m_data.putLong(undoToken);
+            m_data.put((m_perFragmentTimingEnabled ? (byte)1 : (byte)0));
+            m_data.putInt(numFragmentIds);
+            for (int i = 0; i < numFragmentIds; ++i) {
+                m_data.putLong(planFragmentIds[i]);
+            }
+            for (int i = 0; i < numFragmentIds; ++i) {
+                m_data.putLong(inputDepIds[i]);
+            }
+            verifyDataCapacity(m_data.position()+fser.size());
+        } while (m_data.position() == 0);
         m_data.put(fser.getBuffer());
         fser.discard();
 
@@ -849,24 +1117,32 @@ public class ExecutionEngineIPC extends ExecutionEngine {
     }
 
     @Override
-    protected VoltTable[] coreExecutePlanFragments(
+    public FastDeserializer coreExecutePlanFragments(
+            final int bufferHint,
             final int numFragmentIds,
             final long[] planFragmentIds,
             final long[] inputDepIds,
             final Object[] parameterSets,
+            DeterminismHash determinismHash,
+            boolean[] isWriteFrags,
+            int[] sqlCRCs,
             final long txnId,
             final long spHandle,
             final long lastCommittedSpHandle,
             final long uniqueId,
-            final long undoToken) throws EEException {
+            final long undoToken, boolean traceOn) throws EEException {
         sendPlanFragmentsInvocation(Commands.QueryPlanFragments,
-                numFragmentIds, planFragmentIds, inputDepIds, parameterSets, txnId,
-                spHandle, lastCommittedSpHandle, uniqueId, undoToken);
+                numFragmentIds, planFragmentIds, inputDepIds, parameterSets, determinismHash, isWriteFrags, sqlCRCs,
+                txnId, spHandle, lastCommittedSpHandle, uniqueId, undoToken);
         int result = ExecutionEngine.ERRORCODE_ERROR;
+        if (m_perFragmentTimingEnabled) {
+            m_executionTimes = new long[numFragmentIds];
+        }
 
         while (true) {
             try {
                 result = m_connection.readStatusByte();
+                ByteBuffer resultTables = null;
 
                 if (result == ExecutionEngine.ERRORCODE_NEED_PLAN) {
                     long fragmentId = m_connection.readLong();
@@ -876,43 +1152,29 @@ public class ExecutionEngineIPC extends ExecutionEngine {
                     m_data.flip();
                     m_connection.write();
                 }
-                else if (result == ExecutionEngine.ERRORCODE_PROGRESS_UPDATE) {
-                    int batchIndex = m_connection.readInt();
-                    short size = m_connection.readShort();
-                    String planNodeName = m_connection.readString(size);
-                    size = m_connection.readShort();
-                    String lastAccessedTable = m_connection.readString(size);
-                    long lastAccessedTableSize = m_connection.readLong();
-                    long tuplesFound = m_connection.readLong();
-                    long currMemoryInBytes = m_connection.readLong();
-                    long peakMemoryInBytes = m_connection.readLong();
-                    long nextStep = fragmentProgressUpdate(batchIndex, planNodeName, lastAccessedTable, lastAccessedTableSize, tuplesFound,
-                            currMemoryInBytes, peakMemoryInBytes);
-                    m_data.clear();
-                    m_data.putLong(nextStep);
-                    m_data.flip();
-                    m_connection.write();
-                }
                 else if (result == ExecutionEngine.ERRORCODE_SUCCESS) {
-                    final VoltTable resultTables[] = new VoltTable[numFragmentIds];
-                    for (int ii = 0; ii < numFragmentIds; ii++) {
-                        resultTables[ii] = PrivateVoltTableFactory.createUninitializedVoltTable();
-                    }
                     try {
-                        m_connection.readResultTables(resultTables);
+                        resultTables = m_connection.readResultsBuffer();
                     } catch (final IOException e) {
                         throw new EEException(
                                 ExecutionEngine.ERRORCODE_WRONG_SERIALIZED_BYTES);
                     }
-                    return resultTables;
+                    return new FastDeserializer(resultTables);
                 }
                 else {
                     // failure
                     return null;
                 }
-            } catch (final IOException e) {
+            }
+            catch (final IOException e) {
+                m_history.append("GOT IOException: " + e.toString());
                 System.out.println("Exception: " + e.getMessage());
                 throw new RuntimeException(e);
+            }
+            catch (final Throwable thrown) {
+                thrown.printStackTrace();
+                m_history.append("GOT Throwable: " + thrown.toString());
+                throw thrown;
             }
         }
     }
@@ -927,7 +1189,6 @@ public class ExecutionEngineIPC extends ExecutionEngine {
      */
     @Override
     public void toggleProfiler(final int toggle) {
-        return;
     }
 
 
@@ -938,29 +1199,23 @@ public class ExecutionEngineIPC extends ExecutionEngine {
     throws EEException
     {
         if (returnUniqueViolations) {
-            throw new UnsupportedOperationException("Haven't added IPC support for returning unique violatiosn");
+            throw new UnsupportedOperationException("Haven't added IPC support for returning unique violations");
         }
-        m_data.clear();
-        m_data.putInt(Commands.LoadTable.m_id);
-        m_data.putInt(tableId);
-        m_data.putLong(txnId);
-        m_data.putLong(spHandle);
-        m_data.putLong(lastCommittedSpHandle);
-        m_data.putLong(uniqueId);
-        m_data.putLong(undoToken);
-        m_data.putInt(returnUniqueViolations ? 1 : 0);
-        m_data.putInt(shouldDRStream ? 1 : 0);
-
         final ByteBuffer tableBytes = PrivateVoltTableFactory.getTableDataReference(table);
-        if (m_data.remaining() < tableBytes.remaining()) {
-            m_data.flip();
-            final ByteBuffer newBuffer = ByteBuffer.allocate(m_data.remaining()
-                    + tableBytes.remaining());
-            newBuffer.rewind();
-            //newBuffer.order(ByteOrder.LITTLE_ENDIAN);
-            newBuffer.put(m_data);
-            m_data = newBuffer;
-        }
+        m_data.clear();
+        do {
+            m_data.putInt(Commands.LoadTable.m_id);
+            m_data.putInt(tableId);
+            m_data.putLong(txnId);
+            m_data.putLong(spHandle);
+            m_data.putLong(lastCommittedSpHandle);
+            m_data.putLong(uniqueId);
+            m_data.putLong(undoToken);
+            m_data.putInt(returnUniqueViolations ? 1 : 0);
+            m_data.putInt(shouldDRStream ? 1 : 0);
+            verifyDataCapacity(m_data.position() + tableBytes.remaining());
+        } while (m_data.position() == 0);
+
         m_data.put(tableBytes);
 
         try {
@@ -982,15 +1237,20 @@ public class ExecutionEngineIPC extends ExecutionEngine {
         if (result != ExecutionEngine.ERRORCODE_SUCCESS) {
             throw new EEException(result);
         }
-
-        ByteBuffer responseBuffer = null;
+        /*//
+        // This code will hang expecting input that never arrives
+        // until voltdbipc is extended to respond with information
+        // negative or positive about "unique violations".
         try {
-            responseBuffer = readMessage();
-        } catch (IOException e) {
+            ByteBuffer responseBuffer = readMessage();
+            if (responseBuffer != null) {
+                return responseBuffer.array();
+            }
+        }
+        catch (IOException e) {
             Throwables.propagate(e);
         }
-
-        if (responseBuffer != null) return responseBuffer.array();
+        //*/
         return null;
     }
 
@@ -1259,7 +1519,13 @@ public class ExecutionEngineIPC extends ExecutionEngine {
             remainingBuffer.flip();
             final long remaining = remainingBuffer.getLong();
 
-            final int[] serialized = new int[count];
+            final int[] serialized;
+
+            if (count > 0) {
+                serialized = new int[count];
+            } else {
+                serialized = new int[]{0};
+            }
             for (int i = 0; i < count; i++) {
                 ByteBuffer lengthBuffer = ByteBuffer.allocate(4);
                 while (lengthBuffer.hasRemaining()) {
@@ -1270,29 +1536,26 @@ public class ExecutionEngineIPC extends ExecutionEngine {
                 }
                 lengthBuffer.flip();
                 serialized[i] = lengthBuffer.getInt();
-
                 ByteBuffer view = outputBuffers.get(i).b().duplicate();
                 view.limit(view.position() + serialized[i]);
                 while (view.hasRemaining()) {
                     m_connection.m_socketChannel.read(view);
                 }
             }
-
             return Pair.of(remaining, serialized);
         } catch (final IOException e) {
-            System.out.println("Exception: " + e.getMessage());
             throw new RuntimeException(e);
         }
     }
 
     @Override
     public void exportAction(boolean syncAction,
-            long ackOffset, long seqNo, int partitionId, String mTableSignature) {
+            long uso, long seqNo, int partitionId, String mTableSignature) {
         try {
             m_data.clear();
             m_data.putInt(Commands.ExportAction.m_id);
             m_data.putInt(syncAction ? 1 : 0);
-            m_data.putLong(ackOffset);
+            m_data.putLong(uso);
             m_data.putLong(seqNo);
             if (mTableSignature == null) {
                 m_data.putInt(-1);
@@ -1309,14 +1572,13 @@ public class ExecutionEngineIPC extends ExecutionEngine {
             results.flip();
             long result_offset = results.getLong();
             if (result_offset < 0) {
-                System.out.println("exportAction failed!  syncAction: " + syncAction + ", ackTxnId: " +
-                    ackOffset + ", seqNo: " + seqNo + ", partitionId: " + partitionId +
+                System.out.println("exportAction failed!  syncAction: " + syncAction + ", Uso: " +
+                    uso + ", seqNo: " + seqNo + ", partitionId: " + partitionId +
                     ", tableSignature: " + mTableSignature);
             }
         } catch (final IOException e) {
             throw new RuntimeException(e);
         }
-
     }
 
     @Override
@@ -1347,7 +1609,7 @@ public class ExecutionEngineIPC extends ExecutionEngine {
             throw new RuntimeException(e);
         }
 
-        return null;
+        return retval;
     }
 
     @Override
@@ -1402,7 +1664,6 @@ public class ExecutionEngineIPC extends ExecutionEngine {
 
         m_data.clear();
         m_data.putInt(Commands.Hashinate.m_id);
-        m_data.putInt(config.type.typeId());
         m_data.putInt(config.configBytes.length);
         m_data.put(config.configBytes);
         try {
@@ -1431,8 +1692,7 @@ public class ExecutionEngineIPC extends ExecutionEngine {
     public void updateHashinator(HashinatorConfig config)
     {
         m_data.clear();
-        m_data.putInt(Commands.updateHashinator.m_id);
-        m_data.putInt(config.type.typeId());
+        m_data.putInt(Commands.UpdateHashinator.m_id);
         m_data.putInt(config.configBytes.length);
         m_data.put(config.configBytes);
         try {
@@ -1445,22 +1705,33 @@ public class ExecutionEngineIPC extends ExecutionEngine {
     }
 
     @Override
-    public void applyBinaryLog(ByteBuffer log, long txnId, long spHandle, long lastCommittedSpHandle, long uniqueId,
-                               long undoToken)
+    public long applyBinaryLog(ByteBuffer log, long txnId, long spHandle, long lastCommittedSpHandle, long uniqueId,
+                               int remoteClusterId, int remotePartitionId, long undoToken)
     throws EEException
     {
         m_data.clear();
-        m_data.putInt(Commands.applyBinaryLog.m_id);
+        m_data.putInt(Commands.ApplyBinaryLog.m_id);
         m_data.putLong(txnId);
         m_data.putLong(spHandle);
         m_data.putLong(lastCommittedSpHandle);
         m_data.putLong(uniqueId);
+        m_data.putInt(remoteClusterId);
+        m_data.putInt(remotePartitionId);
         m_data.putLong(undoToken);
         m_data.put(log.array());
 
         try {
             m_data.flip();
             m_connection.write();
+            ByteBuffer rowCount = ByteBuffer.allocate(8);
+            while (rowCount.hasRemaining()) {
+                int read = m_connection.m_socketChannel.read(rowCount);
+                if (read <= 0) {
+                    throw new EOFException();
+                }
+            }
+            rowCount.flip();
+            return rowCount.getLong();
         } catch (final Exception e) {
             System.out.println("Exception: " + e.getMessage());
             throw new RuntimeException(e);
@@ -1494,7 +1765,7 @@ public class ExecutionEngineIPC extends ExecutionEngine {
     @Override
     public byte[] executeTask(TaskType taskType, ByteBuffer task) {
         m_data.clear();
-        m_data.putInt(Commands.executeTask.m_id);
+        m_data.putInt(Commands.ExecuteTask.m_id);
         m_data.putLong(taskType.taskId);
         m_data.put(task.array());
         try {
@@ -1528,5 +1799,30 @@ public class ExecutionEngineIPC extends ExecutionEngine {
     @Override
     public ByteBuffer getParamBufferForExecuteTask(int requiredCapacity) {
         return ByteBuffer.allocate(requiredCapacity);
+    }
+
+    private boolean m_perFragmentTimingEnabled = false;
+
+    @Override
+    public void setPerFragmentTimingEnabled(boolean enabled) {
+        m_perFragmentTimingEnabled = enabled;
+    }
+
+    private int m_succeededFragmentsCount = 0;
+    private long[] m_executionTimes = null;
+
+    @Override
+    public int extractPerFragmentStats(int batchSize, long[] executionTimesOut) {
+        if (executionTimesOut != null) {
+            assert(executionTimesOut.length >= m_succeededFragmentsCount);
+            for (int i = 0; i < m_succeededFragmentsCount; i++) {
+                executionTimesOut[i] = m_executionTimes[i];
+            }
+            // This is the time for the failed fragment.
+            if (m_succeededFragmentsCount < executionTimesOut.length) {
+                executionTimesOut[m_succeededFragmentsCount] = m_executionTimes[m_succeededFragmentsCount];
+            }
+        }
+        return m_succeededFragmentsCount;
     }
 }

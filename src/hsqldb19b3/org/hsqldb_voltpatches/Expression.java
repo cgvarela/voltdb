@@ -66,22 +66,17 @@
 
 package org.hsqldb_voltpatches;
 
-// A VoltDB extension to transfer Expression structures to the VoltDB planner
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
+import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Vector;
 
-/// We DO NOT reorganize imports in hsql code. And we try to keep these structured comment in place.
-import java.math.BigDecimal;
-import org.hsqldb_voltpatches.types.BinaryData;
-import org.hsqldb_voltpatches.types.TimestampData;
-import org.hsqldb_voltpatches.types.NumberType;
 import org.hsqldb_voltpatches.HSQLInterface.HSQLParseException;
-// End of VoltDB extension
-
 import org.hsqldb_voltpatches.HsqlNameManager.SimpleName;
 import org.hsqldb_voltpatches.ParserDQL.CompileContext;
 import org.hsqldb_voltpatches.lib.ArrayListIdentity;
@@ -91,8 +86,11 @@ import org.hsqldb_voltpatches.lib.OrderedHashSet;
 import org.hsqldb_voltpatches.lib.OrderedIntHashSet;
 import org.hsqldb_voltpatches.lib.Set;
 import org.hsqldb_voltpatches.persist.PersistentStore;
+import org.hsqldb_voltpatches.types.BinaryData;
 import org.hsqldb_voltpatches.types.CharacterType;
 import org.hsqldb_voltpatches.types.NullType;
+import org.hsqldb_voltpatches.types.NumberType;
+import org.hsqldb_voltpatches.types.TimestampData;
 import org.hsqldb_voltpatches.types.Type;
 
 /**
@@ -124,6 +122,9 @@ public class Expression {
 
     static {
         aggregateFunctionSet.add(OpTypes.COUNT);
+        // A VoltDB extension APPROX_COUNT_DISTINCT
+        aggregateFunctionSet.add(OpTypes.APPROX_COUNT_DISTINCT);
+        // End of VoltDB extension
         aggregateFunctionSet.add(OpTypes.SUM);
         aggregateFunctionSet.add(OpTypes.MIN);
         aggregateFunctionSet.add(OpTypes.MAX);
@@ -156,6 +157,9 @@ public class Expression {
 
     static {
         subqueryAggregateExpressionSet.add(OpTypes.COUNT);
+        // A VoltDB extension APPROX_COUNT_DISTINCT
+        subqueryAggregateExpressionSet.add(OpTypes.APPROX_COUNT_DISTINCT);
+        // End of VoltDB extension
         subqueryAggregateExpressionSet.add(OpTypes.SUM);
         subqueryAggregateExpressionSet.add(OpTypes.MIN);
         subqueryAggregateExpressionSet.add(OpTypes.MAX);
@@ -238,10 +242,8 @@ public class Expression {
      * ROW or VALUELIST
      */
     Expression(int type, Expression[] list) {
-
         this(type);
-
-        this.nodes = list;
+        nodes = list;
     }
 
     public String describe(Session session) {
@@ -364,49 +366,46 @@ public class Expression {
 
         switch (opType) {
 
-            case OpTypes.VALUE :
-                sb.append("VALUE = ").append(valueData);
-                sb.append(", TYPE = ").append(dataType.getNameString());
+        case OpTypes.VALUE :
+            sb.append("VALUE = ").append(valueData);
+            sb.append(", TYPE = ").append(dataType.getNameString());
+            break;
 
-                return sb.toString();
+        case OpTypes.ROW_SUBQUERY :
+        case OpTypes.TABLE_SUBQUERY :
+            sb.append("QUERY ");
+            sb.append(subQuery.queryExpression.describe(session));
+            break;
 
-            case OpTypes.ROW_SUBQUERY :
-            case OpTypes.TABLE_SUBQUERY :
-                sb.append("QUERY ");
-                sb.append(subQuery.queryExpression.describe(session));
+        case OpTypes.ROW :
+            sb.append("ROW = (");
+            for (Expression node : nodes) {
+                sb.append(node.describe(session, blanks + 1));
+            }
+            sb.append("), TYPE = ")
+            .append(dataType == null ? "null" : dataType.getNameString());
+            break;
 
-                return sb.toString();
+        case OpTypes.TABLE :
+            sb.append("VALUELIST ");
+            for (Expression node : nodes) {
+                sb.append(node.describe(session, blanks + 1));
+                sb.append(' ');
+            }
+            break;
 
-            case OpTypes.ROW :
-                sb.append("ROW = ");
+        default:
+            if (nodes.length > LEFT && nodes[LEFT] != null) {
+                sb.append(" arg1=[");
+                sb.append(nodes[LEFT].describe(session, blanks + 1));
+                sb.append(']');
+            }
 
-                for (int i = 0; i < nodes.length; i++) {
-                    sb.append(nodes[i].describe(session, blanks + 1));
-                }
-
-                sb.append("), TYPE = ").append(dataType.getNameString());
-                break;
-
-            case OpTypes.TABLE :
-                sb.append("VALUELIST ");
-
-                for (int i = 0; i < nodes.length; i++) {
-                    sb.append(nodes[i].describe(session, blanks + 1));
-                    sb.append(' ');
-                }
-                break;
-        }
-
-        if (nodes[LEFT] != null) {
-            sb.append(" arg1=[");
-            sb.append(nodes[LEFT].describe(session, blanks + 1));
-            sb.append(']');
-        }
-
-        if (nodes[RIGHT] != null) {
-            sb.append(" arg2=[");
-            sb.append(nodes[RIGHT].describe(session, blanks + 1));
-            sb.append(']');
+            if (nodes.length > RIGHT && nodes[RIGHT] != null) {
+                sb.append(" arg2=[");
+                sb.append(nodes[RIGHT].describe(session, blanks + 1));
+                sb.append(']');
+            }
         }
 
         return sb.toString();
@@ -442,7 +441,7 @@ public class Expression {
         switch (opType) {
 
             case OpTypes.SIMPLE_COLUMN :
-                return this.columnIndex == other.columnIndex;
+                return columnIndex == other.columnIndex;
 
             case OpTypes.VALUE :
                 return equals(valueData, other.valueData);
@@ -453,6 +452,7 @@ public class Expression {
         }
     }
 
+    @Override
     public boolean equals(Object other) {
 
         if (other == this) {
@@ -466,17 +466,29 @@ public class Expression {
         return false;
     }
 
+    @Override
     public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + opType;
+        result = prime * result + exprSubType;
+        result = prime * result
+                + ((dataType == null) ? 0 : dataType.hashCode());
+        switch (opType) {
 
-        int val = opType + exprSubType;
+            case OpTypes.SIMPLE_COLUMN :
+                result = prime * result + columnIndex;
 
-        for (int i = 0; i < nodes.length; i++) {
-            if (nodes[i] != null) {
-                val += nodes[i].hashCode();
-            }
+            case OpTypes.VALUE:
+                result = prime * result
+                         + ((valueData == null) ? 0 : valueData.hashCode());
+
+            default:
+                result = prime * result + Arrays.hashCode(nodes);
+                result = prime * result
+                        + ((subQuery == null) ? 0 : subQuery.hashCode());
         }
-
-        return val;
+        return result;
     }
 
     static boolean equals(Object o1, Object o2) {
@@ -488,6 +500,7 @@ public class Expression {
         return (o1 == null) ? o2 == null
                             : o1.equals(o2);
     }
+
 
     static boolean equals(Expression[] row1, Expression[] row2) {
 
@@ -548,6 +561,9 @@ public class Expression {
 
             //
             case OpTypes.COUNT :
+            // A VoltDB extension APPROX_COUNT_DISTINCT
+            case OpTypes.APPROX_COUNT_DISTINCT:
+            // End of VoltDB extension
             case OpTypes.SUM :
             case OpTypes.MIN :
             case OpTypes.MAX :
@@ -599,6 +615,9 @@ public class Expression {
         switch (opType) {
 
             case OpTypes.COUNT :
+            // A VoltDB extension APPROX_COUNT_DISTINCT
+            case OpTypes.APPROX_COUNT_DISTINCT:
+            // End of VoltDB extension
             case OpTypes.SUM :
             case OpTypes.MIN :
             case OpTypes.MAX :
@@ -1140,9 +1159,6 @@ public class Expression {
      */
     void insertValuesIntoSubqueryTable(Session session,
                                        PersistentStore store) {
-
-        TableDerived table = subQuery.getTable();
-
         for (int i = 0; i < nodes.length; i++) {
             Object[] data = nodes[i].getRowValue(session);
 
@@ -1155,7 +1171,9 @@ public class Expression {
 
             try {
                 store.indexRow(session, row);
-            } catch (HsqlException e) {}
+            }
+            //XXX: what conditions are being casually ignored here?
+            catch (HsqlException e) {}
         }
     }
 
@@ -1232,7 +1250,8 @@ public class Expression {
 
         try {
             return getValue(session);
-        } catch (HsqlException e) {
+        }
+        catch (HsqlException e) {
             return null;
         }
     }
@@ -1453,12 +1472,12 @@ public class Expression {
                                          Expression.emptyExpressionSet);
     }
 
-    static Map<Integer, VoltXMLElement> prototypes = new HashMap<Integer, VoltXMLElement>();
+    static Map<Integer, VoltXMLElement> prototypes = new HashMap<>();
 
     static {
         prototypes.put(OpTypes.VALUE,         new VoltXMLElement("value")); // constant value
         prototypes.put(OpTypes.COLUMN,        new VoltXMLElement("columnref")); // reference
-        prototypes.put(OpTypes.COALESCE,      new VoltXMLElement("columnref")); // for now, another reference form?
+        prototypes.put(OpTypes.COALESCE,      (new VoltXMLElement("operation")).withValue("optype", "operator_case_when"));
         prototypes.put(OpTypes.DEFAULT,       new VoltXMLElement("columnref")); // uninteresting!? ExpressionColumn
         prototypes.put(OpTypes.SIMPLE_COLUMN, (new VoltXMLElement("simplecolumn")));
 
@@ -1513,15 +1532,16 @@ public class Expression {
         prototypes.put(OpTypes.EXISTS,        (new VoltXMLElement("operation")).withValue("optype", "exists"));
         prototypes.put(OpTypes.OVERLAPS,      null); // not yet supported ExpressionLogical
         prototypes.put(OpTypes.UNIQUE,        null); // not yet supported ExpressionLogical
-        prototypes.put(OpTypes.NOT_DISTINCT,  null); // not yet supported ExpressionLogical
+        prototypes.put(OpTypes.NOT_DISTINCT,  (new VoltXMLElement("operation")).withValue("optype", "notdistinct"));
         prototypes.put(OpTypes.MATCH_SIMPLE,  null); // not yet supported ExpressionLogical
         prototypes.put(OpTypes.MATCH_PARTIAL, null); // not yet supported ExpressionLogical
         prototypes.put(OpTypes.MATCH_FULL,    null); // not yet supported ExpressionLogical
         prototypes.put(OpTypes.MATCH_UNIQUE_SIMPLE,  null); // not yet supported ExpressionLogical
         prototypes.put(OpTypes.MATCH_UNIQUE_PARTIAL, null); // not yet supported ExpressionLogical
         prototypes.put(OpTypes.MATCH_UNIQUE_FULL,    null); // not yet supported ExpressionLogical
-        // aggregate functions
+        // unwindowed aggregate functions
         prototypes.put(OpTypes.COUNT,         (new VoltXMLElement("aggregation")).withValue("optype", "count"));
+        prototypes.put(OpTypes.APPROX_COUNT_DISTINCT, (new VoltXMLElement("aggregation")).withValue("optype", "approx_count_distinct"));
         prototypes.put(OpTypes.SUM,           (new VoltXMLElement("aggregation")).withValue("optype", "sum"));
         prototypes.put(OpTypes.MIN,           (new VoltXMLElement("aggregation")).withValue("optype", "min"));
         prototypes.put(OpTypes.MAX,           (new VoltXMLElement("aggregation")).withValue("optype", "max"));
@@ -1532,46 +1552,105 @@ public class Expression {
         prototypes.put(OpTypes.STDDEV_SAMP,   (new VoltXMLElement("aggregation")).withValue("optype", "stddevsamp"));
         prototypes.put(OpTypes.VAR_POP,       (new VoltXMLElement("aggregation")).withValue("optype", "varpop"));
         prototypes.put(OpTypes.VAR_SAMP,      (new VoltXMLElement("aggregation")).withValue("optype", "varsamp"));
+        // windowed aggregate functions
+        prototypes.put(OpTypes.WINDOWED_RANK, (new VoltXMLElement("win_aggregation")).withValue("optype", "windowed_rank"));
+        prototypes.put(OpTypes.WINDOWED_DENSE_RANK,  (new VoltXMLElement("win_aggregation")).withValue("optype", "windowed_dense_rank"));
+        prototypes.put(OpTypes.WINDOWED_COUNT,(new VoltXMLElement("win_aggregation")).withValue("optype", "windowed_count"));
+        prototypes.put(OpTypes.WINDOWED_MAX,  (new VoltXMLElement("win_aggregation")).withValue("optype", "windowed_max"));
+        prototypes.put(OpTypes.WINDOWED_MIN,  (new VoltXMLElement("win_aggregation")).withValue("optype", "windowed_min"));
+        prototypes.put(OpTypes.WINDOWED_SUM,  (new VoltXMLElement("win_aggregation")).withValue("optype", "windowed_sum"));
+
         // other operations
         prototypes.put(OpTypes.CAST,          (new VoltXMLElement("operation")).withValue("optype", "cast"));
-        prototypes.put(OpTypes.ZONE_MODIFIER, null); // ???
         prototypes.put(OpTypes.CASEWHEN,      (new VoltXMLElement("operation")).withValue("optype", "operator_case_when"));
         prototypes.put(OpTypes.ORDER_BY,      new VoltXMLElement("orderby"));
         prototypes.put(OpTypes.LIMIT,         new VoltXMLElement("limit"));
         prototypes.put(OpTypes.ALTERNATIVE,   (new VoltXMLElement("operation")).withValue("optype", "operator_alternative"));
+        prototypes.put(OpTypes.ZONE_MODIFIER, null); // ???
         prototypes.put(OpTypes.MULTICOLUMN,   null); // an uninteresting!? ExpressionColumn case
+    }
+
+    /**
+     * A SimpleColumnContext encapsulates the current Session object and
+     * (optionally) select statement display columns and related state that may
+     * be needed to resolve some column expressions in a statement's expression
+     * trees. It is also used to tag pseudo-display-columns that are used solely
+     * to resolve column expressions but are NOT actually intended for "display"
+     * in the query result set. A SimpleColumnContext is the main vehicle for
+     * passing shared context into the recursive Expression.voltGetXML process.
+     **/
+    static class SimpleColumnContext {
+        final Session m_session;
+        final List<Expression> m_displayCols;
+        final int m_indexLimitVisible;
+        final java.util.Set<Integer> m_ignoredDisplayColIndexes = new java.util.HashSet<>();
+        private int m_startKey = -1;
+
+        SimpleColumnContext(Session session, List<Expression> displayCols, int indexLimitVisible) {
+            m_session = session;
+            m_displayCols = displayCols;
+            m_indexLimitVisible = indexLimitVisible;
+        }
+
+        SimpleColumnContext withStartKey(int startKey) {
+            m_startKey = startKey;
+            return this;
+        }
+
+        private VoltXMLElement resolveSimpleColumn(Expression simpleCol)
+                throws HSQLParseException {
+            if (m_displayCols == null) {
+                if (simpleCol instanceof ExpressionColumn == false) {
+                    throw new HSQLParseException(
+                            "VoltDB does not support this complex query currently.");
+                }
+            }
+            else {
+                // find the substitute from displayCols list
+                for (int ii=m_startKey+1; ii < m_displayCols.size(); ++ii) {
+                    Expression otherCol = m_displayCols.get(ii);
+                    // This mechanism of finding the expression that a SIMPLE_COLUMN
+                    // is referring to is inherently fragile---columnIndex is an
+                    // offset into different things depending on context!
+                    if (otherCol != null && (otherCol.opType != OpTypes.SIMPLE_COLUMN) &&
+                             (otherCol.columnIndex == simpleCol.columnIndex)  &&
+                             !(otherCol instanceof ExpressionColumn)) {
+                        // Prepare to skip displayCols that are the referent of a SIMPLE_COLUMN.
+                        m_ignoredDisplayColIndexes.add(ii);
+                        // Serialize the column this simple column stands-in for.
+                        return otherCol.voltGetXML(this, simpleCol.getAlias());
+                    }
+                }
+            }
+            return null;
+        }
+
+        public boolean disabledTheColumnForDisplay(int jj) {
+            return jj >= m_indexLimitVisible || m_ignoredDisplayColIndexes.contains(jj);
+        }
+
+
     }
 
     /**
      * @param session
      * @return
-     * @throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException
+     * @throws HSQLParseException
      */
-    VoltXMLElement voltGetXML(Session session)
-            throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException
-    {
-        return voltGetXML(session, null, null, -1);
-    }
-
-    VoltXMLElement voltGetXML(Session session, List<Expression> displayCols,
-            java.util.Set<Integer> ignoredDisplayColIndexes, int startKey)
-            throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException
-    {
-        return voltGetXML(session, displayCols, ignoredDisplayColIndexes, startKey, null);
+    VoltXMLElement voltGetXML(Session session) throws HSQLParseException {
+        return voltGetXML(new SimpleColumnContext(session, null, 0), null);
     }
 
     /**
      * VoltDB added method to get a non-catalog-dependent
      * representation of this HSQLDB object.
-     * @param session The current Session object may be needed to resolve
-     * some names.
-     * @return XML, correctly indented, representing this object.
-     * @throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException
+     * @param context The context encapsulates the current Session object and (optionally)
+     * select statement display columns that may be needed to resolve some names.
+     * @return A VoltXML tree structure.
+     * @throws HSQLParseException
      */
-    VoltXMLElement voltGetXML(Session session, List<Expression> displayCols,
-            java.util.Set<Integer> ignoredDisplayColIndexes, int startKey, String realAlias)
-        throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException
-    {
+    VoltXMLElement voltGetXML(SimpleColumnContext context, String realAlias)
+        throws HSQLParseException {
         // The voltXML representations of expressions tends to be driven much more by the expression's opType
         // than its Expression class.
         int exprOp = getType();
@@ -1587,35 +1666,14 @@ public class Expression {
         // A SIMPLE_COLUMN ExpressionColumn can be treated as a normal "COLUMN" ExpressionColumn.
         // That case gets explicitly enabled here by fudging the opType from SIMPLE_COLUMN to COLUMN.
         if (exprOp == OpTypes.SIMPLE_COLUMN) {
-            if (displayCols == null) {
-                if (this instanceof ExpressionColumn == false) {
-                    throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(
-                            "VoltDB does not support this complex query currently.");
-                }
-                // convert the SIMPLE_COLUMN into a COLUMN
-                opType = OpTypes.COLUMN;
-                exprOp = OpTypes.COLUMN;
-            } else {
-                // find the substitue from displayCols list
-                for (int ii=startKey+1; ii < displayCols.size(); ++ii)
-                {
-                    Expression otherCol = displayCols.get(ii);
-                    // This mechanism of finding the expression that a SIMPLE_COLUMN
-                    // is referring to is inherently fragile---columnIndex is an
-                    // offset into different things depending on context!
-                    if (otherCol != null && (otherCol.opType != OpTypes.SIMPLE_COLUMN) &&
-                             (otherCol.columnIndex == this.columnIndex)  &&
-                             !(otherCol instanceof ExpressionColumn))
-                    {
-                        ignoredDisplayColIndexes.add(ii);
-                        // serialize the column this simple column stands-in for.
-                        // Prepare to skip displayCols that are the referent of a SIMPLE_COLUMN."
-                        // quit seeking simple_column's replacement.
-                        return otherCol.voltGetXML(session, displayCols, ignoredDisplayColIndexes, startKey, getAlias());
-                    }
-                }
-                assert(false);
+            VoltXMLElement asResolved = context.resolveSimpleColumn(this);
+            if (asResolved != null) {
+                return asResolved;
             }
+            // ENG-10429 moved the following two lines here. See fix note https://issues.voltdb.com/browse/ENG-10429.
+            // convert the SIMPLE_COLUMN into a COLUMN
+            opType = OpTypes.COLUMN;
+            exprOp = OpTypes.COLUMN;
         }
 
         // Use the opType to find a pre-initialized prototype VoltXMLElement with the correct
@@ -1629,24 +1687,26 @@ public class Expression {
         // Duplicate the prototype and add any expression particulars needed for the specific opType value,
         // as well as a unique identifier, a possible alias, and child nodes.
         exp = exp.duplicate();
-        exp.attributes.put("id", this.getUniqueId(session));
+        exp.attributes.put("id", getUniqueId(context.m_session));
 
         if (realAlias != null) {
             exp.attributes.put("alias", realAlias);
-        } else if ((alias != null) && (getAlias().length() > 0)) {
+        }
+        else if ((alias != null) && (getAlias().length() > 0)) {
             exp.attributes.put("alias", getAlias());
         }
 
-        // Add expresion sub type
+        // Add expression sub type
         if (exprSubType == OpTypes.ANY_QUANTIFIED) {
             exp.attributes.put("opsubtype", "any");
-        } else if (exprSubType == OpTypes.ALL_QUANTIFIED) {
+        }
+        else if (exprSubType == OpTypes.ALL_QUANTIFIED) {
             exp.attributes.put("opsubtype", "all");
         }
 
         for (Expression expr : nodes) {
             if (expr != null) {
-                VoltXMLElement vxmle = expr.voltGetXML(session, displayCols, ignoredDisplayColIndexes, startKey);
+                VoltXMLElement vxmle = expr.voltGetXML(context, null);
                 exp.children.add(vxmle);
                 assert(vxmle != null);
             }
@@ -1660,33 +1720,14 @@ public class Expression {
         // VoltXMLElement.
         switch (exprOp) {
         case OpTypes.VALUE:
-            // Apparently at this stage, all valid non-NULL values must have a type determined by HSQL.
-            // I'm not sure why this must be the case --paul.
-            // if the actual value is null, make sure the type is null as well
+            // Apparently at this stage, all valid non-NULL values must have a
+            // type determined by HSQL.
+            // (I'm not sure why this MUST be the case --paul.)
             if (valueData == null) {
-                if (dataType == null) {
-                    exp.attributes.put("valuetype", "NULL");
-                    return exp;
-                }
-                exp.attributes.put("valuetype", Types.getTypeName(dataType.typeCode));
+                String valueType = (dataType == null) ? "NULL" :
+                        Types.getTypeName(dataType.typeCode);
+                exp.attributes.put("valuetype", valueType);
                 return exp;
-            }
-
-            if (dataType.isBooleanType()) {
-                // FIXME: Since BOOLEAN is not a valid user data type a BOOLEAN VALUE is always the result of a constant logical
-                // expression (WHERE clause) like "2 > 1" that HSQL has optimized to a constant value.
-                // VoltDB could someday be enabled to support a Boolean-valued ConstantExpression.
-                // OR VoltDB's native representation for logical values (BIG INT 1 or 0) could be substituted here
-                // and MAYBE that would solve this whole problem.
-                // There used to be VoltDB code to deserialize an expression into a (BIGINT 1 or 0) ConstantExpression.
-                // BIGINT IS the VoltDB planner's native type for logical expressions.
-                // That code was only triggered by an impossible case of (essentially) optype=="boolean"
-                // -- a victim of past ambiguity in the "type" attributes -- sometimes meaning "optype" sometimes "valuetype"
-                // -- so that code got dropped.
-                // Going forward, it seems to make more sense to leverage the surviving VoltDB code path by hard-wiring here:
-                // valueType="BIGINT", value="1"/"0".
-                throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(
-                        "VoltDB does not support WHERE clauses containing only constants");
             }
 
             exp.attributes.put("valuetype", Types.getTypeName(dataType.typeCode));
@@ -1722,9 +1763,11 @@ public class Expression {
             return exp;
 
         case OpTypes.COLUMN:
-        case OpTypes.COALESCE:
             ExpressionColumn ec = (ExpressionColumn)this;
             return ec.voltAnnotateColumnXML(exp);
+
+        case OpTypes.COALESCE:
+            return convertUsingColumnrefToCoaleseExpression(context.m_session, exp, dataType);
 
         case OpTypes.SQL_FUNCTION:
             FunctionSQL fn = (FunctionSQL)this;
@@ -1746,7 +1789,7 @@ public class Expression {
 
         case OpTypes.CAST:
             if (dataType == null) {
-                throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(
+                throw new HSQLParseException(
                         "VoltDB could not determine the type in a CAST operation");
             }
             exp.attributes.put("valuetype", dataType.getNameString());
@@ -1757,7 +1800,8 @@ public class Expression {
                 throw new HSQLParseException("VoltDB could not determine the subquery");
             }
             ExpressionColumn parameters[] = new ExpressionColumn[0];
-            exp.children.add(StatementQuery.voltGetXMLExpression(subQuery.queryExpression, parameters, session));
+            exp.children.add(StatementQuery.voltGetXMLExpression(subQuery.queryExpression,
+                    parameters, context.m_session));
             return exp;
 
         case OpTypes.ALTERNATIVE:
@@ -1775,6 +1819,18 @@ public class Expression {
             exp.attributes.put("valuetype", dataType.getNameString());
             return exp;
 
+        case OpTypes.WINDOWED_RANK:
+        case OpTypes.WINDOWED_DENSE_RANK:
+        case OpTypes.WINDOWED_COUNT:
+        case OpTypes.WINDOWED_MIN:
+        case OpTypes.WINDOWED_MAX:
+        case OpTypes.WINDOWED_SUM:
+            assert(dataType != null);
+            assert(this instanceof ExpressionWindowed);
+            exp.attributes.put("valuetype", dataType.getNameString());
+            ExpressionWindowed erank = (ExpressionWindowed) this;
+            return erank.voltAnnotateWindowedAggregateXML(exp, context);
+
         default:
             return exp;
         }
@@ -1787,8 +1843,9 @@ public class Expression {
      * @return A hex-encoded string with double length.
      */
     public static String hexEncode(byte[] data) {
-        if (data == null)
+        if (data == null) {
             return null;
+        }
 
         StringBuilder sb = new StringBuilder();
         for (byte b : data) {
@@ -1809,8 +1866,7 @@ public class Expression {
     }
 
     private static void throwForUnsupportedExpression(int exprOp)
-            throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException
-    {
+            throws HSQLParseException {
         String opAsString;
         switch (exprOp) {
         //case OpTypes.COALESCE:
@@ -1864,8 +1920,7 @@ public class Expression {
         default:
             opAsString = " the unknown operator with numeric code (" + String.valueOf(exprOp) + ")";
         }
-        throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(
-                "VoltDB does not support " + opAsString);
+        throw new HSQLParseException("VoltDB does not support " + opAsString);
     }
 
     /**
@@ -1880,7 +1935,7 @@ public class Expression {
     public Expression eliminateDuplicates(final Session session) {
         // First build the map of child expressions joined by the logical AND
         // The key is the expression id and the value is the expression itself
-        Map<String, Expression> subExprMap = new HashMap<String, Expression>();
+        Map<String, Expression> subExprMap = new HashMap<>();
         extractAndSubExpressions(session, this, subExprMap);
         // Reconstruct the expression
         if (!subExprMap.isEmpty()) {
@@ -1900,13 +1955,21 @@ public class Expression {
         if (expr instanceof ExpressionLogical && ((ExpressionLogical) expr).opType == OpTypes.AND) {
             extractAndSubExpressions(session, expr.nodes[LEFT], subExprMap);
             extractAndSubExpressions(session, expr.nodes[RIGHT], subExprMap);
-        } else {
+        }
+        else {
             String id = expr.getUniqueId(session);
             subExprMap.put(id, expr);
        }
     }
 
     protected String cached_id = null;
+
+    private void traverse(Expression exp, final Session session) {
+        for (Expression expr : exp.nodes) {
+            if (expr != null)
+                expr.getUniqueId(session);
+        }
+    }
 
     /**
      * Get the hex address of this Expression Object in memory,
@@ -1925,51 +1988,30 @@ public class Expression {
         // this line ripped from the "describe" method
         // seems to help with some types like "equal"
         cached_id = new String();
-        int hashCode = 0;
         //
         // If object is a leaf node, then we'll use John's original code...
-        //
-        if (getType() == OpTypes.VALUE || getType() == OpTypes.COLUMN) {
-            hashCode = super.hashCode();
-        //
         // Otherwise we need to generate and Id based on what our children are
         //
-        } else {
+        if (getType() != OpTypes.VALUE && getType() != OpTypes.COLUMN) {
             //
             // Horribly inefficient, but it works for now...
             //
-            final List<String> id_list = new Vector<String>();
-            new Object() {
-                public void traverse(Expression exp) {
-                    for (Expression expr : exp.nodes) {
-                        if (expr != null)
-                            id_list.add(expr.getUniqueId(session));
-                    }
-                }
-            }.traverse(this);
-
-            if (id_list.size() > 0) {
-                // Flatten the id list, intern it, and then do the same trick from above
-                for (String temp : id_list)
-                    this.cached_id += "+" + temp;
-                hashCode = this.cached_id.intern().hashCode();
-            }
-            else
-                hashCode = super.hashCode();
+            traverse(this, session);
         }
 
-        long id = session.getNodeIdForExpression(hashCode);
-        cached_id = Long.toString(id);
+        long nodeId = session.getNodeIdForExpression(this);
+
+        cached_id = Long.toString(nodeId);
         return cached_id;
     }
 
     // A VoltDB extension to support indexed expressions
     public VoltXMLElement voltGetExpressionXML(Session session, Table table)
-            throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException {
+            throws HSQLParseException {
         resolveTableColumns(table);
         Expression parent = null; // As far as I can tell, this argument just gets passed around but never used !?
         resolveTypes(session, parent);
-        return voltGetXML(session);
+        return voltGetXML(new SimpleColumnContext(session, null, 0), null);
     }
 
     // A VoltDB extension to support indexed expressions
@@ -1982,6 +2024,91 @@ public class Expression {
             array_element.setAttributesAsColumn(column, false);
 
         }
+    }
+
+    // A VoltDB extension to convert columnref expression for a column that is part of the USING clause
+    // into a COALESCE expression
+    // columnref                    operation operator_case_when
+    //      columnref T1.C      ->      operation is_null
+    //      columnref T2.C                  columnref T1.C
+    //                                  operation operator_alternative
+    //                                      columnref T2.C
+    //                                      columnref T1.C
+    private VoltXMLElement convertUsingColumnrefToCoaleseExpression(Session session, VoltXMLElement exp, Type dataType)
+            throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException {
+        // Hsql has check dataType can not be null.
+        assert(dataType != null);
+        exp.attributes.put("valuetype", dataType.getNameString());
+
+        // Extract unique columnref
+        HashSet<String> tables = new HashSet<>();
+        ArrayDeque<VoltXMLElement> uniqueColumnrefs = new ArrayDeque<>();
+        for (VoltXMLElement columnref : exp.children) {
+            String table = columnref.attributes.get("table");
+            String tableAlias = columnref.attributes.get("tablealias");
+            assert (table != null);
+            String tableOrAlias = (tableAlias == null) ? table : tableAlias;
+            if (tables.contains(tableOrAlias)) {
+                continue;
+            }
+            tables.add(tableOrAlias);
+            uniqueColumnrefs.add(columnref);
+        }
+        // Delete original children
+        exp.children.clear();
+
+        // There should be at least 2 columnref expressions
+        assert(uniqueColumnrefs.size() > 1);
+        VoltXMLElement lastAlternativeExpr = null;
+        VoltXMLElement resultColaesceExpr = null;
+        while (true) {
+            VoltXMLElement next = uniqueColumnrefs.pop();
+            if (uniqueColumnrefs.isEmpty()) {
+                // Last columnref. Simply plug it in to the last THEN Expression
+                assert(lastAlternativeExpr != null);
+                // Add next as the first child
+                lastAlternativeExpr.children.add(0, next);
+                break;
+            }
+            // IS_NULL expression
+            VoltXMLElement isnull_expr = prototypes.get(OpTypes.IS_NULL);
+            if (isnull_expr == null) {
+                throwForUnsupportedExpression(OpTypes.IS_NULL);
+            }
+            isnull_expr = isnull_expr.duplicate();
+            isnull_expr.attributes.put("id", this.getUniqueId(session));
+            isnull_expr.children.add(next);
+            // Alternative expression
+            VoltXMLElement alt_expr = prototypes.get(OpTypes.ALTERNATIVE);
+            if (alt_expr == null) {
+                throwForUnsupportedExpression(OpTypes.ALTERNATIVE);
+            }
+            alt_expr = alt_expr.duplicate();
+            alt_expr.attributes.put("id", this.getUniqueId(session));
+            alt_expr.attributes.put("valuetype", dataType.getNameString());
+            // The next expression should be a second child
+            // but for now we keep it as the first one
+            alt_expr.children.add(next);
+
+            // COALESCE expression
+            VoltXMLElement coalesceExpr = exp.duplicate();
+            coalesceExpr.attributes.put("alias", next.attributes.get("alias"));
+            coalesceExpr.attributes.put("column", next.attributes.get("column"));
+
+            // Add IS NULL and ALTERNATIVE expressions to the coalesceExpr
+            coalesceExpr.children.add(isnull_expr);
+            coalesceExpr.children.add(alt_expr);
+            if (resultColaesceExpr == null) {
+                resultColaesceExpr = coalesceExpr;
+            } else {
+                assert(lastAlternativeExpr != null);
+                // Add coalesceExpr as the first child to the last alternative expression
+                lastAlternativeExpr.children.add(0, coalesceExpr);
+            }
+            lastAlternativeExpr = alt_expr;
+        }
+        assert(resultColaesceExpr != null);
+        return resultColaesceExpr;
     }
 
     /**
@@ -1999,11 +2126,14 @@ public class Expression {
         // sadly do this with reflection
         Field[] fields = OpTypes.class.getFields();
         for (Field f : fields) {
-            if (f.getType() != int.class) continue;
+            if (f.getType() != int.class) {
+                continue;
+            }
             int value = 0;
             try {
                 value = f.getInt(null);
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 // TODO Auto-generated catch block
                 e.printStackTrace();
             }
@@ -2021,9 +2151,8 @@ public class Expression {
                 ", isAggregate: " + isAggregate +
                 ", columnIndex: " + columnIndex;
         if (this instanceof ExpressionOrderBy) {
-            str += "\n  " + this.nodes[LEFT].toString();
+            str += "\n  " + nodes[LEFT].toString();
         }
         return str;
     }
-    /**********************************************************************/
 }

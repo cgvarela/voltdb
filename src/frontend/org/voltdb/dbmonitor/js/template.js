@@ -232,6 +232,14 @@ $(document).ready(function () {
         $('.cb').prop('checked',false);
     });
 
+    $('#downloadDDL').click(function(){
+        var content = $("#d").find('.dataBlockContent pre').html()
+        var dl = document.createElement('a');
+        dl.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(content));
+        dl.setAttribute('download', 'ddl.sql');
+        dl.click();
+    })
+
     resetpage();
     navigate($(location).attr('hash'));
 
@@ -419,4 +427,22 @@ function sizes_update_all() {
     
     //Update the table for sorting.
     $("#sizetable").trigger("update");
+    heap_update();
+}
+
+function heap_update() {
+    var ntables = size_summary_value("table", "count");
+    var rh = 384 + (10 * ntables);
+
+    var isPro = $("isPro")
+    if (isPro != null) {
+        var kf = Math.floor(document.getElementById('cluster-info-k-factor').value)
+        if (kf > 0) {
+            var sph = Math.floor(document.getElementById('cluster-info-sites-per-host').value)
+            rh += (128 * sph)
+        }
+    }
+
+    var heap_elem = document.getElementById('s-size-java-heap');
+    heap_elem.innerHTML = rh;
 }

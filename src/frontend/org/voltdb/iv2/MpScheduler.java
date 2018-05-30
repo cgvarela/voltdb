@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -31,17 +31,19 @@ import org.json_voltpatches.JSONException;
 import org.json_voltpatches.JSONObject;
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.messaging.Mailbox;
-import org.voltcore.messaging.TransactionInfoBaseMessage;
 import org.voltcore.messaging.VoltMessage;
+import org.voltcore.utils.CoreUtils;
 import org.voltdb.CatalogContext;
-import org.voltdb.CatalogSpecificPlanner;
 import org.voltdb.CommandLog;
 import org.voltdb.SystemProcedureCatalog;
 import org.voltdb.SystemProcedureCatalog.Config;
 import org.voltdb.VoltDB;
 import org.voltdb.VoltTable;
 import org.voltdb.dtxn.TransactionState;
+import org.voltdb.exceptions.SerializableException;
+import org.voltdb.exceptions.TransactionRestartException;
 import org.voltdb.messaging.CompleteTransactionMessage;
+import org.voltdb.messaging.DummyTransactionTaskMessage;
 import org.voltdb.messaging.FragmentResponseMessage;
 import org.voltdb.messaging.FragmentTaskMessage;
 import org.voltdb.messaging.InitiateResponseMessage;
@@ -49,6 +51,7 @@ import org.voltdb.messaging.Iv2EndOfLogMessage;
 import org.voltdb.messaging.Iv2InitiateTaskMessage;
 import org.voltdb.sysprocs.BalancePartitionsRequest;
 import org.voltdb.utils.MiscUtils;
+import org.voltdb.utils.VoltTrace;
 
 import com.google_voltpatches.common.collect.Maps;
 import com.google_voltpatches.common.collect.Sets;
@@ -72,6 +75,7 @@ public class MpScheduler extends Scheduler
     //Generator of pre-IV2ish timestamp based unique IDs
     private final UniqueIdGenerator m_uniqueIdGenerator;
     final private MpTransactionTaskQueue m_pendingTasks;
+    private final int m_leaderNodeId;
 
     // the current not-needed-any-more point of the repair log.
     long m_repairLogTruncationHandle = Long.MIN_VALUE;
@@ -80,14 +84,15 @@ public class MpScheduler extends Scheduler
     // Let the one we can't be sure about linger here.  See ENG-4211 for more.
     long m_repairLogAwaitingCommit = Long.MIN_VALUE;
 
-    MpScheduler(int partitionId, List<Long> buddyHSIds, SiteTaskerQueue taskQueue)
+    MpScheduler(int partitionId, List<Long> buddyHSIds, SiteTaskerQueue taskQueue, int leaderNodeId)
     {
         super(partitionId, taskQueue);
-        m_pendingTasks = new MpTransactionTaskQueue(m_tasks, getCurrentTxnId());
+        m_pendingTasks = new MpTransactionTaskQueue(m_tasks);
         m_buddyHSIds = buddyHSIds;
         m_iv2Masters = new ArrayList<Long>();
         m_partitionMasters = Maps.newHashMap();
         m_uniqueIdGenerator = new UniqueIdGenerator(partitionId, 0);
+        m_leaderNodeId = leaderNodeId;
     }
 
     void setMpRoSitePool(MpRoSitePool sitePool)
@@ -95,9 +100,14 @@ public class MpScheduler extends Scheduler
         m_pendingTasks.setMpRoSitePool(sitePool);
     }
 
-    void updateCatalog(String diffCmds, CatalogContext context, CatalogSpecificPlanner csp)
+    void updateCatalog(String diffCmds, CatalogContext context)
     {
-        m_pendingTasks.updateCatalog(diffCmds, context, csp);
+        m_pendingTasks.updateCatalog(diffCmds, context);
+    }
+
+    void updateSettings(CatalogContext context)
+    {
+        m_pendingTasks.updateSettings(context);
     }
 
     @Override
@@ -108,20 +118,27 @@ public class MpScheduler extends Scheduler
         // the deliver lock held to be correct. The null task should
         // never run; the site thread is expected to be told to stop.
         m_pendingTasks.shutdown();
-        m_pendingTasks.repair(m_nullTask, m_iv2Masters, m_partitionMasters);
+        m_pendingTasks.repair(m_nullTask, m_iv2Masters, m_partitionMasters, false);
+        m_tasks.offer(m_nullTask);
     }
 
-
     @Override
-    public void updateReplicas(final List<Long> replicas, final Map<Integer, Long> partitionMasters)
+    public long[] updateReplicas(final List<Long> replicas, final Map<Integer, Long> partitionMasters, long mpTxnId)
+    {
+        return updateReplicas(replicas, partitionMasters, false);
+    }
+
+    public long[] updateReplicas(final List<Long> replicas, final Map<Integer, Long> partitionMasters,
+            boolean balanceSPI)
     {
         // Handle startup and promotion semi-gracefully
         m_iv2Masters.clear();
         m_iv2Masters.addAll(replicas);
         m_partitionMasters.clear();
         m_partitionMasters.putAll(partitionMasters);
+
         if (!m_isLeader) {
-            return;
+            return new long[0];
         }
 
         // Stolen from SpScheduler.  Need to update the duplicate counters associated with any EveryPartitionTasks
@@ -156,8 +173,9 @@ public class MpScheduler extends Scheduler
             }
         }
 
-        MpRepairTask repairTask = new MpRepairTask((InitiatorMailbox)m_mailbox, replicas);
-        m_pendingTasks.repair(repairTask, replicas, partitionMasters);
+        MpRepairTask repairTask = new MpRepairTask((InitiatorMailbox)m_mailbox, replicas, balanceSPI);
+        m_pendingTasks.repair(repairTask, replicas, partitionMasters, balanceSPI);
+        return new long[0];
     }
 
     /**
@@ -168,33 +186,15 @@ public class MpScheduler extends Scheduler
     @Override
     public boolean sequenceForReplay(VoltMessage message)
     {
-        boolean canDeliver = true;
-        long sequenceWithTxnId = Long.MIN_VALUE;
-
-        boolean dr = ((message instanceof TransactionInfoBaseMessage &&
-                ((TransactionInfoBaseMessage)message).isForDR()));
-
-        if (dr) {
-            sequenceWithTxnId = ((TransactionInfoBaseMessage)message).getOriginalTxnId();
-            InitiateResponseMessage dupe = m_replaySequencer.dedupe(sequenceWithTxnId,
-                    (TransactionInfoBaseMessage) message);
-            if (dupe != null) {
-                canDeliver = false;
-                // Duplicate initiate task message, send response
-                m_mailbox.send(dupe.getInitiatorHSId(), dupe);
-            }
-            else {
-                m_replaySequencer.updateLastSeenTxnId(sequenceWithTxnId,
-                        (TransactionInfoBaseMessage) message);
-                canDeliver = true;
-            }
-        }
-        return canDeliver;
+        return true;
     }
 
     @Override
     public void deliver(VoltMessage message)
     {
+        if (tmLog.isDebugEnabled()) {
+            tmLog.debug("DELIVER: " + message.toString());
+        }
         if (message instanceof Iv2InitiateTaskMessage) {
             handleIv2InitiateTaskMessage((Iv2InitiateTaskMessage)message);
         }
@@ -206,6 +206,9 @@ public class MpScheduler extends Scheduler
         }
         else if (message instanceof Iv2EndOfLogMessage) {
             handleEOLMessage();
+        }
+        else if (message instanceof DummyTransactionTaskMessage) {
+            // leave empty to ignore it on purpose
         }
         else {
             throw new RuntimeException("UNKNOWN MESSAGE TYPE, BOOM!");
@@ -231,21 +234,24 @@ public class MpScheduler extends Scheduler
         if (message.isForReplay()) {
             timestamp = message.getUniqueId();
             m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(timestamp);
-        } else if (message.isForDR()) {
-            timestamp = message.getStoredProcedureInvocation().getOriginalUniqueId();
-            // @LoadMultipartitionTable does not have a valid uid
-            if (UniqueIdGenerator.getPartitionIdFromUniqueId(timestamp) == m_partitionId) {
-                m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(timestamp);
-            }
+        } else  {
+            timestamp = m_uniqueIdGenerator.getNextUniqueId();
         }
 
-        if (message.isForReplay()) {
-            mpTxnId = message.getTxnId();
-            setMaxSeenTxnId(mpTxnId);
-        } else {
-            TxnEgo ego = advanceTxnEgo();
-            mpTxnId = ego.getTxnId();
-            timestamp = m_uniqueIdGenerator.getNextUniqueId();
+        TxnEgo ego = advanceTxnEgo();
+        mpTxnId = ego.getTxnId();
+
+        final String threadName = Thread.currentThread().getName(); // Thread name has to be materialized here
+        final VoltTrace.TraceEventBatch traceLog = VoltTrace.log(VoltTrace.Category.MPI);
+        if (traceLog != null) {
+            traceLog.add(() -> VoltTrace.meta("process_name", "name", CoreUtils.getHostnameOrAddress()))
+                    .add(() -> VoltTrace.meta("thread_name", "name", threadName))
+                    .add(() -> VoltTrace.meta("thread_sort_index", "sort_index", Integer.toString(100)))
+                    .add(() -> VoltTrace.beginAsync("initmp", mpTxnId,
+                                                    "txnId", TxnEgo.txnIdToString(mpTxnId),
+                                                    "ciHandle", message.getClientInterfaceHandle(),
+                                                    "name", procedureName,
+                                                    "read", message.isReadOnly()));
         }
 
         // Don't have an SP HANDLE at the MPI, so fill in the unused value
@@ -264,6 +270,7 @@ public class MpScheduler extends Scheduler
                     timestamp,
                     message.isReadOnly(),
                     true, // isSinglePartition
+                    null,
                     message.getStoredProcedureInvocation(),
                     message.getClientInterfaceHandle(),
                     message.getConnectionId(),
@@ -271,8 +278,9 @@ public class MpScheduler extends Scheduler
             DuplicateCounter counter = new DuplicateCounter(
                     message.getInitiatorHSId(),
                     mpTxnId,
-                    m_iv2Masters, message.getStoredProcedureName());
-            m_duplicateCounters.put(mpTxnId, counter);
+                    m_iv2Masters,
+                    message);
+            safeAddToDuplicateCounterMap(mpTxnId, counter);
             EveryPartitionTask eptask =
                 new EveryPartitionTask(m_mailbox, m_pendingTasks, sp,
                         m_iv2Masters);
@@ -290,6 +298,7 @@ public class MpScheduler extends Scheduler
                     timestamp,
                     message.isReadOnly(),
                     message.isSinglePartition(),
+                    null,
                     message.getStoredProcedureInvocation(),
                     message.getClientInterfaceHandle(),
                     message.getConnectionId(),
@@ -304,19 +313,32 @@ public class MpScheduler extends Scheduler
 
                 task = instantiateNpProcedureTask(m_mailbox, procedureName,
                         m_pendingTasks, mp, involvedPartitionMasters,
-                        m_buddyHSIds.get(m_nextBuddy), false);
+                        m_buddyHSIds.get(m_nextBuddy), false, m_leaderNodeId);
             }
 
             // if cannot figure out the involved partitions, run it as an MP txn
         }
 
+        int[] nPartitionIds = message.getNParitionIds();
+        if (nPartitionIds != null) {
+            HashMap<Integer, Long> involvedPartitionMasters = new HashMap<>();
+            for (int partitionId : nPartitionIds) {
+                involvedPartitionMasters.put(partitionId, m_partitionMasters.get(partitionId));
+            }
+
+            task = instantiateNpProcedureTask(m_mailbox, procedureName,
+                    m_pendingTasks, mp, involvedPartitionMasters,
+                    m_buddyHSIds.get(m_nextBuddy), false, m_leaderNodeId);
+        }
+
+
         if (task == null) {
             task = new MpProcedureTask(m_mailbox, procedureName,
                     m_pendingTasks, mp, m_iv2Masters, m_partitionMasters,
-                    m_buddyHSIds.get(m_nextBuddy), false);
+                    m_buddyHSIds.get(m_nextBuddy), false, m_leaderNodeId, false);
         }
 
-        m_nextBuddy = (m_nextBuddy++) % m_buddyHSIds.size();
+        m_nextBuddy = (m_nextBuddy + 1) % m_buddyHSIds.size();
         m_outstandingTxns.put(task.m_txnState.txnId, task.m_txnState);
         m_pendingTasks.offer(task);
     }
@@ -376,6 +398,7 @@ public class MpScheduler extends Scheduler
                     message.getUniqueId(),
                     message.isReadOnly(),
                     message.isSinglePartition(),
+                    null,
                     message.getStoredProcedureInvocation(),
                     message.getClientInterfaceHandle(),
                     message.getConnectionId(),
@@ -400,10 +423,10 @@ public class MpScheduler extends Scheduler
         if (task == null) {
             task = new MpProcedureTask(m_mailbox, procedureName,
                     m_pendingTasks, mp, m_iv2Masters, m_partitionMasters,
-                    m_buddyHSIds.get(m_nextBuddy), true);
+                    m_buddyHSIds.get(m_nextBuddy), true, m_leaderNodeId, false);
         }
 
-        m_nextBuddy = (m_nextBuddy++) % m_buddyHSIds.size();
+        m_nextBuddy = (m_nextBuddy + 1) % m_buddyHSIds.size();
         m_outstandingTxns.put(task.m_txnState.txnId, task.m_txnState);
         m_pendingTasks.offer(task);
     }
@@ -415,6 +438,11 @@ public class MpScheduler extends Scheduler
     // see all of these messages and control their transmission.
     public void handleInitiateResponseMessage(InitiateResponseMessage message)
     {
+        final VoltTrace.TraceEventBatch traceLog = VoltTrace.log(VoltTrace.Category.MPI);
+        if (traceLog != null) {
+            traceLog.add(() -> VoltTrace.endAsync("initmp", message.getTxnId()));
+        }
+
         DuplicateCounter counter = m_duplicateCounters.get(message.getTxnId());
         if (counter != null) {
             int result = counter.offer(message);
@@ -431,6 +459,8 @@ public class MpScheduler extends Scheduler
             }
             else if (result == DuplicateCounter.MISMATCH) {
                 VoltDB.crashLocalVoltDB("HASH MISMATCH running every-site system procedure.", true, null);
+            } else if (result == DuplicateCounter.ABORT) {
+                VoltDB.crashLocalVoltDB("PARTIAL ROLLBACK/ABORT running every-site system procedure.", true, null);
             }
             // doing duplicate suppresion: all done.
         }
@@ -440,7 +470,8 @@ public class MpScheduler extends Scheduler
                 m_repairLogTruncationHandle = m_repairLogAwaitingCommit;
                 m_repairLogAwaitingCommit = message.getTxnId();
             }
-            m_outstandingTxns.remove(message.getTxnId());
+            MpTransactionState txn = (MpTransactionState)m_outstandingTxns.remove(message.getTxnId());
+            assert(txn != null);
             // the initiatorHSId is the ClientInterface mailbox. Yeah. I know.
             m_mailbox.send(message.getInitiatorHSId(), message);
             // We actually completed this MP transaction.  Create a fake CompleteTransactionMessage
@@ -448,7 +479,7 @@ public class MpScheduler extends Scheduler
             // even if all the masters somehow die before forwarding Complete on to their replicas.
             CompleteTransactionMessage ctm = new CompleteTransactionMessage(m_mailbox.getHSId(),
                     message.m_sourceHSId, message.getTxnId(), message.isReadOnly(), 0,
-                    !message.shouldCommit(), false, false, false);
+                    !message.shouldCommit(), false, false, false, txn.isNPartTxn(), message.m_isFromNonRestartableSysproc);
             ctm.setTruncationHandle(m_repairLogTruncationHandle);
             // dump it in the repair log
             // hacky castage
@@ -476,10 +507,17 @@ public class MpScheduler extends Scheduler
         // can actually happen any longer, but leaving this and logging it for now.
         // RTB: Didn't we decide early rollback can do this legitimately.
         if (txn != null) {
+            SerializableException ex = message.getException();
+            if (ex != null && ex instanceof TransactionRestartException) {
+                if (((TransactionRestartException)ex).isMisrouted()) {
+                    ((MpTransactionState)txn).restartFragment(message, m_iv2Masters, m_partitionMasters);
+                    return;
+                }
+            }
             ((MpTransactionState)txn).offerReceivedFragmentResponse(message);
         }
-        else {
-            hostLog.debug("MpScheduler received a FragmentResponseMessage for a null TXN ID: " + message);
+        else if (tmLog.isDebugEnabled()){
+            tmLog.debug("MpScheduler received a FragmentResponseMessage for a null TXN ID: " + message);
         }
     }
 
@@ -522,13 +560,29 @@ public class MpScheduler extends Scheduler
         if (klass != null) {
             try {
                 return klass.getConstructor(Mailbox.class, String.class, TransactionTaskQueue.class,
-                        Iv2InitiateTaskMessage.class, Map.class, long.class, boolean.class);
+                        Iv2InitiateTaskMessage.class, Map.class, long.class, boolean.class, int.class);
             } catch (NoSuchMethodException e) {
                 hostLog.error("Unabled to get the constructor for pro class NpProcedureTask", e);
                 return null;
             }
         } else {
             return null;
+        }
+    }
+
+    /**
+     * Just using "put" on the dup counter map is unsafe.
+     * It won't detect the case where keys collide from two different transactions.
+     */
+    void safeAddToDuplicateCounterMap(long dpKey, DuplicateCounter counter) {
+        DuplicateCounter existingDC = m_duplicateCounters.get(dpKey);
+        if (existingDC != null) {
+            // this is a collision and is bad
+            existingDC.logWithCollidingDuplicateCounters(counter);
+            VoltDB.crashGlobalVoltDB("DUPLICATE COUNTER MISMATCH: two duplicate counter keys collided.", true, null);
+        }
+        else {
+            m_duplicateCounters.put(dpKey, counter);
         }
     }
 
@@ -542,5 +596,9 @@ public class MpScheduler extends Scheduler
             }
         }
         return null;
+    }
+
+    public int getLeaderNodeId() {
+        return m_leaderNodeId;
     }
 }

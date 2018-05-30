@@ -33,7 +33,6 @@ package org.hsqldb_voltpatches;
 
 import java.math.BigDecimal;
 
-import org.hsqldb_voltpatches.HsqlNameManager.HsqlName;
 import org.hsqldb_voltpatches.lib.ArrayUtil;
 import org.hsqldb_voltpatches.lib.HsqlArrayList;
 import org.hsqldb_voltpatches.lib.IntKeyIntValueHashMap;
@@ -402,6 +401,19 @@ public class ParserBase {
         return false;
     }
 
+    boolean readUntilThis(int tokenId) {
+
+        while (token.tokenType != Tokens.X_ENDPARSE) {
+           if (token.tokenType == tokenId) {
+               return true;
+           }
+
+           read();
+        }
+
+        return false;
+    }
+
     int readInteger() {
 
         boolean minus = false;
@@ -640,6 +652,25 @@ public class ParserBase {
                                             scale);
     }
 
+
+	public static int getWindowedExpressionType(int tokenT) {
+		int type = windowedExpressionTypeMap.get(tokenT, -1);
+		// This is an error.  But we
+		// can't actually throw a good error
+		// message here, so we will
+		// try and do the best we can.
+		// This will be picked up later if
+		// we are trying to use an unsupported
+		// aggregate type.
+		if (type == -1) {
+			type = expressionTypeMap.get(tokenT, -1);
+		}
+		if (type == -1) {
+            throw Error.runtimeError(ErrorCode.U_S0500, "Parser");
+		}
+		return type;
+	}
+
     static int getExpressionType(int tokenT) {
 
         int type = expressionTypeMap.get(tokenT, -1);
@@ -651,11 +682,22 @@ public class ParserBase {
         return type;
     }
 
+    /*
+     * This map associates HSQL token types with Volt Operation types.
+     */
     private static final IntKeyIntValueHashMap expressionTypeMap =
         new IntKeyIntValueHashMap(37);
 
-    static {
+    /*
+     * this map associates aggregates with their Volt windowed aggregate
+     * operation types.
+     */
+    private static final IntKeyIntValueHashMap windowedExpressionTypeMap =
+    	new IntKeyIntValueHashMap(37);
 
+    static {
+        // Statically initialize the expressionTypeMap.
+        //
         // comparison
         expressionTypeMap.put(Tokens.EQUALS, OpTypes.EQUAL);
         expressionTypeMap.put(Tokens.GREATER, OpTypes.GREATER);
@@ -666,6 +708,9 @@ public class ParserBase {
 
         // aggregates
         expressionTypeMap.put(Tokens.COUNT, OpTypes.COUNT);
+        // A VoltDB extension APPROX_COUNT_DISTINCT
+        expressionTypeMap.put(Tokens.APPROX_COUNT_DISTINCT, OpTypes.APPROX_COUNT_DISTINCT);
+        // End of VoltDB extension
         expressionTypeMap.put(Tokens.MAX, OpTypes.MAX);
         expressionTypeMap.put(Tokens.MIN, OpTypes.MIN);
         expressionTypeMap.put(Tokens.SUM, OpTypes.SUM);
@@ -677,6 +722,17 @@ public class ParserBase {
         expressionTypeMap.put(Tokens.STDDEV_SAMP, OpTypes.STDDEV_SAMP);
         expressionTypeMap.put(Tokens.VAR_POP, OpTypes.VAR_POP);
         expressionTypeMap.put(Tokens.VAR_SAMP, OpTypes.VAR_SAMP);
+        expressionTypeMap.put(Tokens.RANK, OpTypes.WINDOWED_RANK);
+        expressionTypeMap.put(Tokens.DENSE_RANK, OpTypes.WINDOWED_DENSE_RANK);
+        // Windowed aggregate operators go here
+        // as well as in the expression type map
+        // above.
+        windowedExpressionTypeMap.put(Tokens.RANK, OpTypes.WINDOWED_RANK);
+        windowedExpressionTypeMap.put(Tokens.DENSE_RANK, OpTypes.WINDOWED_DENSE_RANK);
+        windowedExpressionTypeMap.put(Tokens.COUNT, OpTypes.WINDOWED_COUNT);
+        windowedExpressionTypeMap.put(Tokens.MIN, OpTypes.WINDOWED_MIN);
+        windowedExpressionTypeMap.put(Tokens.MAX, OpTypes.WINDOWED_MAX);
+        windowedExpressionTypeMap.put(Tokens.SUM, OpTypes.WINDOWED_SUM);
     }
 
     HsqlException unexpectedToken(String tokenS) {
@@ -788,6 +844,7 @@ public class ParserBase {
     }
     /**********************************************************************/
     // A VoltDB extension to make it easier to see SQL statement being parsed in the debugger
+    @Override
     public String toString() {
         return "A subclass of ParserBase parsing <<" + scanner.sqlString + ">>";
     }

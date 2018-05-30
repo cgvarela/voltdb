@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -25,6 +25,8 @@ import org.voltdb.PrivateVoltTableFactory;
 import org.voltdb.VoltTable;
 import org.voltdb.VoltType;
 import org.voltdb.common.Constants;
+import org.voltdb.types.GeographyPointValue;
+import org.voltdb.types.GeographyValue;
 import org.voltdb.types.TimestampType;
 import org.voltdb.types.VoltDecimalHelper;
 
@@ -62,10 +64,12 @@ public class SerializationHelper {
         if (len == VoltType.NULL_STRING_LENGTH) {
             return null;
         }
-        assert len >= 0;
 
         if (len < VoltType.NULL_STRING_LENGTH) {
             throw new IOException("String length is negative " + len);
+        }
+        if (len > buf.remaining()) {
+            throw new IOException("String length is bigger than total buffer " + len);
         }
 
         // now assume not null
@@ -81,10 +85,12 @@ public class SerializationHelper {
         if (len == VoltType.NULL_STRING_LENGTH) {
             return null;
         }
-        assert len >= 0;
 
         if (len < VoltType.NULL_STRING_LENGTH) {
             throw new IOException("Varbinary length is negative " + len);
+        }
+        if (len > buf.remaining()) {
+            throw new IOException("Varbinary length is bigger than total buffer " + len);
         }
 
         // now assume not null
@@ -105,6 +111,9 @@ public class SerializationHelper {
         else if (type == byte.class) {
             if (count > (VoltType.MAX_VALUE_LENGTH)) {
                 throw new IOException("Array length is greater then the max of 1 megabyte " + count);
+            }
+            if (count > buf.remaining()) {
+                throw new IOException("Array length is greater than total buffer " + count);
             }
             final byte[] retval = new byte[count];
             buf.get(retval);
@@ -187,6 +196,26 @@ public class SerializationHelper {
             }
             return retval;
         }
+        else if (type == GeographyPointValue.class) {
+            final GeographyPointValue[] retval = new GeographyPointValue[count];
+            for (int i = 0; i < count; ++i) {
+                retval[i] = GeographyPointValue.unflattenFromBuffer(buf);
+            }
+            return retval;
+        }
+        else if (type == GeographyValue.class) {
+            final GeographyValue[] retval = new GeographyValue[count];
+            for (int i = 0; i < count; ++i) {
+                int len = buf.getInt(); // length prefix
+                if (len == VoltType.NULL_STRING_LENGTH) {
+                    retval[i] = null;
+                }
+                else {
+                    retval[i] = GeographyValue.unflattenFromBuffer(buf);
+                }
+            }
+            return retval;
+        }
         else if (type == VoltTable.class) {
             final VoltTable[] retval = new VoltTable[count];
             for (int i = 0; i < count; ++i) {
@@ -227,6 +256,22 @@ public class SerializationHelper {
 
         buf.putInt(bytes.length);
         buf.put(bytes);
+    }
+
+    public static void writeVarbinary(Byte[] bytes, ByteBuffer buf) throws IOException {
+        byte[] unboxedBytes = new byte[bytes.length];
+        for(int i = 0; i < bytes.length; i++) {
+            unboxedBytes[i] = bytes[i];
+        }
+        writeVarbinary(unboxedBytes, buf);
+    }
+
+    public static Byte[] boxUpByteArray(byte[] bytes) {
+        Byte[] retval = new Byte[bytes.length];
+        for (int i = 0; i < bytes.length; i++) {
+            retval[i] = bytes[i];
+        }
+        return retval;
     }
 
     public static void writeArray(byte[] values, ByteBuffer buf) throws IOException {
@@ -333,6 +378,41 @@ public class SerializationHelper {
                 writeArray(values[i], buf);
             }
         }
+    }
+
+    public static void writeArray(GeographyPointValue[] values, ByteBuffer buf) throws IOException {
+        if (values.length > VoltType.MAX_VALUE_LENGTH) {
+            throw new IOException("Array exceeds maximum length of "
+                                  + VoltType.MAX_VALUE_LENGTH + " bytes");
+        }
+        buf.putShort((short) values.length);
+        for (int i = 0; i < values.length; ++i) {
+            if (values[i] == null) {
+                GeographyPointValue.serializeNull(buf);
+            }
+            else {
+                values[i].flattenToBuffer(buf);
+            }
+        }
+    }
+
+    public static void writeArray(GeographyValue[] values, ByteBuffer buf) throws IOException {
+        if (values.length > VoltType.MAX_VALUE_LENGTH) {
+            throw new IOException("Array exceeds maximum length of "
+                                  + VoltType.MAX_VALUE_LENGTH + " bytes");
+        }
+        buf.putShort((short) values.length);
+        for (int i = 0; i < values.length; ++i) {
+            if (values[i] == null) {
+                buf.putInt(VoltType.NULL_STRING_LENGTH);
+            }
+            else {
+                buf.putInt(values[i].getLengthInBytes());
+                values[i].flattenToBuffer(buf);
+            }
+        }
+
+
     }
 
 }

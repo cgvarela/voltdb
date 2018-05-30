@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,6 +23,11 @@
 
 package org.voltdb;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import org.junit.Test;
 import org.voltdb.VoltDB.Configuration;
 import org.voltdb.client.ClientResponse;
 import org.voltdb.client.ProcCallException;
@@ -32,7 +37,7 @@ import org.voltdb.utils.MiscUtils;
 public class TestAdhocCreateTable extends AdhocDDLTestBase {
 
     // Add a test for partitioning a table
-
+    @Test
     public void testBasicCreateTable() throws Exception
     {
         String pathToCatalog = Configuration.getPathToCatalogForTest("adhocddl.jar");
@@ -71,6 +76,24 @@ public class TestAdhocCreateTable extends AdhocDDLTestBase {
                 threw = true;
             }
             assertTrue("Shouldn't have been able to create table FOO twice.", threw);
+
+            // make sure cannot create table with default value equals to minimum value
+            String[] testType = {"tinyint", "smallint", "integer", "bigint"};
+            String[] minVal = {"-128", "-32768", "-2147483648", "-9223372036854775808"};
+
+            for (int i = 0; i < testType.length; i++) {
+                threw = false;
+                try {
+                    m_client.callProcedure("@AdHoc",
+                            "create table t (c " + testType[i] + " default " + minVal[i] + ");");
+                }
+                catch (ProcCallException pce) {
+                    assertTrue(pce.getMessage().contains("data exception: numeric value out of range"));
+                    threw = true;
+                }
+                assertTrue("Creating numeric table column using the reserved minimum value as "
+                        + "default should throw an exception.", threw);
+            }
         }
         finally {
             teardownSystem();
@@ -79,6 +102,7 @@ public class TestAdhocCreateTable extends AdhocDDLTestBase {
 
     // Test creating a table when we feed a statement containing newlines.
     // I honestly didn't expect this to work yet --izzy
+    @Test
     public void testMultiLineCreateTable() throws Exception {
 
         String pathToCatalog = Configuration.getPathToCatalogForTest("adhocddl.jar");
@@ -122,6 +146,7 @@ public class TestAdhocCreateTable extends AdhocDDLTestBase {
         }
     }
 
+    @Test
     public void testCreatePartitionedTable() throws Exception {
 
         String pathToCatalog = Configuration.getPathToCatalogForTest("adhocddl.jar");
@@ -197,6 +222,7 @@ public class TestAdhocCreateTable extends AdhocDDLTestBase {
         }
     }
 
+    @Test
     public void testCreateDRTable() throws Exception {
 
         String pathToCatalog = Configuration.getPathToCatalogForTest("adhocddl.jar");

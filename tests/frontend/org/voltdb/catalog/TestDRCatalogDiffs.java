@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -32,7 +32,9 @@ import java.util.UUID;
 import org.junit.Test;
 import org.voltdb.compiler.VoltCompiler;
 import org.voltdb.compiler.VoltProjectBuilder;
+import org.voltdb.compiler.deploymentfile.DrRoleType;
 import org.voltdb.utils.CatalogUtil;
+import org.voltdb.utils.Encoder;
 import org.voltdb.utils.MiscUtils;
 
 public class TestDRCatalogDiffs {
@@ -51,7 +53,7 @@ public class TestDRCatalogDiffs {
                 "CREATE UNIQUE INDEX foo ON T1 (C3, C1);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
     }
 
@@ -66,9 +68,9 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing DR table T2 on replica cluster"));
+        assertTrue(diff.errors().contains("Missing DR table T2 on local cluster"));
     }
 
     @Test
@@ -83,9 +85,9 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T2 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "DR TABLE T2;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Table T1 has DR enabled on the master"));
+        assertTrue(diff.errors().contains("Table T1 has DR enabled on the remote cluster"));
     }
 
     @Test
@@ -99,8 +101,12 @@ public class TestDRCatalogDiffs {
                 "DR TABLE T1;\n" +
                 "DR TABLE T2;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
+
+        // Not supported in XDCR mode
+        diff = runCatalogDiff(masterSchema, true, replicaSchema, true);
+        assertFalse(diff.supported());
     }
 
     @Test
@@ -114,8 +120,12 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T2 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "DR TABLE T1;\n" +
                 "DR TABLE T2;";
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
+
+        // Not supported in XDCR mode
+        diff = runCatalogDiff(masterSchema, true, replicaSchema, true);
+        assertFalse(diff.supported());
     }
 
     @Test
@@ -127,9 +137,9 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Column{C2} from Table{T1} on master"));
+        assertTrue(diff.errors().contains("Missing Column{C2} from Table{T1} on remote cluster"));
     }
 
     @Test
@@ -141,9 +151,9 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Column{C2} from Table{T1} on replica"));
+        assertTrue(diff.errors().contains("Missing Column{C2} from Table{T1} on local cluster"));
     }
 
     @Test
@@ -154,7 +164,7 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
     }
 
@@ -168,7 +178,7 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C1;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field isreplicated in schema object Table{T1}"));
     }
@@ -183,7 +193,7 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field isreplicated in schema object Table{T1}"));
     }
@@ -199,7 +209,7 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C2;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field partitioncolumn in schema object Table{T1}"));
     }
@@ -215,9 +225,8 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C1;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
-        assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("field tuplelimit in schema object Table{T1}"));
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
+        assertTrue(diff.errors(), diff.supported());
     }
 
     @Test
@@ -231,9 +240,8 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C1;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
-        assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("field tuplelimit in schema object Table{T1}"));
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
+        assertTrue(diff.errors(), diff.supported());
     }
 
     @Test
@@ -247,9 +255,8 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C1;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
-        assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("field tuplelimit in schema object Table{T1}"));
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
+        assertTrue(diff.errors(), diff.supported());
     }
 
     @Test
@@ -263,9 +270,8 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C1;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
-        assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Statement{limit_delete} from Table{T1} on master"));
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
+        assertTrue(diff.errors(), diff.supported());
     }
 
     @Test
@@ -279,9 +285,8 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C1;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
-        assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Statement{limit_delete} from Table{T1} on replica"));
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
+        assertTrue(diff.errors(), diff.supported());
     }
 
     @Test
@@ -295,9 +300,8 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C1;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
-        assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("field sqltext in schema object Statement{limit_delete}"));
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
+        assertTrue(diff.errors(), diff.supported());
     }
 
     @Test
@@ -311,9 +315,8 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C1;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
-        assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("field sqltext in schema object Statement{limit_delete}"));
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
+        assertTrue(diff.errors(), diff.supported());
     }
 
     @Test
@@ -327,9 +330,8 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C1;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
-        assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("field sqltext in schema object Statement{limit_delete}"));
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
+        assertTrue(diff.errors(), diff.supported());
     }
 
     @Test
@@ -343,9 +345,8 @@ public class TestDRCatalogDiffs {
                 "PARTITION TABLE T1 ON COLUMN C1;\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
-        assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("field tuplelimit in schema object Table{T1}"));
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
+        assertTrue(diff.errors(), diff.supported());
     }
 
     @Test
@@ -357,7 +358,7 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C2 INTEGER NOT NULL, C1 INTEGER NOT NULL);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field index in schema object Column{C1}"));
     }
@@ -371,7 +372,7 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 TIMESTAMP NOT NULL);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field type in schema object Column{C2}"));
     }
@@ -385,7 +386,7 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 VARCHAR(100) NOT NULL);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field size in schema object Column{C2}"));
     }
@@ -399,7 +400,7 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 VARCHAR(50) NOT NULL);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field nullable in schema object Column{C2}"));
     }
@@ -413,7 +414,7 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 VARCHAR(50));\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field nullable in schema object Column{C2}"));
     }
@@ -428,9 +429,9 @@ public class TestDRCatalogDiffs {
                 "CREATE UNIQUE INDEX foo ON T1 (C1);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Index{FOO} from Table{T1} on master"));
+        assertTrue(diff.errors().contains("Missing Index{FOO} from Table{T1} on remote cluster"));
     }
 
     @Test
@@ -443,9 +444,9 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 VARCHAR(50));\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Index{FOO} from Table{T1} on replica"));
+        assertTrue(diff.errors().contains("Missing Index{FOO} from Table{T1} on local cluster"));
     }
 
     @Test
@@ -459,7 +460,7 @@ public class TestDRCatalogDiffs {
                 "CREATE UNIQUE INDEX foo ON T1 (C2, C1);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field index in schema object ColumnRef{C1}"));
     }
@@ -475,7 +476,7 @@ public class TestDRCatalogDiffs {
                 "CREATE UNIQUE INDEX foo ON T1 (C1, C2);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field unique in schema object Index{FOO}"));
     }
@@ -491,7 +492,7 @@ public class TestDRCatalogDiffs {
                 "CREATE INDEX foo ON T1 (C1, C2);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
         assertTrue(diff.errors().contains("field unique in schema object Index{FOO}"));
     }
@@ -511,10 +512,10 @@ public class TestDRCatalogDiffs {
                 "DR TABLE T1;\n" +
                 "DR TABLE T2;\n";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Index{FOO} from Table{T1} on replica"));
-        assertTrue(diff.errors().contains("Missing Index{FOO} from Table{T2} on master"));
+        assertTrue(diff.errors().contains("Missing Index{FOO} from Table{T1} on local cluster"));
+        assertTrue(diff.errors().contains("Missing Index{FOO} from Table{T2} on remote cluster"));
     }
 
     @Test
@@ -526,9 +527,9 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 VARCHAR(50), PRIMARY KEY (C1));\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1} from Table{T1} on master"));
+        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1} from Table{T1} on remote cluster"));
     }
 
     @Test
@@ -540,9 +541,9 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 VARCHAR(50));\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1} from Table{T1} on replica"));
+        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1} from Table{T1} on local cluster"));
     }
 
     @Test
@@ -554,10 +555,10 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 VARCHAR(50) NOT NULL, PRIMARY KEY (C1, C2));\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1_C2} from Table{T1} on master"));
-        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1} from Table{T1} on replica"));
+        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1_C2} from Table{T1} on remote cluster"));
+        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1} from Table{T1} on local cluster"));
     }
 
     @Test
@@ -569,10 +570,10 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 VARCHAR(50) NOT NULL, PRIMARY KEY (C1));\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1_C2} from Table{T1} on replica"));
-        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1} from Table{T1} on master"));
+        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1_C2} from Table{T1} on local cluster"));
+        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1} from Table{T1} on remote cluster"));
     }
 
     @Test
@@ -584,10 +585,10 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 VARCHAR(50) NOT NULL, PRIMARY KEY (C2, C1));\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertFalse(diff.supported());
-        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1_C2} from Table{T1} on replica"));
-        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C2_C1} from Table{T1} on master"));
+        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C1_C2} from Table{T1} on local cluster"));
+        assertTrue(diff.errors().contains("Missing Index{VOLTDB_AUTOGEN_IDX_PK_T1_C2_C1} from Table{T1} on remote cluster"));
     }
 
     @Test
@@ -600,7 +601,7 @@ public class TestDRCatalogDiffs {
                 "CREATE INDEX foo ON T1 (C1);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
     }
 
@@ -614,7 +615,7 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 VARCHAR(50));\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
     }
 
@@ -629,7 +630,7 @@ public class TestDRCatalogDiffs {
                 "CREATE INDEX foo ON T1 (C2, C1);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
     }
 
@@ -637,13 +638,18 @@ public class TestDRCatalogDiffs {
     public void testExtraViewOnReplica() throws Exception {
         String masterSchema =
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
-                "DR TABLE T1;";
+                "CREATE TABLE T2 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "DR TABLE T1;\n" +
+                "DR TABLE T2;\n";
         String replicaSchema =
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "CREATE TABLE T2 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "CREATE VIEW foo (C1, total) AS SELECT C1, COUNT(*) FROM T1 GROUP BY C1;\n" +
-                "DR TABLE T1;";
+                "CREATE VIEW foo2 (C1, total) AS SELECT T1.C1, COUNT(*) FROM T1 JOIN T2 ON T1.C1 = T2.C1 GROUP BY T1.C1;\n" +
+                "DR TABLE T1;\n" +
+                "DR TABLE T2;\n";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
     }
 
@@ -651,13 +657,18 @@ public class TestDRCatalogDiffs {
     public void testMissingViewOnReplica() throws Exception {
         String masterSchema =
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "CREATE TABLE T2 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "CREATE VIEW foo (C1, total) AS SELECT C1, COUNT(*) FROM T1 GROUP BY C1;\n" +
-                "DR TABLE T1;";
+                "CREATE VIEW foo2 (C1, total) AS SELECT T1.C1, COUNT(*) FROM T1 JOIN T2 ON T1.C1 = T2.C1 GROUP BY T1.C1;\n" +
+                "DR TABLE T1;\n" +
+                "DR TABLE T2;\n";
         String replicaSchema =
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
-                "DR TABLE T1;";
+                "CREATE TABLE T2 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "DR TABLE T1;\n" +
+                "DR TABLE T2;\n";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
     }
 
@@ -665,14 +676,20 @@ public class TestDRCatalogDiffs {
     public void testDifferentViewOnReplica() throws Exception {
         String masterSchema =
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "CREATE TABLE T2 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "CREATE VIEW foo (C1, total) AS SELECT C1, COUNT(*) FROM T1 GROUP BY C1;\n" +
-                "DR TABLE T1;";
+                "CREATE VIEW foo2 (C1, total) AS SELECT T1.C1, COUNT(*) FROM T1 JOIN T2 ON T1.C1 = T2.C1 GROUP BY T1.C1;\n" +
+                "DR TABLE T1;\n" +
+                "DR TABLE T2;";
         String replicaSchema =
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "CREATE TABLE T2 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "CREATE VIEW foo (C1, C2, total) AS SELECT C1, C2, COUNT(*) FROM T1 WHERE C2 > 50 GROUP BY C1, C2;\n" +
-                "DR TABLE T1;";
+                "CREATE VIEW foo2 (C1, C2, total) AS SELECT T1.C1, T2.C2, COUNT(*) FROM T1 JOIN T2 ON T1.C1 = T2.C1 GROUP BY T1.C1, T2.C2;\n" +
+                "DR TABLE T1;\n" +
+                "DR TABLE T2;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
     }
 
@@ -682,7 +699,7 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T2 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "DR TABLE T2;";
 
-        CatalogDiffEngine diff = runCatalogDiff("", replicaSchema);
+        CatalogDiffEngine diff = runCatalogDiff("", false, replicaSchema, false);
         assertTrue(diff.errors(), diff.supported());
     }
 
@@ -692,21 +709,108 @@ public class TestDRCatalogDiffs {
                 "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
                 "DR TABLE T1;";
 
-        CatalogDiffEngine diff = runCatalogDiff(masterSchema, "");
+        CatalogDiffEngine diff = runCatalogDiff(masterSchema, false, "", false);
         assertFalse(diff.errors(), diff.supported());
-        assertTrue(diff.errors().contains("Missing DR table T1 on replica cluster"));
+        assertTrue(diff.errors().contains("Missing DR table T1 on local cluster"));
     }
 
     @Test
     public void testNoDRTablesOnEitherSide() throws Exception {
-        CatalogDiffEngine diff = runCatalogDiff("", "");
+        CatalogDiffEngine diff = runCatalogDiff("", false, "", false);
         assertTrue(diff.errors(), diff.supported());
     }
 
-    private CatalogDiffEngine runCatalogDiff(String masterSchema, String replicaSchema) throws Exception {
+    @Test
+    public void testActiveActiveDR() throws Exception {
+        String nodeOneSchema =
+                "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "DR TABLE T1;";
+        String nodeTwoSchema =
+                "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "DR TABLE T1;";
+        CatalogDiffEngine diff = runCatalogDiff(nodeOneSchema, true, nodeTwoSchema, true);
+        assertTrue(diff.errors(), diff.supported());
+    }
+    @Test
+    public void testActivePassiveDR() throws Exception {
+        String nodeOneSchema =
+                "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "DR TABLE T1;";
+        String nodeTwoSchema =
+                "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "DR TABLE T1;";
+        CatalogDiffEngine diff = runCatalogDiff(nodeOneSchema, false, nodeTwoSchema, false);
+        assertTrue(diff.errors(), diff.supported());
+    }
+
+    @Test
+    public void testIncompatibleDRMode() throws Exception {
+        String nodeOneSchema =
+                "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "DR TABLE T1;";
+        String nodeTwoSchema =
+                "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+                "DR TABLE T1;";
+        CatalogDiffEngine diff = runCatalogDiff(nodeOneSchema, true, nodeTwoSchema, false);
+        assertFalse(diff.supported());
+        assertTrue(diff.errors().contains("Incompatible DR modes between two clusters"));
+    }
+
+    @Test
+    public void testUnknownSchemaOption() throws Exception {
+        String masterSchema =
+                "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 BIGINT NOT NULL);\n" +
+                "DR TABLE T1;";
         Catalog masterCatalog = createCatalog(masterSchema);
+
+        String commands = DRCatalogDiffEngine.serializeCatalogCommandsForDr(masterCatalog, -1).commands;
+        String decodedCommands = Encoder.decodeBase64AndDecompress(commands);
+        decodedCommands = decodedCommands.replaceFirst("set \\$PREV isDRed true", "set \\$PREV isDRed true\nset \\$PREV isASquirrel false");
+        boolean threw = false;
+        try {
+            DRCatalogDiffEngine.deserializeCatalogCommandsForDr(Encoder.compressAndBase64Encode(decodedCommands));
+        } catch (Exception e) {
+            assertTrue(e.getMessage().contains("$PREV isASquirrel false"));
+            threw = true;
+        }
+        assertTrue(threw);
+    }
+
+    /**
+     * Don't serialize views, DR doesn't care.
+     */
+    @Test
+    public void testFilterForDR() throws Exception {
+        String masterSchema =
+        "CREATE TABLE T1 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+        "CREATE TABLE T2 (C1 INTEGER NOT NULL, C2 INTEGER NOT NULL);\n" +
+        "CREATE INDEX T1_IDX ON T1 (C2);\n" +
+        "CREATE VIEW foo (C1, total) AS SELECT C1, COUNT(*) FROM T1 GROUP BY C1;\n" +
+        "CREATE VIEW foo2 (C1, total) AS SELECT T1.C1, COUNT(*) FROM T1 JOIN T2 ON T1.C1 = T2.C1 GROUP BY T1.C1;\n" +
+        "DR TABLE T1;\n" +
+        "DR TABLE T2;\n";
+        Catalog masterCatalog = createCatalog(masterSchema);
+
+        String commands = DRCatalogDiffEngine.serializeCatalogCommandsForDr(masterCatalog, -1).commands;
+        String decodedCommands = Encoder.decodeBase64AndDecompress(commands);
+
+        assertFalse(decodedCommands.contains(" views "));
+        assertFalse(decodedCommands.contains(" mvHandlerInfo "));
+        assertFalse(decodedCommands.contains(" isSafeWithNonemptySources "));
+    }
+
+    private CatalogDiffEngine runCatalogDiff(String masterSchema, boolean isMasterXDCR,
+                                             String replicaSchema, boolean isReplicaXDCR) throws Exception {
+        Catalog masterCatalog = createCatalog(masterSchema);
+        if (isMasterXDCR) {
+            masterCatalog.getClusters().get("cluster").setDrrole(DrRoleType.XDCR.value());
+        }
         Catalog replicaCatalog = createCatalog(replicaSchema);
-        String commands = DRCatalogDiffEngine.serializeCatalogCommandsForDr(masterCatalog).getSecond();
+        if (isReplicaXDCR) {
+            replicaCatalog.getClusters().get("cluster").setDrrole(DrRoleType.XDCR.value());
+        }
+
+        String commands = DRCatalogDiffEngine.serializeCatalogCommandsForDr(masterCatalog, -1).commands;
         Catalog deserializedMasterCatalog = DRCatalogDiffEngine.deserializeCatalogCommandsForDr(commands);
         return new DRCatalogDiffEngine(replicaCatalog, deserializedMasterCatalog);
     }
@@ -718,12 +822,12 @@ public class TestDRCatalogDiffs {
         File schemaFile = VoltProjectBuilder.writeStringToTempFile(schema);
         String schemaPath = schemaFile.getPath();
 
-        VoltCompiler compiler = new VoltCompiler();
+        VoltCompiler compiler = new VoltCompiler(false);
         boolean success = compiler.compileFromDDL(jarOut.getPath(), schemaPath);
         assertTrue("Compilation failed unexpectedly", success);
 
         Catalog catalog = new Catalog();
-        catalog.execute(CatalogUtil.getSerializedCatalogStringFromJar(CatalogUtil.loadAndUpgradeCatalogFromJar(MiscUtils.fileToBytes(new File(jarOut.getPath()))).getFirst()));
+        catalog.execute(CatalogUtil.getSerializedCatalogStringFromJar(CatalogUtil.loadAndUpgradeCatalogFromJar(MiscUtils.fileToBytes(new File(jarOut.getPath())), false).getFirst()));
         return catalog;
     }
 }

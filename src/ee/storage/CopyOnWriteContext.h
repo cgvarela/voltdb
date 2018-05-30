@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,7 +20,6 @@
 #include <string>
 #include <vector>
 #include <utility>
-#include "common/TupleSerializer.h"
 #include "common/TupleOutputStreamProcessor.h"
 #include "storage/persistenttable.h"
 #include "storage/TableStreamer.h"
@@ -39,7 +38,7 @@ class PersistentTableSurgeon;
 
 class CopyOnWriteContext : public TableStreamerContext {
 
-    friend bool TableStreamer::activateStream(PersistentTableSurgeon&, TupleSerializer&,
+    friend bool TableStreamer::activateStream(PersistentTableSurgeon&,
                                               TableStreamType, const std::vector<std::string>&);
 
 public:
@@ -60,6 +59,10 @@ public:
      */
     virtual ActivationReturnCode handleActivation(TableStreamType streamType);
 
+    /**
+     * Reactivation handler.
+     */
+    virtual ActivationReturnCode handleReactivation(TableStreamType streamType);
     /**
      * Mandatory TableStreamContext override.
      */
@@ -95,7 +98,6 @@ private:
      */
     CopyOnWriteContext(PersistentTable &table,
                        PersistentTableSurgeon &surgeon,
-                       TupleSerializer &serializer,
                        int32_t partitionId,
                        const std::vector<std::string> &predicateStrings,
                        int64_t totalTuples);
@@ -111,16 +113,10 @@ private:
     Pool m_pool;
 
     /**
-     * Copied and sorted tuple blocks that can be binary searched in order to find out. The pair
-     * contains the block address as well as the original index of the block.
-     */
-    TBMap m_blocks;
-
-    /**
      * Iterator over the table via a CopyOnWriteIterator or an iterator over
      *  temp table used to stored backed up tuples
      */
-    boost::scoped_ptr<TupleIterator> m_iterator;
+    std::unique_ptr<TupleIterator> m_iterator;
 
     TableTuple m_tuple;
 
@@ -131,7 +127,11 @@ private:
     int64_t m_blocksCompacted;
     int64_t m_serializationBatches;
     int64_t m_inserts;
+    int64_t m_deletes;
     int64_t m_updates;
+    int32_t m_skippedDirtyRows;
+    int32_t m_skippedInactiveRows;
+    const bool m_replicated;
 
     void checkRemainingTuples(const std::string &label);
 

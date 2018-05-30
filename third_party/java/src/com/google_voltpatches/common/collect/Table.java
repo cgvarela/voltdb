@@ -18,11 +18,10 @@ package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
 import com.google_voltpatches.common.base.Objects;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -45,7 +44,7 @@ import javax.annotation_voltpatches.Nullable;
  * those methods will throw an {@link UnsupportedOperationException}.
  * 
  * <p>See the Guava User Guide article on <a href=
- * "http://code.google.com/p/guava-libraries/wiki/NewCollectionTypesExplained#Table">
+ * "https://github.com/google/guava/wiki/NewCollectionTypesExplained#table">
  * {@code Table}</a>.
  *
  * @author Jared Levy
@@ -140,6 +139,8 @@ public interface Table<R, C, V> {
    * @return the value previously associated with the keys, or {@code null} if
    *     no mapping existed for the keys
    */
+  @CanIgnoreReturnValue
+  @Nullable
   V put(R rowKey, C columnKey, V value);
 
   /**
@@ -159,6 +160,8 @@ public interface Table<R, C, V> {
    * @return the value previously associated with the keys, or {@code null} if
    *     no such value existed
    */
+  @CanIgnoreReturnValue
+  @Nullable
   V remove(@Nullable Object rowKey, @Nullable Object columnKey);
 
   // Views
@@ -265,16 +268,19 @@ public interface Table<R, C, V> {
     /**
      * Returns the row key of this cell.
      */
+    @Nullable
     R getRowKey();
 
     /**
      * Returns the column key of this cell.
      */
+    @Nullable
     C getColumnKey();
 
     /**
      * Returns the value of this cell.
      */
+    @Nullable
     V getValue();
 
     /**

@@ -18,9 +18,7 @@ package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
 import com.google_voltpatches.common.base.Objects;
-
 import java.util.Map.Entry;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -43,7 +41,8 @@ abstract class AbstractMapEntry<K, V> implements Entry<K, V> {
     throw new UnsupportedOperationException();
   }
 
-  @Override public boolean equals(@Nullable Object object) {
+  @Override
+  public boolean equals(@Nullable Object object) {
     if (object instanceof Entry) {
       Entry<?, ?> that = (Entry<?, ?>) object;
       return Objects.equal(this.getKey(), that.getKey())
@@ -52,7 +51,8 @@ abstract class AbstractMapEntry<K, V> implements Entry<K, V> {
     return false;
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     K k = getKey();
     V v = getValue();
     return ((k == null) ? 0 : k.hashCode()) ^ ((v == null) ? 0 : v.hashCode());
@@ -61,7 +61,8 @@ abstract class AbstractMapEntry<K, V> implements Entry<K, V> {
   /**
    * Returns a string representation of the form {@code {key}={value}}.
    */
-  @Override public String toString() {
+  @Override
+  public String toString() {
     return getKey() + "=" + getValue();
   }
 }

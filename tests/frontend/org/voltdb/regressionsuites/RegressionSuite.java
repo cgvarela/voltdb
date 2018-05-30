@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -30,29 +30,48 @@ import java.math.RoundingMode;
 import java.net.ConnectException;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Properties;
 import java.util.Random;
 import java.util.regex.Pattern;
 
-import junit.framework.TestCase;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
 
 import org.apache.commons.lang3.StringUtils;
+import org.voltcore.utils.ssl.SSLConfiguration;
+import org.voltdb.CatalogContext;
 import org.voltdb.VoltDB;
 import org.voltdb.VoltTable;
 import org.voltdb.VoltType;
+import org.voltdb.catalog.Catalog;
+import org.voltdb.catalog.CatalogDiffEngine;
 import org.voltdb.client.Client;
-import org.voltdb.client.ClientAuthHashScheme;
+import org.voltdb.client.ClientAuthScheme;
 import org.voltdb.client.ClientConfig;
 import org.voltdb.client.ClientConfigForTest;
 import org.voltdb.client.ClientFactory;
+import org.voltdb.client.ClientResponse;
 import org.voltdb.client.ConnectionUtil;
 import org.voltdb.client.NoConnectionsException;
 import org.voltdb.client.ProcCallException;
 import org.voltdb.common.Constants;
+import org.voltdb.types.GeographyPointValue;
+import org.voltdb.types.GeographyValue;
+import org.voltdb.types.TimestampType;
 import org.voltdb.types.VoltDecimalHelper;
+import org.voltdb.utils.CatalogUtil;
 import org.voltdb.utils.Encoder;
+import org.voltdb.utils.InMemoryJarfile;
+import org.voltdb.utils.SerializationHelper;
 
 import com.google_voltpatches.common.net.HostAndPort;
+
+import junit.framework.TestCase;
 
 /**
  * Base class for a set of JUnit tests that perform regression tests
@@ -64,14 +83,18 @@ import com.google_voltpatches.common.net.HostAndPort;
  *
  */
 public class RegressionSuite extends TestCase {
+    protected final static double GEOGRAPHY_EPSILON = 1.0e-13;
 
     protected static int m_verboseDiagnosticRowCap = 40;
     protected VoltServerConfig m_config;
     protected String m_username = "default";
     protected String m_password = "password";
-    private final ArrayList<Client> m_clients = new ArrayList<Client>();
-    private final ArrayList<SocketChannel> m_clientChannels = new ArrayList<SocketChannel>();
+    private final ArrayList<Client> m_clients = new ArrayList<>();
+    private final ArrayList<SocketChannel> m_clientChannels = new ArrayList<>();
     protected final String m_methodName;
+    // If the current RegressionSuite instance is the last one in the current VoltServerConfig,
+    // shutdown the cluster completely after finishing the test.
+    protected boolean m_completeShutdown;
 
     /**
      * Trivial constructor that passes parameter on to superclass.
@@ -80,6 +103,9 @@ public class RegressionSuite extends TestCase {
     public RegressionSuite(final String name) {
         super(name);
         m_methodName = name;
+
+        VoltServerConfig.setInstanceSet(new HashSet<>());
+        m_completeShutdown = false;
     }
 
     /**
@@ -88,9 +114,23 @@ public class RegressionSuite extends TestCase {
      */
     @Override
     public void setUp() throws Exception {
+
         //New tests means a new server thread that hasn't done a restore
         m_config.setCallingMethodName(m_methodName);
         m_config.startUp(true);
+    }
+
+    private static Catalog getCurrentCatalog() {
+        CatalogContext context = VoltDB.instance().getCatalogContext();
+        if (context == null) {
+            return null;
+        }
+        InMemoryJarfile currentCatalogJar = context.getCatalogJar();
+        String serializedCatalogString = CatalogUtil.getSerializedCatalogStringFromJar(currentCatalogJar);
+        assertNotNull(serializedCatalogString);
+        Catalog c = new Catalog();
+        c.execute(serializedCatalogString);
+        return c;
     }
 
     /**
@@ -99,7 +139,46 @@ public class RegressionSuite extends TestCase {
      */
     @Override
     public void tearDown() throws Exception {
-        m_config.shutDown();
+        if (m_completeShutdown) {
+            m_config.shutDown();
+        }
+        else {
+            Catalog currentCataog = getCurrentCatalog();
+            if (currentCataog != null) {
+                CatalogDiffEngine diff = new CatalogDiffEngine(m_config.getInitialCatalog(), currentCataog);
+                // All catalog changes will have a changed "set /clusters#cluster/databases#database schema" command.
+                // If the diff command only has this line, it means something is changed first but restored later.
+                // We will ignore this case.
+                if (diff.commands().split("\n").length > 1) {
+                    fail("Catalog changed in test " + getName() +
+                            " while the regression suite optimization is on: \n" +
+                            diff.getDescriptionOfChanges(false));
+                }
+            }
+
+            Client client = getClient();
+            VoltTable tableList = client.callProcedure("@SystemCatalog", "TABLES").getResults()[0];
+            ArrayList<String> tableNames = new ArrayList<>(tableList.getRowCount());
+            int tableNameColIdx = tableList.getColumnIndex("TABLE_NAME");
+            int tableTypeColIdx = tableList.getColumnIndex("TABLE_TYPE");
+            while (tableList.advanceRow()) {
+                String tableType = tableList.getString(tableTypeColIdx);
+                if (! tableType.equalsIgnoreCase("EXPORT")) {
+                    tableNames.add(tableList.getString(tableNameColIdx));
+                }
+            }
+            for (String tableName : tableNames) {
+                try {
+                    client.callProcedure("@AdHoc", "DELETE FROM " + tableName);
+                }
+                catch (ProcCallException pce) {
+                    if (! pce.getMessage().contains("Illegal to modify a materialized view.")) {
+                        fail("Hit an exception when cleaning up tables between tests: " + pce.getMessage());
+                    }
+                }
+            }
+            client.drain();
+        }
         for (final Client c : m_clients) {
             c.close();
         }
@@ -107,7 +186,8 @@ public class RegressionSuite extends TestCase {
             for (final SocketChannel sc : m_clientChannels) {
                 try {
                     ConnectionUtil.closeConnection(sc);
-                } catch (final IOException e) {
+                }
+                catch (final IOException e) {
                     e.printStackTrace();
                 }
             }
@@ -141,6 +221,10 @@ public class RegressionSuite extends TestCase {
         return m_config instanceof LocalCluster;
     }
 
+    public boolean isDebug() {
+        return m_config.isDebug();
+    }
+
     /**
      * @return a reference to the associated VoltServerConfig
      */
@@ -149,19 +233,23 @@ public class RegressionSuite extends TestCase {
     }
 
     public Client getAdminClient() throws IOException {
-        return getClient(1000 * 60 * 10, ClientAuthHashScheme.HASH_SHA256, true); // 10 minute default
+        return getClient(1000 * 60 * 10, ClientAuthScheme.HASH_SHA256, true); // 10 minute default
     }
 
     public Client getClient() throws IOException {
-        return getClient(1000 * 60 * 10, ClientAuthHashScheme.HASH_SHA256); // 10 minute default
+        return getClient(1000 * 60 * 10, ClientAuthScheme.HASH_SHA256); // 10 minute default
     }
 
-    public Client getClient(ClientAuthHashScheme scheme) throws IOException {
+    public Client getClient(ClientAuthScheme scheme) throws IOException {
         return getClient(1000 * 60 * 10, scheme); // 10 minute default
     }
 
     public Client getClientToHostId(int hostId) throws IOException {
         return getClientToHostId(hostId, 1000 * 60 * 10); // 10 minute default
+    }
+
+    public Client getClientToSubsetHosts(int[] hostIds) throws IOException {
+        return getClientToSubsetHosts(hostIds, 1000 * 60 * 10); // 10 minute default
     }
 
     public Client getFullyConnectedClient() throws IOException {
@@ -179,7 +267,7 @@ public class RegressionSuite extends TestCase {
      * VoltServerConfig instance.
      */
     public Client getClient(long timeout) throws IOException {
-        return getClient(timeout, ClientAuthHashScheme.HASH_SHA256);
+        return getClient(timeout, ClientAuthScheme.HASH_SHA256);
     }
 
     /**
@@ -192,16 +280,17 @@ public class RegressionSuite extends TestCase {
      * @return A VoltClient instance connected to the server driven by the
      * VoltServerConfig instance.
      */
-    public Client getClient(long timeout, ClientAuthHashScheme scheme) throws IOException {
+    public Client getClient(long timeout, ClientAuthScheme scheme) throws IOException {
         return getClient(timeout, scheme, false);
     }
 
-    public Client getClient(long timeout, ClientAuthHashScheme scheme, boolean useAdmin) throws IOException {
+    public Client getClient(long timeout, ClientAuthScheme scheme, boolean useAdmin) throws IOException {
         final Random r = new Random();
         String listener = null;
         if (useAdmin) {
             listener = m_config.getAdminAddress(r.nextInt(m_config.getListenerCount()));
-        } else {
+        }
+        else {
             listener = m_config.getListenerAddress(r.nextInt(m_config.getListenerCount()));
         }
         ClientConfig config = new ClientConfigForTest(m_username, m_password, scheme);
@@ -216,7 +305,8 @@ public class RegressionSuite extends TestCase {
         catch (ConnectException e) {
             if (useAdmin) {
                 listener = m_config.getAdminAddress(r.nextInt(m_config.getListenerCount()));
-            } else {
+            }
+            else {
                 listener = m_config.getListenerAddress(r.nextInt(m_config.getListenerCount()));
             }
             client.createConnection(listener);
@@ -239,7 +329,7 @@ public class RegressionSuite extends TestCase {
         final List<String> listeners = m_config.getListenerAddresses();
         final Random r = new Random();
         String listener = listeners.get(r.nextInt(listeners.size()));
-        ClientConfig config = new ClientConfigForTest(m_username, m_password, ClientAuthHashScheme.HASH_SHA1);
+        ClientConfig config = new ClientConfigForTest(m_username, m_password, ClientAuthScheme.HASH_SHA1);
         config.setConnectionResponseTimeout(timeout);
         config.setProcedureCallTimeout(timeout);
         final Client client = ClientFactory.createClient(config);
@@ -275,6 +365,28 @@ public class RegressionSuite extends TestCase {
         // retry once
         catch (ConnectException e) {
             client.createConnection(listener);
+        }
+        m_clients.add(client);
+        return client;
+    }
+
+    public Client getClientToSubsetHosts(int[] hostIds, long timeout) throws IOException {
+        List<String> listeners = new ArrayList<>();
+        for (int hostId : hostIds) {
+            listeners.add(m_config.getListenerAddress(hostId));
+        }
+        ClientConfig config = new ClientConfigForTest(m_username, m_password);
+        config.setConnectionResponseTimeout(timeout);
+        config.setProcedureCallTimeout(timeout);
+        final Client client = ClientFactory.createClient(config);
+        for (String listener : listeners) {
+            try {
+                client.createConnection(listener);
+            }
+            // retry once
+            catch (ConnectException e) {
+                client.createConnection(listener);
+            }
         }
         m_clients.add(client);
         return client;
@@ -318,9 +430,11 @@ public class RegressionSuite extends TestCase {
      *
      * @return A SocketChannel that is already authenticated with the server
      */
+
     public SocketChannel getClientChannel() throws IOException {
         return getClientChannel(false);
     }
+
     public SocketChannel getClientChannel(final boolean noTearDown) throws IOException {
         final List<String> listeners = m_config.getListenerAddresses();
         final Random r = new Random();
@@ -331,9 +445,19 @@ public class RegressionSuite extends TestCase {
         if (hNp.hasPort()) {
             port = hNp.getPort();
         }
+
+        SSLEngine sslEngine = null;
+        boolean sslEnabled = Boolean.valueOf(System.getenv("ENABLE_SSL") == null ? Boolean.toString(Boolean.getBoolean("ENABLE_SSL")) : System.getenv("ENABLE_SSL"));
+         if (sslEnabled) {
+             SSLContext sslContext = SSLConfiguration.createSslContext(new SSLConfiguration.SslConfig());
+             sslEngine = sslContext.createSSLEngine("client", port);
+             sslEngine.setUseClientMode(true);
+         }
+
         final SocketChannel channel = (SocketChannel)
             ConnectionUtil.getAuthenticatedConnection(
-                    hNp.getHostText(), m_username, hashedPassword, port, null, ClientAuthHashScheme.getByUnencodedLength(hashedPassword.length))[0];
+                    hNp.getHostText(), m_username, hashedPassword, port, null,
+                    ClientAuthScheme.getByUnencodedLength(hashedPassword.length), sslEngine, 0)[0];
         channel.configureBlocking(true);
         if (!noTearDown) {
             synchronized (m_clientChannels) {
@@ -342,7 +466,6 @@ public class RegressionSuite extends TestCase {
         }
         return channel;
     }
-
     /**
      * Protected method used by MultiConfigSuiteBuilder to set the VoltServerConfig
      * instance a particular test will run with.
@@ -384,16 +507,22 @@ public class RegressionSuite extends TestCase {
      * @return internal port number
      */
     public int internalPort(int hostId) {
-        return isLocalCluster() ? ((LocalCluster)m_config).internalPort(hostId) : VoltDB.DEFAULT_INTERNAL_PORT+hostId;
+        return isLocalCluster() ? ((LocalCluster)m_config).internalPort(hostId) : org.voltcore.common.Constants.DEFAULT_INTERNAL_PORT+hostId;
+    }
+
+    static protected void validateDMLTupleCount(Client c, String sql, long modifiedTupleCount)
+            throws NoConnectionsException, IOException, ProcCallException {
+        VoltTable vt = c.callProcedure("@AdHoc", sql).getResults()[0];
+        validateTableOfLongs(sql, vt, new long[][] {{modifiedTupleCount}});
     }
 
     static protected void validateTableOfLongs(Client c, String sql, long[][] expected)
-            throws Exception, IOException, ProcCallException {
+            throws NoConnectionsException, IOException, ProcCallException {
         VoltTable vt = c.callProcedure("@AdHoc", sql).getResults()[0];
         validateTableOfLongs(sql, vt, expected);
     }
 
-    static protected void validateTableOfScalarLongs(VoltTable vt, long[] expected) {
+    static public void validateTableOfScalarLongs(VoltTable vt, long[] expected) {
         assertNotNull(expected);
         assertEquals("Different number of rows! ", expected.length, vt.getRowCount());
         int len = expected.length;
@@ -409,6 +538,27 @@ public class RegressionSuite extends TestCase {
         validateTableOfScalarLongs(vt, expected);
     }
 
+    static protected void validateTableOfScalarDecimals(Client client, String sql, BigDecimal[] expected)
+            throws NoConnectionsException, IOException, ProcCallException {
+        assertNotNull(expected);
+        VoltTable vt = client.callProcedure("@AdHoc", sql).getResults()[0];
+        assertEquals("Different number of rows! ", expected.length, vt.getRowCount());
+        int len = expected.length;
+        for (int i=0; i < len; i++) {
+            assertTrue(vt.advanceRow());
+            String message = "at column 0,";
+
+            BigDecimal actual = new BigDecimal(-10000000);
+            try {
+                actual = vt.getDecimalAsBigDecimal(i);
+            } catch (IllegalArgumentException ex) {
+                ex.printStackTrace();
+                fail(message);
+            }
+            assertEquals(message, expected[i], actual);
+        }
+    }
+
     private static void dumpExpectedLongs(long[][] expected) {
         System.out.println("row count:" + expected.length);
         for (long[] row : expected) {
@@ -421,7 +571,7 @@ public class RegressionSuite extends TestCase {
         }
     }
 
-    static private void validateTableOfLongs(String messagePrefix,
+    private static void validateTableOfLongs(String messagePrefix,
             VoltTable vt, long[][] expected) {
         assertNotNull(expected);
         if (expected.length != vt.getRowCount()) {
@@ -436,44 +586,51 @@ public class RegressionSuite extends TestCase {
                         expected.length, vt.getRowCount());
         int len = expected.length;
         for (int i=0; i < len; i++) {
-            validateRowOfLongs(messagePrefix + " at row " + i + ", ", vt, expected[i]);
+            validateRowOfLongs(messagePrefix + " at row " + (i+1) + ", ", vt, expected[i]);
         }
     }
 
-    static protected void validateTableOfLongs(VoltTable vt, long[][] expected) {
-        assertNotNull(expected);
-        assertEquals("Wrong number of rows in table.  ",
-                        expected.length, vt.getRowCount());
-        int len = expected.length;
-        for (int i=0; i < len; i++) {
-            validateRowOfLongs("at row " + i + ", ", vt, expected[i]);
-        }
+    protected void validateRowCount(Client client, String query, int expected)
+            throws NoConnectionsException, IOException, ProcCallException {
+        VoltTable result = client.callProcedure("@AdHoc", query).getResults()[0];
+        int actual = result.getRowCount();
+        assertEquals("Wrong row count from query '" + query + "'",
+                expected, actual);
+    }
+
+    public static void validateTableOfLongs(VoltTable vt, long[][] expected) {
+        validateTableOfLongs("", vt, expected);
     }
 
     static protected void validateRowOfLongs(String messagePrefix, VoltTable vt, long [] expected) {
         int len = expected.length;
         assertTrue(vt.advanceRow());
         for (int i=0; i < len; i++) {
-            String message = messagePrefix + "at column " + i + ", ";
+            String message = messagePrefix + "at column " + (i+1) + ", ";
 
             long actual = -10000000;
             // ENG-4295: hsql bug: HSQLBackend sometimes returns wrong column type.
             try {
                 actual = vt.getLong(i);
-            } catch (IllegalArgumentException ex) {
+            }
+            catch (IllegalArgumentException ex) {
                 try {
                     actual = (long) vt.getDouble(i);
-                } catch (IllegalArgumentException newEx) {
+                }
+                catch (IllegalArgumentException newEx) {
                     try {
                         actual = vt.getTimestampAsLong(i);
-                    } catch (IllegalArgumentException exTm) {
+                    }
+                    catch (IllegalArgumentException exTm) {
                         try {
                             actual = vt.getDecimalAsBigDecimal(i).longValueExact();
-                        } catch (IllegalArgumentException newerEx) {
+                        }
+                        catch (IllegalArgumentException newerEx) {
                             newerEx.printStackTrace();
                             fail(message);
                         }
-                    } catch (ArithmeticException newestEx) {
+                    }
+                    catch (ArithmeticException newestEx) {
                         newestEx.printStackTrace();
                         fail(message);
                     }
@@ -483,7 +640,8 @@ public class RegressionSuite extends TestCase {
             // Long.MIN_VALUE is like a NULL
             if (expected[i] != Long.MIN_VALUE) {
                 assertEquals(message, expected[i], actual);
-            } else {
+            }
+            else {
                 VoltType type = vt.getColumnType(i);
                 assertEquals(message + "expected null: ", Long.parseLong(type.getNullValue().toString()), actual);
             }
@@ -492,6 +650,27 @@ public class RegressionSuite extends TestCase {
 
     static protected void validateRowOfLongs(VoltTable vt, long [] expected) {
         validateRowOfLongs("", vt, expected);
+    }
+
+    /**
+     * Given a two dimensional array, randomly permute the rows, but
+     * leave the columns alone.  This is used to generate test cases for kinds
+     * of sorts.
+     *
+     * @param input
+     */
+    static protected <T> T[][] shuffleArray(T [][] input) {
+        T[][] output = input.clone();
+        Integer [] indices = new Integer[input.length];
+        for (int idx = 0; idx < indices.length; idx += 1) {
+            indices[idx] = Integer.valueOf(idx);
+        }
+        List<Integer> permutation = Arrays.asList(indices);
+        Collections.shuffle(permutation);
+        for (int idx = 0; idx < input.length; idx += 1) {
+            output[idx] = input[permutation.get(idx)];
+        }
+        return output;
     }
 
     static protected void validateTableColumnOfScalarLong(VoltTable vt, int col, long[] expected) {
@@ -505,7 +684,8 @@ public class RegressionSuite extends TestCase {
             if (expected[i] == Long.MIN_VALUE) {
                 assertTrue(vt.wasNull());
                 assertEquals(null, actual);
-            } else {
+            }
+            else {
                 assertEquals(expected[i], actual);
             }
         }
@@ -531,7 +711,8 @@ public class RegressionSuite extends TestCase {
                 String actual = vt.getString(col);
                 assertTrue(vt.wasNull());
                 assertEquals(null, actual);
-            } else {
+            }
+            else {
                 assertEquals(expected[i], vt.getString(col));
             }
         }
@@ -555,7 +736,8 @@ public class RegressionSuite extends TestCase {
               if (expected[i] == null) {
                   assertTrue(vt.wasNull());
                   assertEquals(null, actual);
-              } else {
+              }
+              else {
                   assertEquals(expected[i], Encoder.hexEncode(actual));
               }
           }
@@ -575,10 +757,10 @@ public class RegressionSuite extends TestCase {
               assertTrue(vt.advanceRow());
               double actual = vt.getDouble(col);
 
-              if (expected[i] == Double.MIN_VALUE) {
+              if (expected[i] <= VoltType.NULL_FLOAT) {
                   assertTrue(vt.wasNull());
-                  assertEquals(null, actual);
-              } else {
+              }
+              else {
                   assertEquals(expected[i], actual, 0.00001);
               }
           }
@@ -591,19 +773,22 @@ public class RegressionSuite extends TestCase {
             BigDecimal actual = null;
             try {
                 actual = vt.getDecimalAsBigDecimal(i);
-            } catch (IllegalArgumentException ex) {
+            }
+            catch (IllegalArgumentException ex) {
                 ex.printStackTrace();
                 fail();
             }
             if (expected[i] != null) {
                 assertNotSame(null, actual);
                 assertEquals(expected[i], actual);
-            } else {
+            }
+            else {
                 if (isHSQL()) {
                     // We don't actually use this with
                     // HSQL.  So, just assert failure here.
                     fail("HSQL is not used to test the Volt DECIMAL type.");
-                } else {
+                }
+                else {
                     assertTrue(vt.wasNull());
                 }
             }
@@ -686,7 +871,8 @@ public class RegressionSuite extends TestCase {
             if (expected[i] == null) {
                 assertTrue(vt.wasNull());
                 assertEquals(null, actual);
-            } else {
+            }
+            else {
                 BigDecimal rounded = expected[i].setScale(m_defaultScale, RoundingMode.valueOf(m_defaultRoundingMode));
                 assertEquals(rounded, actual);
             }
@@ -694,29 +880,308 @@ public class RegressionSuite extends TestCase {
   }
 
     protected void assertTablesAreEqual(String prefix, VoltTable expectedRows, VoltTable actualRows) {
+        assertTablesAreEqual(prefix, expectedRows, actualRows, null);
+    }
+
+    private static final long TOO_MUCH_INFO = 100;
+    protected void assertTablesAreEqual(String prefix, VoltTable expectedRows, VoltTable actualRows, Double epsilon) {
         assertEquals(prefix + "column count mismatch.  Expected: " + expectedRows.getColumnCount() + " actual: " + actualRows.getColumnCount(),
                 expectedRows.getColumnCount(), actualRows.getColumnCount());
-
-        int i = 0;
-        while(expectedRows.advanceRow()) {
-            assertTrue(prefix + "too few actual rows; expected more than " + (i + 1), actualRows.advanceRow());
-
+        if (expectedRows.getRowCount() != actualRows.getRowCount()) {
+            long expRowCount = expectedRows.getRowCount();
+            long actRowCount = actualRows.getRowCount();
+            if (expRowCount + actRowCount < TOO_MUCH_INFO) {
+                System.out.println("Expected: " + expectedRows);
+                System.out.println("Actual:   " + actualRows);
+            }
+            else {
+                System.out.println("Expected: " + expRowCount + " rows");
+                System.out.println("Actual:   " + actRowCount + " rows");
+            }
+            fail(prefix + "row count mismatch.  Expected: " + expectedRows.getRowCount() + " actual: " + actualRows.getRowCount());
+        }
+        int rowNum = 1;
+        while (expectedRows.advanceRow()) {
+            if (! actualRows.advanceRow()) {
+                fail(prefix + "too few actual rows; expected more than " + rowNum);
+            }
             for (int j = 0; j < actualRows.getColumnCount(); j++) {
                 String columnName = actualRows.getColumnName(j);
-                String colPrefix = prefix + "row " + i + ": column: " + columnName + ": ";
-                VoltType actualTy = actualRows.getColumnType(j);
-                VoltType expectedTy = expectedRows.getColumnType(j);
-                assertEquals(colPrefix + "type mismatch", expectedTy, actualTy);
+                String colPrefix = prefix + "row " + rowNum + ": column: " + columnName + ": ";
+                VoltType actualType = actualRows.getColumnType(j);
+                VoltType expectedType = expectedRows.getColumnType(j);
+                assertEquals(colPrefix + "type mismatch", expectedType, actualType);
 
-                Object expectedObj = expectedRows.get(j,  expectedTy);
-                Object actualObj = expectedRows.get(j,  actualTy);
-                assertEquals(colPrefix + "values not equal: expected: " + expectedObj + ", actual: " + actualObj,
-                        expectedObj, actualObj);
+                Object expectedObj = expectedRows.get(j, expectedType);
+                Object actualObj = actualRows.get(j, actualType);
+                if (expectedRows.wasNull()) {
+                    if (actualRows.wasNull()) {
+                        continue;
+                    }
+                    fail(colPrefix + "expected null, got non null value: " + actualObj);
+                }
+                else {
+                    assertFalse(colPrefix + "expected the value " + expectedObj +
+                            ", got a null value.",
+                            actualRows.wasNull());
+                    String message = colPrefix + "values not equal: ";
+                    if (expectedType == VoltType.FLOAT) {
+                        if (epsilon != null) {
+                            assertEquals(message, (Double)expectedObj, (Double)actualObj, epsilon);
+                            continue;
+                        }
+                        // With no epsilon provided, fall through to take
+                        // a chance on an exact value match, but helpfully
+                        // annotate any false positive that results.
+                        message += ". NOTE: You may want to pass a" +
+                                " non-null epsilon value >= " +
+                                Math.abs((Double)expectedObj - (Double)actualObj) +
+                                " to the table comparison test " +
+                                " if nearly equal FLOAT values are " +
+                                " causing a false mismatch.";
+                    }
+                    assertEquals(message, expectedObj, actualObj);
+                }
+            }
+            rowNum++;
+        }
+    }
+
+    public static void assertEquals(String msg, GeographyPointValue expected, GeographyPointValue actual) {
+            assertApproximatelyEquals(msg, expected, actual, GEOGRAPHY_EPSILON);
+    }
+    /**
+     * Assert that two points are approximately equal.  By this we mean the latitude and
+     * longitude differ by at most epsilon.  If epsilon is zero or negative this means
+     * equality.
+     *
+     * @param msg
+     * @param expected
+     * @param actual
+     */
+    public static void assertApproximatelyEquals(String msg, GeographyPointValue expected, GeographyPointValue actual, double epsilon) {
+        if (epsilon > 0) {
+            assertEquals(msg + " latitude: ", expected.getLatitude(), actual.getLatitude(), epsilon);
+            assertEquals(msg + " longitude: ", expected.getLongitude(), actual.getLongitude(), epsilon);
+        }
+        else {
+            assertEquals(msg + " latitude: ", expected.getLatitude(), actual.getLatitude());
+            assertEquals(msg + " longitude: ", expected.getLongitude(), actual.getLongitude());
+        }
+    }
+
+    public static void assertEquals(GeographyPointValue expected, GeographyPointValue actual) {
+        assertEquals("Points not equal: ", expected, actual);
+    }
+
+    /**
+     * Assert that two geography values are equal.  This delegates to
+     * assertApproximatelyEquals with epsilon equal to zero.
+     *
+     * @param msg
+     * @param expected
+     * @param actual
+     */
+    public static void assertEquals(String msg, GeographyValue expected, GeographyValue actual) {
+        assertApproximatelyEquals(msg, expected, actual, GEOGRAPHY_EPSILON);
+    }
+
+    /**
+     * Assert that two geography values are approximately equal.  By approximately
+     * equal we mean that the vertices of the expected and actual values differ
+     * by at most epsilon.  If epsilon is not positive this means the values must
+     * be exactly equal.
+     *
+     * @param msg
+     * @param expected
+     * @param actual
+     * @param epsilon
+     */
+    public static void assertApproximatelyEquals(String msg, GeographyValue expected, GeographyValue actual, double epsilon) {
+        if (expected == actual) {
+            return;
+        }
+
+        // caller checks for null in the expected value
+        assert (expected != null);
+
+        if (actual == null) {
+            fail(msg + " found null value when non-null expected");
+        }
+
+        List<List<GeographyPointValue>> expectedLoops = expected.getRings();
+        List<List<GeographyPointValue>> actualLoops = actual.getRings();
+
+        assertEquals(msg + "wrong number of loops, expected " + expectedLoops.size() + ", "
+                + "got " + actualLoops.size(),
+                expectedLoops.size(), actualLoops.size());
+
+        int loopCtr = 0;
+        Iterator<List<GeographyPointValue>> expectedLoopIt = expectedLoops.iterator();
+        for (List<GeographyPointValue> actualLoop : actualLoops) {
+            List<GeographyPointValue> expectedLoop = expectedLoopIt.next();
+            assertEquals(msg + "loop " + loopCtr + " should have " + expectedLoop.size()
+                    + " vertices, but has " + actualLoop.size() + ";",
+                    expectedLoop.size(), actualLoop.size());
+
+            int vertexCtr = 0;
+            Iterator<GeographyPointValue> expectedVertexIt = expectedLoop.iterator();
+            for (GeographyPointValue actualPt : actualLoop) {
+                GeographyPointValue expectedPt = expectedVertexIt.next();
+                String prefix = msg + "at loop " + loopCtr + ", vertex " + vertexCtr;
+                assertApproximatelyEquals(prefix, expectedPt, actualPt, epsilon);
+                ++vertexCtr;
             }
 
-            i++;
+            ++loopCtr;
         }
-        assertFalse(prefix + "too many actual rows; expected only " + i, actualRows.advanceRow());
+    }
+
+    public static void assertEquals(GeographyValue expected, GeographyValue actual) {
+        assertEquals("Geographies not equal: ", expected, actual);
+    }
+
+    private static void assertApproximateContentOfRow(int row,
+                                                      Object[] expectedRow,
+                                                      VoltTable actualRow,
+                                                      double epsilon) {
+        assertEquals("Actual row has wrong number of columns",
+                expectedRow.length, actualRow.getColumnCount());
+        for (int i = 0; i < expectedRow.length; ++i) {
+            String msg = "Row " + row + ", col " + i + ": ";
+            Object expectedObj = expectedRow[i];
+            if (expectedObj == null) {
+                VoltType vt = actualRow.getColumnType(i);
+                Object actualValue = actualRow.get(i, vt);
+                String fullMsg = msg + "expected null, but got: "+actualValue;
+                if (actualValue instanceof byte[]) {
+                    fullMsg = msg+"expected null, but got VARBINARY with array of byte values: "
+                            + Arrays.toString((byte[])actualValue);
+                } else if (actualValue instanceof Byte[]) {
+                    fullMsg = msg+"expected null, but got VARBINARY with array of Byte values: "
+                            + Arrays.toString((Byte[])actualValue);
+                }
+                assertTrue(fullMsg, actualRow.wasNull());
+            }
+            else if (expectedObj instanceof GeographyPointValue) {
+                assertApproximatelyEquals(msg, (GeographyPointValue) expectedObj, actualRow.getGeographyPointValue(i), epsilon);
+            }
+            else if (expectedObj instanceof GeographyValue) {
+                assertApproximatelyEquals(msg, (GeographyValue) expectedObj, actualRow.getGeographyValue(i), epsilon);
+            }
+            else if (expectedObj instanceof Long) {
+                long val = ((Long)expectedObj).longValue();
+                assertEquals(msg, val, actualRow.getLong(i));
+            }
+            else if (expectedObj instanceof Integer) {
+                long val = ((Integer)expectedObj).longValue();
+                assertEquals(msg, val, actualRow.getLong(i));
+            }
+            else if (expectedObj instanceof Short) {
+                long val = ((Short)expectedObj).longValue();
+                assertEquals(msg, val, actualRow.getLong(i));
+            }
+            else if (expectedObj instanceof Byte) {
+                long val = ((Byte)expectedObj).longValue();
+                assertEquals(msg, val, actualRow.getLong(i));
+            }
+            else if (expectedObj instanceof Double) {
+                Double expectedValue = (Double)expectedObj;
+                double actualValue = actualRow.getDouble(i);
+                // Either both are null or neither is null
+                assertEquals(msg+"expected "+expectedValue+" but got "+actualValue+": checking for null FLOAT: ",
+                        expectedValue == null, actualRow.wasNull());
+                if (epsilon <= 0 || !Double.isFinite(expectedValue)) {
+                    String fullMsg = msg + String.format("Expected value %f != actual value %f", expectedValue, actualValue);
+                    assertEquals(fullMsg, expectedValue, actualValue);
+                }
+                else {
+                    String fullMsg = msg + String.format("abs(Expected Value - Actual Value) = %e >= %e",
+                                                         Math.abs(expectedValue - actualValue), epsilon);
+                    assertTrue(fullMsg, Math.abs(expectedValue - actualValue) < epsilon);
+                }
+            }
+            else if (expectedObj instanceof BigDecimal) {
+                BigDecimal exp = (BigDecimal)expectedObj;
+                BigDecimal got = actualRow.getDecimalAsBigDecimal(i);
+                // Either both are null or neither is null
+                assertEquals(msg+"expected "+exp+" but got "+got+": checking for null DECIMAL: ",
+                        exp == null, got == null);
+                assertEquals(msg, exp.doubleValue(), got.doubleValue(), epsilon);
+            }
+            else if (expectedObj instanceof byte[]) {
+                byte[] expectedVarbinary = (byte[]) expectedObj;
+                byte[] actualVarbinary = actualRow.getVarbinary(i);
+                assertEquals(msg+"length of VARBINARY: ", expectedVarbinary.length, actualVarbinary.length);
+                for (int k = 0; k < expectedVarbinary.length; k++) {
+                    assertEquals(msg+"index "+k+" of VARBINARY value: ", expectedVarbinary[k], actualVarbinary[k]);
+                }
+            }
+            else if (expectedObj instanceof Byte[]) {
+                Byte[] expectedVarbinary = (Byte[]) expectedObj;
+                Byte[] actualVarbinary = SerializationHelper.boxUpByteArray(actualRow.getVarbinary(i));
+                assertEquals(msg+"length of VARBINARY: ", expectedVarbinary.length, actualVarbinary.length);
+                for (int k = 0; k < expectedVarbinary.length; k++) {
+                    assertEquals(msg+"index "+k+" of VARBINARY value: ", expectedVarbinary[k], actualVarbinary[k]);
+                }
+            }
+            else if (expectedObj instanceof String) {
+                String val = (String)expectedObj;
+                assertEquals(msg, val, actualRow.getString(i));
+            }
+            else if (expectedObj instanceof TimestampType) {
+                TimestampType val = (TimestampType)expectedObj;
+                assertEquals(msg, val, actualRow.getTimestampAsTimestamp(i));
+            }
+            else {
+                fail("Unexpected type in expected row: " + expectedObj.getClass().getSimpleName());
+            }
+        }
+    }
+
+    /**
+     * Accept expected table contents as 2-dimensional array of objects, to make it easy to write tests.
+     * Currently only handles some data types.  Feel free to add more as needed.
+     */
+    public static void assertContentOfTable(Object[][] expectedTable, VoltTable actualTable) {
+        assertApproximateContentOfTable(expectedTable, actualTable, 0.0d);
+    }
+
+    /**
+     * Assert that the expected and actual valus are approximately equal. By
+     * approximately equal we mean that non-floating point values are identical,
+     * and floating point values differ by at most epsilon. If epsilon is zero or negative,
+     * we require equality.
+     *
+     * @param expectedTable
+     * @param actualTable
+     * @param epsilon
+     */
+    public static void assertApproximateContentOfTable(Object[][] expectedTable,
+                                                       VoltTable actualTable,
+                                                       double epsilon) {
+        for (int i = 0; i < expectedTable.length; ++i) {
+            assertTrue("Fewer rows than expected: "
+                    + "expected: " + expectedTable.length + ", "
+                    + "actual: " + i,
+                    actualTable.advanceRow());
+            assertApproximateContentOfRow(i, expectedTable[i], actualTable, epsilon);
+        }
+        assertFalse("More rows than expected: "
+                + "expected " + expectedTable.length + ", "
+                + "actual: " + actualTable.getRowCount(),
+                actualTable.advanceRow());
+    }
+
+    static protected void assertSuccessfulDML(Client client, String stmt) throws NoConnectionsException, IOException, ProcCallException {
+        assertSuccessfulDML(client, stmt, 1L);
+    }
+
+    static protected void assertSuccessfulDML(Client client, String stmt, long returnValue) throws NoConnectionsException, IOException, ProcCallException {
+        VoltTable[] results = null;
+        results = client.callProcedure("@AdHoc", stmt).getResults();
+        assertEquals(1, results.length);
+        assertEquals(returnValue, results[0].asScalarLong());
     }
 
     static protected void verifyStmtFails(Client client, String stmt, String expectedPattern) throws IOException {
@@ -830,7 +1295,8 @@ public class RegressionSuite extends TestCase {
         assertTrue(found);
     }
 
-    static protected void checkQueryPlan(Client client, String query, String...patterns) throws Exception {
+    static protected void checkQueryPlan(Client client, String query, String...patterns)
+            throws NoConnectionsException, IOException, ProcCallException {
         VoltTable vt;
         assert(patterns.length >= 1);
 
@@ -838,7 +1304,9 @@ public class RegressionSuite extends TestCase {
         String vtStr = vt.toString();
 
         for (String pattern : patterns) {
-            assertTrue(vtStr.contains(pattern));
+            if (! vtStr.contains(pattern)) {
+                fail("The explain plan \n" + vtStr + "\n is expected to contain pattern: " + pattern);
+            }
         }
     }
 
@@ -878,4 +1346,139 @@ public class RegressionSuite extends TestCase {
         }
     }
 
+    protected static void truncateTables(Client client, String... tables)
+            throws IOException, ProcCallException {
+        for (String tb : tables) {
+            truncateTable(client, tb);
+        }
+    }
+
+    protected static void truncateTable(Client client, String tb)
+            throws IOException, ProcCallException {
+        client.callProcedure("@AdHoc", "Truncate table " + tb);
+        validateTableOfScalarLongs(client, "select count(*) from " + tb, new long[]{0});
+    }
+
+    protected static void truncateAllTables(Client client) throws Exception {
+        ClientResponse cr;
+        cr = client.callProcedure("@SystemCatalog", "TABLES");
+        assertEquals(cr.getStatus(), ClientResponse.SUCCESS);
+        VoltTable vt = cr.getResults()[0];
+        String allTables[] = new String[vt.getRowCount()];
+        int idx = 0;
+        while (vt.advanceRow()) {
+            allTables[idx++] = vt.getString("TABLE_NAME");
+        }
+        truncateTables(client, allTables);
+    }
+
+
+    /**
+     * Drop everything of the given kind from the database at the
+     * other end if the client.
+     *
+     * @param client
+     * @param kind
+     * @throws Exception
+     */
+    private void dropAllTheThings(Client client, String kind) throws Exception {
+        String sysCatalogKind = kind;
+        if ("view".equals(kind)) {
+            sysCatalogKind = "table";
+        }
+        ClientResponse cr = client.callProcedure("@SystemCatalog", sysCatalogKind + "s");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        VoltTable funcs = cr.getResults()[0];
+        while (funcs.advanceRow()) {
+            String artifactName = funcs.getString(sysCatalogKind.toUpperCase() + "_NAME");
+            if ( "view".equals(kind) ? kind.equalsIgnoreCase(funcs.getString("TABLE_TYPE")) : true ) {
+                if ( ! artifactName.contains(".")) {
+                    cr = client.callProcedure("@AdHoc", String.format("drop %s %s;", kind, artifactName));
+                }
+                assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+            }
+        }
+    }
+
+    /**
+     * Drop all user defined functions from the database at the other end of the client.
+     *
+     * @param client
+     * @throws Exception
+     */
+    public void dropAllFunctions(Client client) throws Exception {
+        dropAllTheThings(client, "function");
+    }
+
+    /**
+     * Drop all views from the database at the other end of the client.
+     *
+     * @param client
+     * @throws Exception
+     */
+    public void dropAllViews(Client client) throws Exception {
+        dropAllTheThings(client, "view");
+    }
+
+    /**
+     * Drop all tables from the database at the other end of the client.  This
+     * will not drop views.
+     *
+     * @param client
+     * @throws Exception
+     */
+    public void dropAllTables(Client client) throws Exception {
+        dropAllTheThings(client, "table");
+    }
+
+    /**
+     * Drop all procedures from the database at the other end of the client.
+     * This will not drop tables on which these procedures depend.
+     *
+     * @param client
+     * @throws Exception
+     */
+    public void dropAllProcedures(Client client) throws Exception {
+        dropAllTheThings(client, "procedure");
+    }
+
+    /**
+     * Drop everything from the database at the other end of the client.  This
+     * will drop things in the right order, so that no dependences will be
+     * violated.
+     *
+     * @param client
+     * @throws Exception
+     */
+    public void dropEverything(Client client) throws Exception {
+        dropAllProcedures(client);
+        dropAllViews(client);
+        dropAllTables(client);
+        dropAllFunctions(client);
+    }
+
+    /**
+     * A convenience method to build a Properties object initialized with an
+     * arbitrary number of property/value pairs.
+     * This one method with its scalable argument list replaces the
+     * calls to the constructor and to the ugly and nonscalable
+     * putAll(ImmutableMap.<String, String> of(...) and/or
+     * a verbose list of calls to setProperty.
+     * @param alternatingKeysAndValues property-name-1, string-value-1,
+     *        property-name-2, string-value-2, ...
+     * @return the new Properties object
+     **/
+    public static Properties buildProperties(String... alternatingKeysAndValues) {
+        Properties properties = new Properties();
+        int nStrings = alternatingKeysAndValues.length;
+        // Each key should have a value, so the length should be even.
+        assert nStrings % 2 == 0;
+        for (int ii = 0; ii < nStrings; ii += 2) {
+            // Initialize each key value pair from adjacent strings.
+            properties.setProperty(
+                    alternatingKeysAndValues[ii],
+                    alternatingKeysAndValues[ii+1]);
+        }
+        return properties;
+    }
 }

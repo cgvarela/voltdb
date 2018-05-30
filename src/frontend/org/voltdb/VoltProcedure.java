@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -76,54 +76,48 @@ public abstract class VoltProcedure {
         return new Expectation(Type.EXPECT_SCALAR_MATCH, scalar);
     }
 
-    private ProcedureRunner m_runner;
+    ProcedureRunner m_runner;
     private boolean m_initialized;
 
     /**
-     * Returns the VoltDB 3.0 transaction ID which is a sequence number instead
-     * of the time-based ID used in pre-3.0 VoltDB. It is less unique in that sequence numbers can revert
-     * if you load data from one volt database into another via CSV or other external methods
-     * that bypass the combination of snapshot restore/command log replay which maintains these per partition
-     * sequence numbers.
+     * <p>Allow VoltProcedures access to a unique ID generated for each transaction.</p>
      *
-     * @deprecated Do not use outside of VoltDB internal code.
-     * @return VoltDB 3.0-esque transaction id.
+     * <p>Note that calling it repeatedly within a single transaction will return the same
+     * number.</p>
      *
-     */
-    @Deprecated
-    public long getVoltPrivateRealTransactionIdDontUseMe() {
-        return m_runner.getTransactionId();
-    }
-
-    /**
-     * YOU MUST BE RUNNING NTP AND START NTP WITH THE -x OPTION
-     * TO GET GOOD BEHAVIOR FROM THIS METHOD - e.g. time always goes forward
+     * <p>The id consists of a time based component in the most significant bits followed
+     * by a counter, and then a partition id to allow parallel unique number generation.</p>
      *
-     * Allow VoltProcedures access to a unique ID generated for each transaction. Synonym of getUniqueID
-     * that is kept around to support legacy applications
+     * <p>Currently, if the host clock moves backwards this call may block while the clock
+     * catches up to its previous max. Running NTP with the -x option will prevent this in
+     * most cases. It may not be sufficient to 100% avoid this, especially in managed and/or
+     * virtualized environments (like AWS). The value will always be unique, but clocks moving
+     * backwards may affect system throughput.</p>
      *
-     * The id consists of a time based component in the most significant bits followed
-     * by a counter, and then a generator id to allow parallel unique number generation
-     * @return transaction id
-     * @deprecated Use the synonymous getUniqueId() instead
-     */
-    @Deprecated
-    public long getTransactionId() {
-        return m_runner.getUniqueId();
-    }
-
-    /**
-     * YOU MUST BE RUNNING NTP AND START NTP WITH THE -x OPTION
-     * TO GET GOOD BEHAVIOR FROM THIS METHOD - e.g. time always goes forward
+     * <p>Since this number is initially based on the wall clock time (UTC), it is not
+     * guaranteed to be unique across different clusters of VoltDB. If you snapshot, then
+     * move time back by 1HR, then load that snapshot into a new VoltDB cluster, you might
+     * see duplicate ids for up to 1HR. Since the wall clocks VoltDB uses are UTC, and it
+     * takes some amount of time to snapshot and restore, this is a pretty easy corner case
+     * to avoid. Note that failure and recovery from disk using command logs will preserve
+     * unique id continuity even if the clock shifts.</p>
      *
-     * Allow VoltProcedures access to a unique ID generated for each transaction.
+     * <p>In many cases it may make sense to generate unique ids on the client-side and pass
+     * them to the server. Please reach out to VoltDB if you have questions about when using
+     * this method is appropriate.</p>
      *
-     * The id consists of a time based component in the most significant bits followed
-     * by a counter, and then a generator id to allow parallel unique number generation
      * @return An ID that is unique to this transaction
      */
     public long getUniqueId() {
         return m_runner.getUniqueId();
+    }
+
+    /**
+     * Get the ID of cluster that the client connects to.
+     * @return An ID that identifies the VoltDB cluster
+     */
+    public int getClusterId() {
+        return m_runner.getClusterId();
     }
 
 
@@ -142,9 +136,9 @@ public abstract class VoltProcedure {
     {
         if (m_initialized) {
             throw new IllegalStateException("VoltProcedure has already been initialized");
-        } else {
-            m_initialized = true;
         }
+
+        m_initialized = true;
         m_runner = procRunner;
     }
 
@@ -224,28 +218,6 @@ public abstract class VoltProcedure {
         return m_runner.getTransactionTime();
     }
 
-    /*
-     * Commented this out and nothing broke? It's cluttering up the javadoc AW 9/2/11
-     */
-//    public void checkExpectation(Expectation expectation, VoltTable table) {
-//        Expectation.check(m_procedureName, "NO STMT", 0, expectation, table);
-//    }
-
-    /**
-     * <p>Queue the adhoc SQL statement for execution. The adhoc SQL statement will have
-     * to be planned which is orders of magnitude slower then using a precompiled SQL statements.</p>
-     *
-     * <p>If the query is parameterized it is possible to pass in the parameters.</p>
-     *
-     * @deprecated This method is experimental and not intended for production use yet.
-     * @param sql An ad-hoc SQL string to be run transactionally in this procedure.
-     * @param args Parameter values for the SQL string.
-     */
-    @Deprecated
-    public void voltQueueSQLExperimental(String sql, Object... args) {
-        m_runner.voltQueueSQL(sql, args);
-    }
-
     /**
      * <p>Queue the SQL {@link org.voltdb.SQLStmt statement} for execution with the specified argument list,
      * and an Expectation describing the expected results. If the Expectation is not met then VoltAbortException
@@ -269,7 +241,7 @@ public abstract class VoltProcedure {
      * @see <a href="#allowable_params">List of allowable parameter types</a>
      */
     public void voltQueueSQL(final SQLStmt stmt, Object... args) {
-        m_runner.voltQueueSQL(stmt, args);
+        m_runner.voltQueueSQL(stmt, (Expectation) null, args);
     }
 
     /**
@@ -311,7 +283,7 @@ public abstract class VoltProcedure {
     }
 
     /**
-     * Set the string that will be turned to the client. This is not the same as teh status string
+     * Set the string that will be turned to the client. This is not the same as the status string
      * returned by the server. If a procedure sets the status string and then rolls back or causes an error
      * the status string will still be propagated back to the client so it is always necessary to check
      * the server status code first.
@@ -320,32 +292,5 @@ public abstract class VoltProcedure {
      */
     public void setAppStatusString(String statusString) {
         m_runner.setAppStatusString(statusString);
-    }
-
-    /**
-     * <p>Currently unsupported in VoltDB.</p>
-     * <p>Batch load method for populating a table with a large number of records.</p>
-     *
-     * <p>Faster then calling {@link #voltQueueSQL(SQLStmt, Object...)} and {@link #voltExecuteSQL()} to
-     * insert one row at a time.</p>
-     *
-     * @deprecated This method is not fully tested to be used in all contexts.
-     * @param clusterName Name of the cluster containing the database, containing the table
-     *                    that the records will be loaded in.
-     * @param databaseName Name of the database containing the table to be loaded.
-     * @param tableName Name of the table records should be loaded in.
-     * @param data {@link org.voltdb.VoltTable VoltTable} containing the records to be loaded.
-     *             {@link org.voltdb.VoltTable.ColumnInfo VoltTable.ColumnInfo} schema must match the schema of the table being
-     *             loaded.
-     * @param returnUniqueViolations If true will not fail on unique violations, will return the violating rows.
-     * @return A byte array representing constraint violations in a semi-opaque format.
-     * @throws VoltAbortException on failure.
-     */
-    @Deprecated
-    public byte[] voltLoadTable(String clusterName, String databaseName,
-                              String tableName, VoltTable data, boolean returnUniqueViolations, boolean shouldDRStream)
-    throws VoltAbortException
-    {
-        return m_runner.voltLoadTable(clusterName, databaseName, tableName, data, returnUniqueViolations, shouldDRStream);
     }
 }

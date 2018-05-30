@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,84 +17,75 @@
 
 package org.voltdb;
 
-import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
-import org.apache.zookeeper_voltpatches.KeeperException;
 import org.voltcore.utils.Pair;
-
+import org.voltdb.ProducerDRGateway.MeshMemberInfo;
 
 // Interface through which the outside world can interact with the consumer side
 // of DR. Currently, there's not much to do here, since the subsystem is
 // largely self-contained
 public interface ConsumerDRGateway extends Promotable {
 
-    public abstract void updateCatalog(CatalogContext catalog);
+    /**
+     * Notify the consumer of catalog updates.
+     * @param catalog             The new catalog.
+     * @param newConnectionSource The new connection source if changed, or null if not.
+     * @param snapshotSource The cluster from which this joiner cluster should request snapshot.
+     *        Use -1 if there is no preferred snapshot source. If this joiner cluster has already
+     *        received snapshot, this change will have no effect.
+     */
+    void updateCatalog(CatalogContext catalog, String newConnectionSource, byte snapshotSource);
 
-    public abstract boolean isActive();
+    void swapTables(final Set<Pair<String, Long>> swappedTables);
 
-    public abstract void initialize(boolean resumeReplication);
-
-    public abstract void shutdown(boolean blocking) throws InterruptedException;
-
-    public abstract void notifyOfLastSeenSegmentId(int partitionId, long maxDRId, long maxUniqueId);
-
-    public abstract void notifyOfLastAppliedSegmentId(int partitionId, long endDRId, long endUniqueId);
+    Map<Byte, DRRoleStats.State> getStates();
 
     /**
-     * Should only be called before initialization. Populate all previously seen
-     * [drId, uniqueId] pairs from remote clusters
-     * @param lastAppliedIds A map of clusterIds to maps of partitionIds to [drId, uniqueId] pairs.
-     * The outer map is assumed to be of size 1
+     * If this cluster was a joiner (at some point) dataSourceCluster will not be -1. If this is the case
+     * the trackers for this clusterId must exist. If they don't exist, this cluster did not finish loading
+     * the snapshot as a joiner.
+     * @param dataSourceCluster
+     * @param expectedClusterMembers
      */
-    public abstract void populateLastAppliedSegmentIds(Map<Integer, Map<Integer, Pair<Long, Long>>> lastAppliedIds);
+    void setInitialConversationMembership(byte dataSourceCluster, List<MeshMemberInfo> expectedClusterMembers);
 
-    public abstract void assertSequencing(int partitionId, long drId);
+    void initialize(StartAction startAction, boolean doActualRecover);
 
-    public abstract Map<Integer, Map<Integer, Pair<Long, Long>>> getLastReceivedBinaryLogIds();
+    void shutdown(final boolean isRestart, final boolean blocking) throws InterruptedException, ExecutionException;
 
-    public static class DummyConsumerDRGateway implements ConsumerDRGateway {
-        Map<Integer, Map<Integer, Pair<Long, Long>>> ids = new HashMap<Integer, Map<Integer, Pair<Long, Long>>>();
+    void restart(final boolean blocking) throws InterruptedException, ExecutionException;
 
-        @Override
-        public void initialize(boolean resumeReplication) {}
+    DRConsumerMpCoordinator getDRConsumerMpCoordinator();
 
-        @Override
-        public void acceptPromotion() throws InterruptedException,
-                ExecutionException, KeeperException {}
+    void clusterUnrecoverable(byte clusterId, Throwable t);
 
-        @Override
-        public void updateCatalog(CatalogContext catalog) {}
+    void queueStartCursors(final MeshMemberInfo newMeshMember);
 
-        @Override
-        public boolean isActive() { return false; }
+    void producerTopologyUpdated(final MeshMemberInfo existingCluster);
 
-        @Override
-        public void shutdown(boolean blocking) {}
+    void startConsumerDispatcher(final MeshMemberInfo member);
 
-        @Override
-        public void notifyOfLastSeenSegmentId(int partitionId, long maxDRId, long maxUniqueId) {}
+    void deactivateConsumerDispatcher(byte clusterId);
 
-        @Override
-        public void notifyOfLastAppliedSegmentId(int partitionId, long endDRId, long endUniqueId) {
-            int dataCenter = (int)(endDRId >> 55);
-            if (!ids.containsKey(dataCenter)) {
-                ids.put(dataCenter, new HashMap<Integer, Pair<Long, Long>>());
-            }
-            ids.get(dataCenter).put(partitionId, Pair.of(endDRId, endUniqueId));
-        };
+    void addLocallyLedPartition(int partitionId);
 
-        @Override
-        public void assertSequencing(int partitionId, long drId) {}
+    boolean isSafeForReset(byte clusterId);
 
-        @Override
-        public Map<Integer, Map<Integer, Pair<Long, Long>>> getLastReceivedBinaryLogIds() { return ids; }
+    void pauseConsumerDispatcher(byte clusterId);
 
-        @Override
-        public void populateLastAppliedSegmentIds(Map<Integer, Map<Integer, Pair<Long, Long>>> lastAppliedIds) {
-            ids.clear();
-            ids.putAll(lastAppliedIds);
-        }
-    }
+    void resumeConsumerDispatcher(byte clusterId);
+
+    void resetDrAppliedTracker(byte clusterId);
+
+    void populateEmptyTrackersIfNeeded(byte producerClusterId, int producerPartitionCount, boolean hasReplicatedStream);
+
+    void dropLocal();
+
+    boolean isSafeForDropLocal();
+
+    void handleProducerClusterElasticChange(byte producerClusterId, int newProducerPartitionCount);
 }

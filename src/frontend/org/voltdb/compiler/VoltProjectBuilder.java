@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -32,6 +32,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.JAXBElement;
@@ -39,31 +40,39 @@ import javax.xml.bind.JAXBException;
 import javax.xml.bind.Marshaller;
 
 import org.voltdb.BackendTarget;
-import org.voltdb.ProcInfoData;
+import org.voltdb.ProcedurePartitionData;
 import org.voltdb.catalog.Catalog;
 import org.voltdb.common.Constants;
-import org.voltdb.compiler.VoltCompiler.VoltCompilerException;
-import org.voltdb.compiler.deploymentfile.AdminModeType;
 import org.voltdb.compiler.deploymentfile.ClusterType;
 import org.voltdb.compiler.deploymentfile.CommandLogType;
 import org.voltdb.compiler.deploymentfile.ConnectionType;
 import org.voltdb.compiler.deploymentfile.DeploymentType;
+import org.voltdb.compiler.deploymentfile.DiskLimitType;
+import org.voltdb.compiler.deploymentfile.DrRoleType;
 import org.voltdb.compiler.deploymentfile.DrType;
 import org.voltdb.compiler.deploymentfile.ExportConfigurationType;
 import org.voltdb.compiler.deploymentfile.ExportType;
+import org.voltdb.compiler.deploymentfile.FeatureNameType;
 import org.voltdb.compiler.deploymentfile.HeartbeatType;
 import org.voltdb.compiler.deploymentfile.HttpdType;
 import org.voltdb.compiler.deploymentfile.HttpdType.Jsonapi;
+import org.voltdb.compiler.deploymentfile.ImportConfigurationType;
+import org.voltdb.compiler.deploymentfile.ImportType;
+import org.voltdb.compiler.deploymentfile.KeyOrTrustStoreType;
 import org.voltdb.compiler.deploymentfile.PartitionDetectionType;
-import org.voltdb.compiler.deploymentfile.PartitionDetectionType.Snapshot;
 import org.voltdb.compiler.deploymentfile.PathsType;
 import org.voltdb.compiler.deploymentfile.PathsType.Voltdbroot;
 import org.voltdb.compiler.deploymentfile.PropertyType;
+import org.voltdb.compiler.deploymentfile.ResourceMonitorType;
+import org.voltdb.compiler.deploymentfile.ResourceMonitorType.Memorylimit;
 import org.voltdb.compiler.deploymentfile.SchemaType;
 import org.voltdb.compiler.deploymentfile.SecurityProviderString;
 import org.voltdb.compiler.deploymentfile.SecurityType;
 import org.voltdb.compiler.deploymentfile.ServerExportEnum;
+import org.voltdb.compiler.deploymentfile.ServerImportEnum;
 import org.voltdb.compiler.deploymentfile.SnapshotType;
+import org.voltdb.compiler.deploymentfile.SnmpType;
+import org.voltdb.compiler.deploymentfile.SslType;
 import org.voltdb.compiler.deploymentfile.SystemSettingsType;
 import org.voltdb.compiler.deploymentfile.SystemSettingsType.Temptables;
 import org.voltdb.compiler.deploymentfile.UsersType;
@@ -72,9 +81,6 @@ import org.voltdb.export.ExportDataProcessor;
 import org.voltdb.utils.NotImplementedException;
 
 import com.google_voltpatches.common.collect.ImmutableMap;
-import org.voltdb.compiler.deploymentfile.ImportConfigurationType;
-import org.voltdb.compiler.deploymentfile.ImportType;
-import org.voltdb.compiler.deploymentfile.ServerImportEnum;
 
 /**
  * Alternate (programmatic) interface to VoltCompiler. Give the class all of
@@ -85,7 +91,7 @@ import org.voltdb.compiler.deploymentfile.ServerImportEnum;
  */
 public class VoltProjectBuilder {
 
-    final LinkedHashSet<String> m_schemas = new LinkedHashSet<String>();
+    final LinkedHashSet<String> m_schemas = new LinkedHashSet<>();
     private StringBuffer transformer = new StringBuffer();
 
     public static final class ProcedureInfo {
@@ -93,14 +99,32 @@ public class VoltProjectBuilder {
         private final Class<?> cls;
         private final String name;
         private final String sql;
-        private final String partitionInfo;
+        private final ProcedurePartitionData partitionData;
 
-        public ProcedureInfo(final String roles[], final Class<?> cls) {
+        public ProcedureInfo(final Class<?> cls) {
+            this.roles = new String[0];
+            this.cls = cls;
+            this.name = cls.getSimpleName();
+            this.sql = null;
+            this.partitionData = null;
+        }
+
+        public ProcedureInfo(final Class<?> cls, final ProcedurePartitionData partitionInfo) {
+            this.roles = new String[0];
+            this.cls = cls;
+            this.name = cls.getSimpleName();
+            this.sql = null;
+            this.partitionData = partitionInfo;
+            assert(this.name != null);
+        }
+
+        public ProcedureInfo(final Class<?> cls, final ProcedurePartitionData partitionInfo,
+                final String roles[]) {
             this.roles = roles;
             this.cls = cls;
             this.name = cls.getSimpleName();
             this.sql = null;
-            this.partitionInfo = null;
+            this.partitionData = partitionInfo;
             assert(this.name != null);
         }
 
@@ -108,7 +132,7 @@ public class VoltProjectBuilder {
                 final String roles[],
                 final String name,
                 final String sql,
-                final String partitionInfo) {
+                final ProcedurePartitionData partitionInfo) {
             assert(name != null);
             this.roles = roles;
             this.cls = null;
@@ -119,7 +143,7 @@ public class VoltProjectBuilder {
             else {
                 this.sql = sql + ";";
             }
-            this.partitionInfo = partitionInfo;
+            this.partitionData = partitionInfo;
             assert(this.name != null);
         }
 
@@ -219,23 +243,18 @@ public class VoltProjectBuilder {
         final int hostCount;
         final int sitesPerHost;
         final int replication;
-        final boolean useCustomAdmin;
-        final int adminPort;
-        final boolean adminOnStartup;
+        final int clusterId;
 
-        public DeploymentInfo(int hostCount, int sitesPerHost, int replication,
-                boolean useCustomAdmin, int adminPort, boolean adminOnStartup) {
+        public DeploymentInfo(int hostCount, int sitesPerHost, int replication, int id) {
             this.hostCount = hostCount;
             this.sitesPerHost = sitesPerHost;
             this.replication = replication;
-            this.useCustomAdmin = useCustomAdmin;
-            this.adminPort = adminPort;
-            this.adminOnStartup = adminOnStartup;
+            this.clusterId = id;
         }
     }
 
-    final LinkedHashSet<UserInfo> m_users = new LinkedHashSet<UserInfo>();
-    final LinkedHashSet<Class<?>> m_supplementals = new LinkedHashSet<Class<?>>();
+    final LinkedHashSet<UserInfo> m_users = new LinkedHashSet<>();
+    final LinkedHashSet<Class<?>> m_supplementals = new LinkedHashSet<>();
 
     // zero defaults to first open port >= the default port.
     // negative one means disabled in the deployment file.
@@ -243,13 +262,19 @@ public class VoltProjectBuilder {
     // be omitted from the deployment XML.
     int m_httpdPortNo = -1;
     boolean m_jsonApiEnabled = true;
+    boolean m_sslEnabled = false;
+    boolean m_sslExternal = false;
+    boolean m_sslDR = false;
+
+    String m_keystore;
+    String m_keystorePassword;
+    String m_certstore;
+    String m_certstorePassword;
 
     BackendTarget m_target = BackendTarget.NATIVE_EE_JNI;
     PrintStream m_compilerDebugPrintStream = null;
     boolean m_securityEnabled = false;
     String m_securityProvider = SecurityProviderString.HASH.value();
-
-    final Map<String, ProcInfoData> m_procInfoOverrides = new HashMap<String, ProcInfoData>();
 
     private String m_snapshotPath = null;
     private int m_snapshotRetain = 0;
@@ -261,6 +286,8 @@ public class VoltProjectBuilder {
     private boolean m_ppdEnabled = false;
     private String m_ppdPrefix = "none";
 
+    private Integer m_heartbeatTimeout = null;
+
     private String m_internalSnapshotPath;
     private String m_commandLogPath;
     private Boolean m_commandLogSync;
@@ -269,29 +296,71 @@ public class VoltProjectBuilder {
     private Integer m_commandLogFsyncInterval;
     private Integer m_commandLogMaxTxnsBeforeFsync;
 
+    private Boolean m_snmpEnabled = false;
+    private String m_snmpTarget = null;
+
     private Integer m_snapshotPriority;
 
     private Integer m_maxTempTableMemory = 100;
 
     private List<String> m_diagnostics;
 
-    private List<HashMap<String, Object>> m_ilImportConnectors = new ArrayList<HashMap<String, Object>>();
-    private List<HashMap<String, Object>> m_elExportConnectors = new ArrayList<HashMap<String, Object>>();
+    private List<HashMap<String, Object>> m_ilImportConnectors = new ArrayList<>();
+    private List<HashMap<String, Object>> m_elExportConnectors = new ArrayList<>();
 
     private Integer m_deadHostTimeout = null;
 
     private Integer m_elasticThroughput = null;
     private Integer m_elasticDuration = null;
     private Integer m_queryTimeout = null;
+    private Integer m_procedureLogThreshold = null;
+    private String m_rssLimit = null;
+    private String m_snmpRssLimit = null;
+    private Integer m_resourceCheckInterval = null;
+    private Map<FeatureNameType, String> m_featureDiskLimits;
+    private Map<FeatureNameType, String> m_snmpFeatureDiskLimits;
 
     private boolean m_useDDLSchema = false;
 
     private String m_drMasterHost;
+    private Integer m_preferredSource;
+    private Boolean m_drConsumerConnectionEnabled = null;
+    private String m_drConsumerSslPropertyFile = null;
     private Boolean m_drProducerEnabled = null;
-    private Integer m_drProducerClusterId = null;
+    private DrRoleType m_drRole = DrRoleType.MASTER;
 
     public VoltProjectBuilder setQueryTimeout(int target) {
         m_queryTimeout = target;
+        return this;
+    }
+
+    public VoltProjectBuilder setProcedureLogThreshold(int target) {
+        m_procedureLogThreshold = target;
+        return this;
+    }
+
+    public VoltProjectBuilder setRssLimit(String limit) {
+        m_rssLimit = limit;
+        return this;
+    }
+
+    public VoltProjectBuilder setSnmpRssLimit(String limit) {
+        m_snmpRssLimit = limit;
+        return this;
+    }
+
+    public VoltProjectBuilder setResourceCheckInterval(int seconds) {
+        m_resourceCheckInterval = seconds;
+        return this;
+    }
+
+    public VoltProjectBuilder setFeatureDiskLimits(Map<FeatureNameType, String> featureDiskLimits) {
+        m_featureDiskLimits = featureDiskLimits;
+        return this;
+    }
+
+    public VoltProjectBuilder setSnmpFeatureDiskLimits(Map<FeatureNameType, String> featureDiskLimits) {
+        m_snmpFeatureDiskLimits = featureDiskLimits;
         return this;
     }
 
@@ -313,10 +382,23 @@ public class VoltProjectBuilder {
         m_useDDLSchema = useIt;
     }
 
+    public void configureSnmp(String target) {
+        m_snmpTarget = target;
+        m_snmpEnabled = true;
+    }
+
     public void configureLogging(String internalSnapshotPath, String commandLogPath, Boolean commandLogSync,
             Boolean commandLogEnabled, Integer fsyncInterval, Integer maxTxnsBeforeFsync, Integer logSize) {
         m_internalSnapshotPath = internalSnapshotPath;
         m_commandLogPath = commandLogPath;
+        m_commandLogSync = commandLogSync;
+        m_commandLogEnabled = commandLogEnabled;
+        m_commandLogFsyncInterval = fsyncInterval;
+        m_commandLogMaxTxnsBeforeFsync = maxTxnsBeforeFsync;
+        m_commandLogSize = logSize;
+    }
+
+    public void configureLogging(Boolean commandLogSync, Boolean commandLogEnabled, Integer fsyncInterval, Integer maxTxnsBeforeFsync, Integer logSize) {
         m_commandLogSync = commandLogSync;
         m_commandLogEnabled = commandLogEnabled;
         m_commandLogFsyncInterval = fsyncInterval;
@@ -403,16 +485,23 @@ public class VoltProjectBuilder {
         addSchema(schemaURL.getPath());
     }
 
-    /**
-     * This is test code written by Ryan, even though it was
-     * committed by John.
+    /** Creates a temporary file for the supplied schema text.
+     * The file is not left open, and will be deleted upon process exit.
      */
-    public void addLiteralSchema(String ddlText) throws IOException {
-        File temp = File.createTempFile("literalschema", "sql");
+    public static File createFileForSchema(String ddlText) throws IOException {
+        File temp = File.createTempFile("literalschema", ".sql");
         temp.deleteOnExit();
         FileWriter out = new FileWriter(temp);
         out.write(ddlText);
         out.close();
+        return temp;
+    }
+
+    /**
+     * Adds the supplied schema by creating a temp file for it.
+     */
+    public void addLiteralSchema(String ddlText) throws IOException {
+        File temp = createFileForSchema(ddlText);
         addSchema(URLEncoder.encode(temp.getAbsolutePath(), "UTF-8"));
     }
 
@@ -439,25 +528,44 @@ public class VoltProjectBuilder {
     }
 
     public void addStmtProcedure(String name, String sql) {
-        addStmtProcedure(name, sql, null);
+        addStmtProcedure(name, sql, new ProcedurePartitionData());
     }
 
-    public void addStmtProcedure(String name, String sql, String partitionInfo) {
-        addProcedures(new ProcedureInfo(new String[0], name, sql, partitionInfo));
+    // compatible with old deprecated syntax for test ONLY
+    public void addStmtProcedure(String name, String sql, String partitionInfoString) {
+        addProcedures(new ProcedureInfo(new String[0], name, sql,
+                ProcedurePartitionData.fromPartitionInfoString(partitionInfoString)));
     }
 
-    public void addProcedures(final Class<?>... procedures) {
-        final ArrayList<ProcedureInfo> procArray = new ArrayList<ProcedureInfo>();
+    public void addStmtProcedure(String name, String sql, ProcedurePartitionData partitionData) {
+        addProcedures(new ProcedureInfo(new String[0], name, sql, partitionData));
+    }
+
+    public void addMultiPartitionProcedures(final Class<?>... procedures) {
+        final ArrayList<ProcedureInfo> procArray = new ArrayList<>();
         for (final Class<?> procedure : procedures)
-            procArray.add(new ProcedureInfo(new String[0], procedure));
+            procArray.add(new ProcedureInfo(procedure));
         addProcedures(procArray);
     }
 
+    public void addProcedure(final Class<?> cls) {
+        addProcedures(new ProcedureInfo(cls));
+    }
+
+    public void addProcedure(final Class<?> cls, String partitionString) {
+        addProcedures(new ProcedureInfo(cls,
+                ProcedurePartitionData.fromPartitionInfoString(partitionString)));
+    }
+
+    public void addProcedure(final Class<?> cls, final ProcedurePartitionData partitionInfo) {
+        addProcedures(new ProcedureInfo(cls, partitionInfo));
+    }
+
     /*
-     * List of roles permitted to invoke the procedure
+     * List of procedures permitted to invoke the procedure
      */
     public void addProcedures(final ProcedureInfo... procedures) {
-        final ArrayList<ProcedureInfo> procArray = new ArrayList<ProcedureInfo>();
+        final ArrayList<ProcedureInfo> procArray = new ArrayList<>();
         for (final ProcedureInfo procedure : procedures)
             procArray.add(procedure);
         addProcedures(procArray);
@@ -465,7 +573,7 @@ public class VoltProjectBuilder {
 
     public void addProcedures(final Iterable<ProcedureInfo> procedures) {
         // check for duplicates and existings
-        final HashSet<ProcedureInfo> newProcs = new HashSet<ProcedureInfo>();
+        final HashSet<ProcedureInfo> newProcs = new HashSet<>();
         for (final ProcedureInfo procedure : procedures) {
             assert(newProcs.contains(procedure) == false);
             newProcs.add(procedure);
@@ -485,27 +593,37 @@ public class VoltProjectBuilder {
                 roleInfo.replace(length - 1, length, " ");
             }
 
-            if(procedure.cls != null) {
-                transformer.append("CREATE PROCEDURE " + roleInfo.toString() + " FROM CLASS " + procedure.cls.getName() + ";");
-            }
-            else if(procedure.sql != null) {
-                transformer.append("CREATE PROCEDURE " + procedure.name + roleInfo.toString() + " AS " + procedure.sql);
+            String partitionProcedureStatement = "";
+            if(procedure.partitionData != null && procedure.partitionData.m_tableName != null) {
+                String tableName = procedure.partitionData.m_tableName;
+                String columnName = procedure.partitionData.m_columnName;
+                String paramIndex = procedure.partitionData.m_paramIndex;
+
+                partitionProcedureStatement = " PARTITION ON TABLE "+ tableName + " COLUMN " + columnName +
+                        " PARAMETER " + paramIndex + " ";
+
+                if (procedure.partitionData.m_tableName2 != null) {
+                    String tableName2 = procedure.partitionData.m_tableName2;
+                    String columnName2 = procedure.partitionData.m_columnName2;
+                    String paramIndex2 = procedure.partitionData.m_paramIndex2;
+                    partitionProcedureStatement += " AND ON TABLE "+ tableName2 + " COLUMN " + columnName2 +
+                            " PARAMETER " + paramIndex2 + " ";
+                }
             }
 
-            if(procedure.partitionInfo != null) {
-                String[] parameter = procedure.partitionInfo.split(":");
-                String[] token = parameter[0].split("\\.");
-                String position = "";
-                if(Integer.parseInt(parameter[1].trim()) > 0) {
-                    position = " PARAMETER " + parameter[1];
-                }
-                transformer.append("PARTITION PROCEDURE " + procedure.name + " ON TABLE " + token[0] + " COLUMN " + token[1] + position + ";");
+            if(procedure.cls != null) {
+                transformer.append("CREATE PROCEDURE " + partitionProcedureStatement + roleInfo.toString() +
+                        " FROM CLASS " + procedure.cls.getName() + ";");
+            }
+            else if(procedure.sql != null) {
+                transformer.append("CREATE PROCEDURE " + procedure.name + partitionProcedureStatement + roleInfo.toString() +
+                        " AS " + procedure.sql);
             }
         }
     }
 
     public void addSupplementalClasses(final Class<?>... supplementals) {
-        final ArrayList<Class<?>> suppArray = new ArrayList<Class<?>>();
+        final ArrayList<Class<?>> suppArray = new ArrayList<>();
         for (final Class<?> supplemental : supplementals)
             suppArray.add(supplemental);
         addSupplementalClasses(suppArray);
@@ -513,7 +631,7 @@ public class VoltProjectBuilder {
 
     public void addSupplementalClasses(final Iterable<Class<?>> supplementals) {
         // check for duplicates and existings
-        final HashSet<Class<?>> newSupps = new HashSet<Class<?>>();
+        final HashSet<Class<?>> newSupps = new HashSet<>();
         for (final Class<?> supplemental : supplementals) {
             assert(newSupps.contains(supplemental) == false);
             assert(m_supplementals.contains(supplemental) == false);
@@ -535,6 +653,28 @@ public class VoltProjectBuilder {
 
     public void setJSONAPIEnabled(final boolean enabled) {
         m_jsonApiEnabled = enabled;
+    }
+
+    public void setSslEnabled(final boolean enabled) {
+        m_sslEnabled = enabled;
+    }
+
+    public void setSslExternal(final boolean enabled) {
+        m_sslExternal = enabled;
+    }
+
+    public void setSslDR(final boolean enabled) {
+        m_sslDR = enabled;
+    }
+
+    public void setKeyStoreInfo(final String path, final String password) {
+        m_keystore = getResourcePath(path);
+        m_keystorePassword = password;
+    }
+
+    public void setCertStoreInfo(final String path, final String password) {
+        m_certstore = getResourcePath(path);;
+        m_certstorePassword = password;
     }
 
     public void setSecurityEnabled(final boolean enabled, boolean createAdminUser) {
@@ -565,19 +705,30 @@ public class VoltProjectBuilder {
         m_snapshotPath = path;
     }
 
-    public void setPartitionDetectionSettings(final String snapshotPath, final String ppdPrefix)
-    {
-        m_ppdEnabled = true;
-        m_snapshotPath = snapshotPath;
-        m_ppdPrefix = ppdPrefix;
+    public void setPartitionDetectionEnabled(boolean ppdEnabled) {
+        m_ppdEnabled = ppdEnabled;
+    }
+
+    public void setHeartbeatTimeoutSeconds(int seconds) {
+        m_heartbeatTimeout = seconds;
     }
 
     public void addImport(boolean enabled, String importType, String importFormat, String importBundle, Properties config) {
-        HashMap<String, Object> importConnector = new HashMap<String, Object>();
+         addImport(enabled, importType, importFormat, importBundle, config, new Properties());
+    }
+
+    public void addImport(boolean enabled, String importType, String importFormat, String importBundle, Properties config, Properties formatConfig) {
+        HashMap<String, Object> importConnector = new HashMap<>();
         importConnector.put("ilEnabled", enabled);
         importConnector.put("ilModule", importBundle);
 
         importConnector.put("ilConfig", config);
+        if (importFormat != null) {
+            importConnector.put("ilFormatter", importFormat);
+        }
+        if (formatConfig != null) {
+            importConnector.put("ilFormatterConfig", formatConfig);
+        }
 
         if ((importType != null) && !importType.trim().isEmpty()) {
             importConnector.put("ilImportType", importType);
@@ -593,14 +744,16 @@ public class VoltProjectBuilder {
     }
 
     public void addExport(boolean enabled, String exportTarget, Properties config, String target) {
-        HashMap<String, Object> exportConnector = new HashMap<String, Object>();
+        HashMap<String, Object> exportConnector = new HashMap<>();
         exportConnector.put("elLoader", "org.voltdb.export.processors.GuestProcessor");
         exportConnector.put("elEnabled", enabled);
 
         if (config == null) {
             config = new Properties();
+            //If No config provided use file with outdir to user-specific tmp.
+            config.put("outdir", "/tmp/" + System.getProperty("user.name"));
             config.putAll(ImmutableMap.<String, String>of(
-                    "type","tsv", "batched","true", "with-schema","true", "nonce","zorag", "outdir","exportdata"
+                    "type","tsv", "batched","true", "with-schema","true", "nonce","zorag"
                     ));
         }
         exportConnector.put("elConfig", config);
@@ -619,17 +772,6 @@ public class VoltProjectBuilder {
         addExport(enabled, null, null);
     }
 
-    public void setTableAsExportOnly(String name) {
-        assert(name != null);
-        transformer.append("Export TABLE " + name + ";");
-    }
-
-    public void setTableAsExportOnly(String name, String stream) {
-        assert(name != null);
-        assert(stream != null);
-        transformer.append("Export TABLE " + name + " TO STREAM " + stream + ";");
-    }
-
     public void setCompilerDebugPrintStream(final PrintStream out) {
         m_compilerDebugPrintStream = out;
     }
@@ -643,40 +785,53 @@ public class VoltProjectBuilder {
         m_drMasterHost = drMasterHost;
     }
 
-    public void setDrProducerEnabled(int clusterId)
+    public void setPreferredSource(int preferredSource) {
+        m_preferredSource = preferredSource;
+    }
+
+    public void setDrConsumerConnectionEnabled() {
+        m_drConsumerConnectionEnabled = true;
+    }
+
+    public void setDrConsumerConnectionDisabled() {
+        m_drConsumerConnectionEnabled = false;
+    }
+
+    public void setDrConsumerSslPropertyFile(String sslPropertyFile) {
+        m_drConsumerSslPropertyFile = getResourcePath(sslPropertyFile);
+    }
+
+    public void setDrProducerEnabled()
     {
         m_drProducerEnabled = true;
-        m_drProducerClusterId = new Integer(clusterId);
     }
 
-    public void setDrProducerDisabled(int clusterId)
+    public void setDrProducerDisabled()
     {
         m_drProducerEnabled = false;
-        m_drProducerClusterId = new Integer(clusterId);
     }
 
-    /**
-     * Override the procedure annotation with the specified values for a
-     * specified procedure.
-     *
-     * @param procName The name of the procedure to override the annotation.
-     * @param info The values to use instead of the annotation.
-     */
-    public void overrideProcInfoForProcedure(final String procName, final ProcInfoData info) {
-        assert(procName != null);
-        assert(info != null);
-        m_procInfoOverrides.put(procName, info);
+    public void setDrNone() {
+        m_drRole = DrRoleType.NONE;
+    }
+
+    public void setDrReplica() {
+        m_drRole = DrRoleType.REPLICA;
+    }
+
+    public void setXDCR() {
+        m_drRole = DrRoleType.XDCR;
     }
 
     public boolean compile(final String jarPath) {
-        return compile(jarPath, 1, 1, 0, null) != null;
+        return compile(jarPath, 1, 1, 0, null, 0) != null;
     }
 
     public boolean compile(final String jarPath,
             final int sitesPerHost,
             final int replication) {
         return compile(jarPath, sitesPerHost, 1,
-                replication, null) != null;
+                replication, null, 0) != null;
     }
 
     public boolean compile(final String jarPath,
@@ -684,7 +839,15 @@ public class VoltProjectBuilder {
             final int hostCount,
             final int replication) {
         return compile(jarPath, sitesPerHost, hostCount,
-                replication, null) != null;
+                replication, null, 0) != null;
+    }
+
+    public Catalog compile(final String jarPath,
+            final int sitesPerHost,
+            final int hostCount,
+            final int replication, final int clusterId) {
+        return compile(jarPath, sitesPerHost, hostCount,
+                replication, null, clusterId);
     }
 
     public Catalog compile(final String jarPath,
@@ -692,9 +855,18 @@ public class VoltProjectBuilder {
             final int hostCount,
             final int replication,
             final String voltRoot) {
-        VoltCompiler compiler = new VoltCompiler();
+       return compile(jarPath, sitesPerHost, hostCount, replication, voltRoot, 0);
+    }
+
+    public Catalog compile(final String jarPath,
+            final int sitesPerHost,
+            final int hostCount,
+            final int replication,
+            final String voltRoot,
+            final int clusterId) {
+        VoltCompiler compiler = new VoltCompiler(m_drRole == DrRoleType.XDCR);
         if (compile(compiler, jarPath, voltRoot,
-                       new DeploymentInfo(hostCount, sitesPerHost, replication, false, 0, false),
+                       new DeploymentInfo(hostCount, sitesPerHost, replication, clusterId),
                        m_ppdEnabled, m_snapshotPath, m_ppdPrefix)) {
             return compiler.getCatalog();
         } else {
@@ -705,22 +877,14 @@ public class VoltProjectBuilder {
     public boolean compile(
             final String jarPath, final int sitesPerHost,
             final int hostCount, final int replication,
-            final String voltRoot, final boolean ppdEnabled, final String snapshotPath, final String ppdPrefix)
+            final String voltRoot, final int clusterId,
+            final boolean ppdEnabled, final String snapshotPath,
+            final String ppdPrefix)
     {
-        VoltCompiler compiler = new VoltCompiler();
+        VoltCompiler compiler = new VoltCompiler(m_drRole == DrRoleType.XDCR);
         return compile(compiler, jarPath, voltRoot,
-                       new DeploymentInfo(hostCount, sitesPerHost, replication, false, 0, false),
+                       new DeploymentInfo(hostCount, sitesPerHost, replication, clusterId),
                        ppdEnabled, snapshotPath, ppdPrefix);
-    }
-
-    public boolean compile(final String jarPath, final int sitesPerHost,
-            final int hostCount, final int replication,
-            final int adminPort, final boolean adminOnStartup)
-    {
-        VoltCompiler compiler = new VoltCompiler();
-        return compile(compiler, jarPath, null,
-                       new DeploymentInfo(hostCount, sitesPerHost, replication, true, adminPort, adminOnStartup),
-                       m_ppdEnabled,  m_snapshotPath, m_ppdPrefix);
     }
 
     public boolean compile(final VoltCompiler compiler,
@@ -734,6 +898,7 @@ public class VoltProjectBuilder {
         assert(jarPath != null);
         assert(deployment == null || deployment.sitesPerHost >= 1);
         assert(deployment == null || deployment.hostCount >= 1);
+        assert(deployment == null || (deployment.clusterId >= 0 && deployment.clusterId <= 127));
 
         String deploymentVoltRoot = voltRoot;
         if (deployment != null) {
@@ -773,18 +938,12 @@ public class VoltProjectBuilder {
 
         String[] schemaPath = m_schemas.toArray(new String[0]);
 
-        compiler.setProcInfoOverrides(m_procInfoOverrides);
         if (m_diagnostics != null) {
             compiler.enableDetailedCapture();
         }
 
         boolean success = false;
-        try {
-            success = compiler.compileFromDDL(jarPath, schemaPath);
-        } catch (VoltCompilerException e1) {
-            e1.printStackTrace();
-            return false;
-        }
+        success = compiler.compileFromDDL(jarPath, schemaPath);
 
         m_diagnostics = compiler.harvestCapturedDetail();
         if (m_compilerDebugPrintStream != null) {
@@ -795,28 +954,50 @@ public class VoltProjectBuilder {
             }
         }
         if (deployment != null) {
-            try {
-                m_pathToDeployment = writeDeploymentFile(deploymentVoltRoot, deployment);
-            } catch (Exception e) {
-                System.out.println("Failed to create deployment file in testcase.");
-                e.printStackTrace();
-                System.out.println("hostcount: " + deployment.hostCount);
-                System.out.println("sitesPerHost: " + deployment.sitesPerHost);
-                System.out.println("replication: " + deployment.replication);
-                System.out.println("voltRoot: " + deploymentVoltRoot);
-                System.out.println("ppdEnabled: " + ppdEnabled);
-                System.out.println("snapshotPath: " + snapshotPath);
-                System.out.println("ppdPrefix: " + ppdPrefix);
-                System.out.println("adminEnabled: " + deployment.useCustomAdmin);
-                System.out.println("adminPort: " + deployment.adminPort);
-                System.out.println("adminOnStartup: " + deployment.adminOnStartup);
-
-                // sufficient to escape and fail test cases?
-                throw new RuntimeException(e);
-            }
+            compileDeploymentOnly(deploymentVoltRoot, deployment);
         }
 
         return success;
+    }
+
+    /** Generate a deployment file based on the options passed and set in this object.
+     * @pre This VoltProjectBuilder has all its options set, except those passed as arguments to this method.
+     * @param voltDbRoot
+     * @param hostCount
+     * @param sitesPerHost
+     * @param replication
+     * @param clusterId
+     * @return path to deployment file that was written
+     */
+    public String compileDeploymentOnly(String voltDbRoot,
+                                        int hostCount,
+                                        int sitesPerHost,
+                                        int replication,
+                                        int clusterId)
+    {
+        DeploymentInfo deployment = new DeploymentInfo(hostCount, sitesPerHost, replication, clusterId);
+        return compileDeploymentOnly(voltDbRoot, deployment);
+    }
+
+    private String compileDeploymentOnly(String voltDbRoot, DeploymentInfo deployment)
+    {
+        try {
+            m_pathToDeployment = writeDeploymentFile(voltDbRoot, deployment);
+        } catch (Exception e) {
+            System.out.println("Failed to create deployment file in testcase.");
+            e.printStackTrace();
+            System.out.println("hostcount: " + deployment.hostCount);
+            System.out.println("sitesPerHost: " + deployment.sitesPerHost);
+            System.out.println("clusterId: " + deployment.clusterId);
+            System.out.println("replication: " + deployment.replication);
+            System.out.println("voltRoot: " + voltDbRoot);
+            System.out.println("ppdEnabled: " + m_ppdEnabled);
+            System.out.println("snapshotPath: " + m_snapshotPath);
+            System.out.println("ppdPrefix: " + m_ppdPrefix);
+            // sufficient to escape and fail test cases?
+            throw new RuntimeException(e);
+        }
+        return m_pathToDeployment;
     }
 
     /**
@@ -827,7 +1008,7 @@ public class VoltProjectBuilder {
      * @return true if successful
      */
     public boolean compileWithDefaultDeployment(final String jarPath) {
-        VoltCompiler compiler = new VoltCompiler();
+        VoltCompiler compiler = new VoltCompiler(false);
         return compile(compiler, jarPath, null, null, m_ppdEnabled, m_snapshotPath, m_ppdPrefix);
     }
 
@@ -885,7 +1066,7 @@ public class VoltProjectBuilder {
      */
     private String writeDeploymentFile(
             String voltRoot, DeploymentInfo dinfo) throws IOException, JAXBException
-            {
+    {
         org.voltdb.compiler.deploymentfile.ObjectFactory factory =
             new org.voltdb.compiler.deploymentfile.ObjectFactory();
 
@@ -899,14 +1080,17 @@ public class VoltProjectBuilder {
         cluster.setHostcount(dinfo.hostCount);
         cluster.setSitesperhost(dinfo.sitesPerHost);
         cluster.setKfactor(dinfo.replication);
+        cluster.setId(dinfo.clusterId);
         cluster.setSchema(m_useDDLSchema ? SchemaType.DDL : SchemaType.CATALOG);
 
         // <paths>
         PathsType paths = factory.createPathsType();
         deployment.setPaths(paths);
-        Voltdbroot voltdbroot = factory.createPathsTypeVoltdbroot();
-        paths.setVoltdbroot(voltdbroot);
-        voltdbroot.setPath(voltRoot);
+        if ((voltRoot != null) && !voltRoot.trim().isEmpty()) {
+            Voltdbroot voltdbroot = factory.createPathsTypeVoltdbroot();
+            paths.setVoltdbroot(voltdbroot);
+            voltdbroot.setPath(voltRoot);
+        }
 
         if (m_snapshotPath != null) {
             PathsType.Snapshots snapshotPathElement = factory.createPathsTypeSnapshots();
@@ -975,44 +1159,16 @@ public class VoltProjectBuilder {
         PartitionDetectionType ppd = factory.createPartitionDetectionType();
         deployment.setPartitionDetection(ppd);
         ppd.setEnabled(m_ppdEnabled);
-        Snapshot ppdsnapshot = factory.createPartitionDetectionTypeSnapshot();
-        ppd.setSnapshot(ppdsnapshot);
-        ppdsnapshot.setPrefix(m_ppdPrefix);
 
-        // <admin-mode>
-        // can't be disabled, but only write out the non-default config if
-        // requested by a test. otherwise, take the implied defaults (or
-        // whatever local cluster overrides on the command line).
-        if (dinfo.useCustomAdmin) {
-            AdminModeType admin = factory.createAdminModeType();
-            deployment.setAdminMode(admin);
-            admin.setPort(dinfo.adminPort);
-            admin.setAdminstartup(dinfo.adminOnStartup);
+        // <heartbeat>
+        // don't include this element if not explicitly set
+        if (m_heartbeatTimeout != null) {
+            HeartbeatType hb = factory.createHeartbeatType();
+            deployment.setHeartbeat(hb);
+            hb.setTimeout((int) m_heartbeatTimeout);
         }
 
-        // <systemsettings>
-        SystemSettingsType systemSettingType = factory.createSystemSettingsType();
-        Temptables temptables = factory.createSystemSettingsTypeTemptables();
-        temptables.setMaxsize(m_maxTempTableMemory);
-        systemSettingType.setTemptables(temptables);
-        if (m_snapshotPriority != null) {
-            SystemSettingsType.Snapshot snapshot = factory.createSystemSettingsTypeSnapshot();
-            snapshot.setPriority(m_snapshotPriority);
-            systemSettingType.setSnapshot(snapshot);
-        }
-        if (m_elasticThroughput != null || m_elasticDuration != null) {
-            SystemSettingsType.Elastic elastic = factory.createSystemSettingsTypeElastic();
-            if (m_elasticThroughput != null) elastic.setThroughput(m_elasticThroughput);
-            if (m_elasticDuration != null) elastic.setDuration(m_elasticDuration);
-            systemSettingType.setElastic(elastic);
-        }
-        if (m_queryTimeout != null) {
-            SystemSettingsType.Query query = factory.createSystemSettingsTypeQuery();
-            query.setTimeout(m_queryTimeout);
-            systemSettingType.setQuery(query);
-        }
-
-        deployment.setSystemsettings(systemSettingType);
+        deployment.setSystemsettings(createSystemSettingsType(factory));
 
         // <users>
         if (m_users.size() > 0) {
@@ -1040,6 +1196,24 @@ public class VoltProjectBuilder {
             }
         }
 
+        SslType ssl = factory.createSslType();
+        deployment.setSsl(ssl);
+        ssl.setEnabled(m_sslEnabled);
+        ssl.setExternal(m_sslExternal);
+        ssl.setDr(m_sslDR);
+        if (m_keystore!=null) {
+            KeyOrTrustStoreType store = factory.createKeyOrTrustStoreType();
+            store.setPath(m_keystore);
+            store.setPassword(m_keystorePassword);
+            ssl.setKeystore(store);
+        }
+        if (m_certstore!=null) {
+            KeyOrTrustStoreType store = factory.createKeyOrTrustStoreType();
+            store.setPath(m_certstore);
+            store.setPassword(m_certstorePassword);
+            ssl.setTruststore(store);
+        }
+
         // <httpd>. Disabled unless port # is configured by a testcase
         // Omit element(s) when null.
         HttpdType httpd = factory.createHttpdType();
@@ -1049,6 +1223,14 @@ public class VoltProjectBuilder {
         Jsonapi json = factory.createHttpdTypeJsonapi();
         httpd.setJsonapi(json);
         json.setEnabled(m_jsonApiEnabled);
+
+        //SNMP
+        SnmpType snmpType = factory.createSnmpType();
+        if (m_snmpEnabled) {
+            snmpType.setEnabled(true);
+            snmpType.setTarget(m_snmpTarget);
+            deployment.setSnmp(snmpType);
+        }
 
         // <export>
         ExportType export = factory.createExportType();
@@ -1065,7 +1247,7 @@ public class VoltProjectBuilder {
                 exportConfig.setExportconnectorclass(System.getProperty(ExportDataProcessor.EXPORT_TO_TYPE));
             }
 
-            exportConfig.setStream((String)exportConnector.get("elGroup"));
+            exportConfig.setTarget((String)exportConnector.get("elGroup"));
 
             Properties config = (Properties)exportConnector.get("elConfig");
             if((config != null) && (config.size() > 0)) {
@@ -1095,8 +1277,17 @@ public class VoltProjectBuilder {
             importConfig.setType(importType);
             importConfig.setModule((String )importConnector.get("ilModule"));
 
+            String formatter = (String) importConnector.get("ilFormatter");
+            if (formatter != null) {
+                importConfig.setFormat(formatter);
+            }
+
             Properties config = (Properties)importConnector.get("ilConfig");
             if((config != null) && (config.size() > 0)) {
+                String version = (String)config.get("version");
+                if (version != null) {
+                    importConfig.setVersion(version);
+                }
                 List<PropertyType> configProperties = importConfig.getProperty();
 
                 for( Object nameObj: config.keySet()) {
@@ -1109,21 +1300,35 @@ public class VoltProjectBuilder {
                     configProperties.add(prop);
                 }
             }
+
+            Properties formatConfig = (Properties) importConnector.get("ilFormatterConfig");
+            if ((formatConfig != null) && (formatConfig.size() > 0)) {
+                List<PropertyType> configProperties = importConfig.getFormatProperty();
+
+                for (Object nameObj : formatConfig.keySet()) {
+                    String name = String.class.cast(nameObj);
+                    PropertyType prop = factory.createPropertyType();
+                    prop.setName(name);
+                    prop.setValue(formatConfig.getProperty(name));
+
+                    configProperties.add(prop);
+                }
+            }
+
             importt.getConfiguration().add(importConfig);
         }
 
-        if (m_drProducerClusterId != null || (m_drMasterHost != null && !m_drMasterHost.isEmpty())) {
-            DrType dr = factory.createDrType();
-            deployment.setDr(dr);
-            if (m_drProducerClusterId != null) {
-                dr.setListen(m_drProducerEnabled);
-                dr.setId(m_drProducerClusterId);
-            }
-            if (m_drMasterHost != null && !m_drMasterHost.isEmpty()) {
-                ConnectionType conn = factory.createConnectionType();
-                dr.setConnection(conn);
-                conn.setSource(m_drMasterHost);
-            }
+        DrType dr = factory.createDrType();
+        deployment.setDr(dr);
+        dr.setListen(m_drProducerEnabled);
+        dr.setRole(m_drRole);
+        if (m_drMasterHost != null && !m_drMasterHost.isEmpty()) {
+            ConnectionType conn = factory.createConnectionType();
+            dr.setConnection(conn);
+            conn.setSource(m_drMasterHost);
+            conn.setPreferredSource(m_preferredSource);
+            conn.setEnabled(m_drConsumerConnectionEnabled);
+            conn.setSsl(m_drConsumerSslPropertyFile);
         }
 
         // Have some yummy boilerplate!
@@ -1135,8 +1340,101 @@ public class VoltProjectBuilder {
         marshaller.marshal(doc, file);
         final String deploymentPath = file.getPath();
         return deploymentPath;
+    }
+
+
+    private SystemSettingsType createSystemSettingsType(org.voltdb.compiler.deploymentfile.ObjectFactory factory)
+    {
+        SystemSettingsType systemSettingType = factory.createSystemSettingsType();
+        Temptables temptables = factory.createSystemSettingsTypeTemptables();
+        temptables.setMaxsize(m_maxTempTableMemory);
+        systemSettingType.setTemptables(temptables);
+        if (m_snapshotPriority != null) {
+            SystemSettingsType.Snapshot snapshot = factory.createSystemSettingsTypeSnapshot();
+            snapshot.setPriority(m_snapshotPriority);
+            systemSettingType.setSnapshot(snapshot);
+        }
+        if (m_elasticThroughput != null || m_elasticDuration != null) {
+            SystemSettingsType.Elastic elastic = factory.createSystemSettingsTypeElastic();
+            if (m_elasticThroughput != null) elastic.setThroughput(m_elasticThroughput);
+            if (m_elasticDuration != null) elastic.setDuration(m_elasticDuration);
+            systemSettingType.setElastic(elastic);
+        }
+        if (m_queryTimeout != null) {
+            SystemSettingsType.Query query = factory.createSystemSettingsTypeQuery();
+            query.setTimeout(m_queryTimeout);
+            systemSettingType.setQuery(query);
+        }
+        if (m_procedureLogThreshold != null) {
+            SystemSettingsType.Procedure procedure = factory.createSystemSettingsTypeProcedure();
+            procedure.setLoginfo(m_procedureLogThreshold);
+            systemSettingType.setProcedure(procedure);
+        }
+        if (m_rssLimit != null || m_snmpRssLimit != null) {
+            ResourceMonitorType monitorType = initializeResourceMonitorType(systemSettingType, factory);
+            Memorylimit memoryLimit = factory.createResourceMonitorTypeMemorylimit();
+            if (m_rssLimit != null) {
+                memoryLimit.setSize(m_rssLimit);
+            }
+            if (m_snmpRssLimit != null) {
+                memoryLimit.setAlert(m_snmpRssLimit);
+            }
+            monitorType.setMemorylimit(memoryLimit);
+        }
+
+        if (m_resourceCheckInterval != null) {
+            ResourceMonitorType monitorType = initializeResourceMonitorType(systemSettingType, factory);
+            monitorType.setFrequency(m_resourceCheckInterval);
+        }
+
+        setupDiskLimitType(systemSettingType, factory);
+
+        return systemSettingType;
+    }
+
+    private void setupDiskLimitType(SystemSettingsType systemSettingsType,
+            org.voltdb.compiler.deploymentfile.ObjectFactory factory) {
+
+        Set<FeatureNameType> featureNames = new HashSet<> ();
+
+        if (m_featureDiskLimits!= null && !m_featureDiskLimits.isEmpty()) {
+            featureNames.addAll(m_featureDiskLimits.keySet());
+        }
+        if (m_snmpFeatureDiskLimits!= null && !m_snmpFeatureDiskLimits.isEmpty()) {
+            featureNames.addAll(m_snmpFeatureDiskLimits.keySet());
+        }
+
+        if (featureNames.isEmpty()) {
+            return;
+        }
+
+        DiskLimitType diskLimit = factory.createDiskLimitType();
+        for (FeatureNameType featureName : featureNames) {
+                DiskLimitType.Feature feature = factory.createDiskLimitTypeFeature();
+                feature.setName(featureName);
+                if (m_featureDiskLimits !=null && m_featureDiskLimits.containsKey(featureName)) {
+                    feature.setSize(m_featureDiskLimits.get(featureName));
+                }
+                if (m_snmpFeatureDiskLimits !=null && m_snmpFeatureDiskLimits.containsKey(featureName)) {
+                    feature.setAlert(m_snmpFeatureDiskLimits.get(featureName));
+                }
+                diskLimit.getFeature().add(feature);
+        }
+
+        ResourceMonitorType monitorType = initializeResourceMonitorType(systemSettingsType, factory);
+        monitorType.setDisklimit(diskLimit);
+    }
+
+    private ResourceMonitorType initializeResourceMonitorType(SystemSettingsType systemSettingType,
+            org.voltdb.compiler.deploymentfile.ObjectFactory factory) {
+            ResourceMonitorType monitorType = systemSettingType.getResourcemonitor();
+            if (monitorType == null) {
+                monitorType = factory.createResourceMonitorType();
+                systemSettingType.setResourcemonitor(monitorType);
             }
 
+            return monitorType;
+    }
 
     public File getPathToVoltRoot() {
         return new File(m_voltRootPath);
@@ -1146,7 +1444,7 @@ public class VoltProjectBuilder {
     public void enableDiagnostics() {
         // This empty dummy value enables the feature and provides a default fallback return value,
         // but gets replaced in the normal code path.
-        m_diagnostics = new ArrayList<String>();
+        m_diagnostics = new ArrayList<>();
     }
 
     /** Access the VoltCompiler's recent plan output, for diagnostic purposes */
@@ -1154,6 +1452,11 @@ public class VoltProjectBuilder {
         List<String> result = m_diagnostics;
         m_diagnostics = null;
         return result;
+    }
+
+    private String getResourcePath(String resource) {
+        URL res = this.getClass().getResource(resource);
+        return res == null ? resource : res.getPath();
     }
 
 }

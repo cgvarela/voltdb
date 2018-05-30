@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -31,14 +31,14 @@ import java.util.List;
 import java.util.Set;
 
 import org.junit.After;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 import org.junit.Before;
 import org.junit.Test;
 
 import org.voltcore.network.*;
 import org.voltdb.client.ClientResponse;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class TestStatsAgent {
 
@@ -91,7 +91,7 @@ public class TestStatsAgent {
                 { 42, "42" },
                 { 43, "43" }
         });
-        m_mvoltdb.getStatsAgent().registerStatsSource(StatsSelector.DRPARTITION, 0, partitionSource);
+        m_mvoltdb.getStatsAgent().registerStatsSource(StatsSelector.DRPRODUCERPARTITION, 0, partitionSource);
 
         List<VoltTable.ColumnInfo> nodeColumns = Arrays.asList(new VoltTable.ColumnInfo[] {
                 new VoltTable.ColumnInfo( "c1", VoltType.STRING),
@@ -102,7 +102,7 @@ public class TestStatsAgent {
                 { "43", 43 },
                 { "42", 43 }
         });
-        m_mvoltdb.getStatsAgent().registerStatsSource(StatsSelector.DRNODE, 0, nodeSource);
+        m_mvoltdb.getStatsAgent().registerStatsSource(StatsSelector.DRPRODUCERNODE, 0, nodeSource);
 
         List<VoltTable.ColumnInfo> snapshotStatusColumns = Arrays.asList(new VoltTable.ColumnInfo[] {
             new VoltTable.ColumnInfo("c1", VoltType.STRING),

@@ -17,7 +17,6 @@ package com.google_voltpatches.common.hash;
 import static com.google_voltpatches.common.base.Preconditions.checkNotNull;
 
 import com.google_voltpatches.common.annotations.Beta;
-
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -47,12 +46,14 @@ public final class HashingOutputStream extends FilterOutputStream {
     this.hasher = checkNotNull(hashFunction.newHasher());
   }
 
-  @Override public void write(int b) throws IOException {
+  @Override
+  public void write(int b) throws IOException {
     hasher.putByte((byte) b);
     out.write(b);
   }
 
-  @Override public void write(byte[] bytes, int off, int len) throws IOException {
+  @Override
+  public void write(byte[] bytes, int off, int len) throws IOException {
     hasher.putBytes(bytes, off, len);
     out.write(bytes, off, len);
   }
@@ -68,7 +69,8 @@ public final class HashingOutputStream extends FilterOutputStream {
   // Overriding close() because FilterOutputStream's close() method pre-JDK8 has bad behavior:
   // it silently ignores any exception thrown by flush(). Instead, just close the delegate stream.
   // It should flush itself if necessary.
-  @Override public void close() throws IOException {
+  @Override
+  public void close() throws IOException {
     out.close();
   }
 }

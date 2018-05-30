@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -42,6 +42,7 @@ import org.apache.zookeeper_voltpatches.server.ServerCnxn;
 import org.apache.zookeeper_voltpatches.server.ZooKeeperServer;
 import org.json_voltpatches.JSONObject;
 import org.voltcore.TransactionIdManager;
+import org.voltcore.logging.Level;
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.messaging.AgreementTaskMessage;
 import org.voltcore.messaging.BinaryPayloadMessage;
@@ -55,6 +56,7 @@ import org.voltcore.messaging.RecoveryMessage;
 import org.voltcore.messaging.TransactionInfoBaseMessage;
 import org.voltcore.messaging.VoltMessage;
 import org.voltcore.utils.CoreUtils;
+import org.voltcore.utils.RateLimitedLogger;
 
 import com.google_voltpatches.common.collect.ImmutableSet;
 
@@ -353,7 +355,14 @@ public class AgreementSite implements org.apache.zookeeper_voltpatches.server.Zo
     private long m_lastHeartbeatTime = System.nanoTime();
     private void processMessage(VoltMessage message) throws Exception {
         if (!m_hsIds.contains(message.m_sourceHSId)) {
-            m_recoveryLog.info("Dropping message " + message + " because it is not from a known up site");
+            String messageFormat = "Dropping message %s because it is not from a known up site";
+            RateLimitedLogger.tryLogForMessage(m_lastHeartbeatTime,
+                                               10000,
+                                               TimeUnit.MILLISECONDS,
+                                               m_agreementLog,
+                                               Level.INFO,
+                                               messageFormat,
+                                               message);
             return;
         }
         if (message instanceof TransactionInfoBaseMessage) {
@@ -611,17 +620,36 @@ public class AgreementSite implements org.apache.zookeeper_voltpatches.server.Zo
                     true,
                     null);
         }
-        Map<Long, Long> initiatorSafeInitPoint = m_meshArbiter.reconfigureOnFault(m_hsIds, faultMessage);
-        if (initiatorSafeInitPoint.isEmpty()) return;
+        Set<Long> unknownFaultedHosts = new TreeSet<>();
 
-        Set<Long> failedSites = initiatorSafeInitPoint.keySet();
-        handleSiteFaults(failedSites,initiatorSafeInitPoint);
+        // This one line is a biggie. Gets agreement on what the post-fault cluster will be.
+        Map<Long, Long> initiatorSafeInitPoint = m_meshArbiter.reconfigureOnFault(m_hsIds, faultMessage, unknownFaultedHosts);
+
+        ImmutableSet<Long> failedSites = ImmutableSet.copyOf(initiatorSafeInitPoint.keySet());
+
+        // check if nothing actually happened
+        if (initiatorSafeInitPoint.isEmpty() && unknownFaultedHosts.isEmpty()) {
+            return;
+        }
 
         ImmutableSet.Builder<Integer> failedHosts = ImmutableSet.builder();
         for (long hsId: failedSites) {
             failedHosts.add(CoreUtils.getHostIdFromHSId(hsId));
         }
+        // Remove any hosts associated with failed sites that we don't know
+        // about, as could be the case with a failure early in a rejoin
+        for (long hsId : unknownFaultedHosts) {
+            failedHosts.add(CoreUtils.getHostIdFromHSId(hsId));
+        }
         m_failedHostsCallback.disconnect(failedHosts.build());
+
+        // Handle the failed sites after the failedHostsCallback to ensure
+        // that partition detection is run first -- as this might release
+        // work back to a client waiting on a failure notice. That's unsafe
+        // if we partitioned.
+        if (!initiatorSafeInitPoint.isEmpty()) {
+            handleSiteFaults(failedSites, initiatorSafeInitPoint);
+        }
 
         m_hsIds.removeAll(failedSites);
     }

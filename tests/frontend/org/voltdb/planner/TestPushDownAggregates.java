@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -124,6 +124,56 @@ public class TestPushDownAggregates extends PlannerTestCase {
                                               ExpressionType.AGGREGATE_MAX});
     }
 
+    //ENG-4980
+    public void testAggregatesOnDistinctPKey() {
+        List<AbstractPlanNode> pn =
+                compileToFragments("SELECT count(distinct PKEY), sum(distinct PKEY), min(distinct PKEY), max(distinct PKEY), avg(distinct PKEY)" +
+                    " FROM T1;");
+        for (AbstractPlanNode apn: pn) {
+            System.out.println(apn.toExplainPlanString());
+        }
+        checkPushedDown(pn, true,
+                        new ExpressionType[] {ExpressionType.AGGREGATE_COUNT,
+                                              ExpressionType.AGGREGATE_SUM,
+                                              ExpressionType.AGGREGATE_MIN,
+                                              ExpressionType.AGGREGATE_MAX,
+                                              ExpressionType.AGGREGATE_SUM,
+                                              ExpressionType.AGGREGATE_COUNT},
+                        new ExpressionType[] {ExpressionType.AGGREGATE_SUM,
+                                              ExpressionType.AGGREGATE_SUM,
+                                              ExpressionType.AGGREGATE_MIN,
+                                              ExpressionType.AGGREGATE_MAX,
+                                              ExpressionType.AGGREGATE_SUM,
+                                              ExpressionType.AGGREGATE_SUM},
+                                              true);
+
+        // Test count(distinct pkey) with other compatible aggs like non-distinct aggs of other columns.
+        pn = compileToFragments("SELECT count(distinct PKEY), count(A1), min(distinct PKEY), max(distinct A1), sum(A1)" +
+                    " FROM T1;");
+        for (AbstractPlanNode apn: pn) {
+            System.out.println(apn.toExplainPlanString());
+        }
+        checkPushedDown(pn, true,
+                        new ExpressionType[] {ExpressionType.AGGREGATE_COUNT,
+                                              ExpressionType.AGGREGATE_COUNT,
+                                              ExpressionType.AGGREGATE_MIN,
+                                              ExpressionType.AGGREGATE_MAX,
+                                              ExpressionType.AGGREGATE_SUM},
+                        new ExpressionType[] {ExpressionType.AGGREGATE_SUM,
+                                              ExpressionType.AGGREGATE_SUM,
+                                              ExpressionType.AGGREGATE_MIN,
+                                              ExpressionType.AGGREGATE_MAX,
+                                              ExpressionType.AGGREGATE_SUM});
+
+        // Negative test case: count(distinct pkey) and count(distinct other) to show that
+        // it only takes one other non-trivial distinct on another column to disable the pushdown.
+        pn = compileToFragments("SELECT count(distinct PKEY), count(distinct A1) FROM T1;");
+        assertTrue(pn.size() == 2);
+        assertTrue(pn.get(1).getChild(0) instanceof AbstractScanPlanNode);
+        AbstractScanPlanNode asp = (AbstractScanPlanNode)pn.get(1).getChild(0);
+        assertTrue(asp.getInlinePlanNode(PlanNodeType.AGGREGATE) == null);
+    }
+
     public void testAllAggregates() {
         List<AbstractPlanNode> pn =
             compileToFragments("SELECT count(*), count(PKEY), sum(PKEY), min(PKEY), max(PKEY), avg(PKEY) FROM T1");
@@ -231,9 +281,9 @@ public class TestPushDownAggregates extends PlannerTestCase {
 
     public void testLimit() {
         List<AbstractPlanNode> pn = compileToFragments("select PKEY from T1 order by PKEY limit 5");
-        PlanNodeList pnl = new PlanNodeList(pn.get(0));
+        PlanNodeList pnl = new PlanNodeList(pn.get(0), false);
         System.out.println(pnl.toDOTString("FRAG0"));
-        pnl = new PlanNodeList(pn.get(1));
+        pnl = new PlanNodeList(pn.get(1), false);
         System.out.println(pnl.toDOTString("FRAG1"));
     }
 

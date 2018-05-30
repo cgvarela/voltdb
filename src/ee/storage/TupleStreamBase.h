@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -41,9 +41,10 @@ const int EL_BUFFER_SIZE = /* 1024; */ (2 * 1024 * 1024) + MAGIC_HEADER_SPACE_FO
 class TupleStreamBase {
 public:
 
-    TupleStreamBase(size_t extraHeaderSpace = 0);
+    TupleStreamBase(size_t defaultBufferSize, size_t extraHeaderSpace = 0, int maxBufferSize = -1);
 
-    virtual ~TupleStreamBase() {
+    virtual ~TupleStreamBase()
+    {
         cleanupManagedBuffers();
     }
 
@@ -58,32 +59,39 @@ public:
      * This allows testcases to use significantly smaller buffers
      * to test buffer rollover.
      */
-    void setDefaultCapacity(size_t capacity);
-    virtual void setSecondaryCapacity(size_t capacity) {};
-
-    virtual void pushExportBuffer(StreamBlock *block, bool sync, bool endOfStream) = 0;
+    void setDefaultCapacityForTest(size_t capacity);
+    virtual void setSecondaryCapacity(size_t capacity) {}
 
     /** truncate stream back to mark */
-    virtual void rollbackTo(size_t mark);
+    virtual void rollbackTo(size_t mark, size_t drRowCost);
 
     /** age out committed data */
-    void periodicFlush(int64_t timeInMillis,
-                       int64_t lastComittedSpHandle);
+    virtual void periodicFlush(int64_t timeInMillis,
+                               int64_t lastComittedSpHandle);
 
     virtual void extendBufferChain(size_t minLength);
+    virtual void pushStreamBuffer(StreamBlock *block, bool sync) = 0;
     void pushPendingBlocks();
     void discardBlock(StreamBlock *sb);
 
     virtual bool checkOpenTransaction(StreamBlock *sb, size_t minLength, size_t& blockSize, size_t& uso) { return false; }
 
+    virtual void handleOpenTransaction(StreamBlock *oldBlock) {}
+
     /** Send committed data to the top end. */
-    void commit(int64_t lastCommittedSpHandle, int64_t spHandle, int64_t txnId, int64_t uniqueId, bool sync, bool flush);
+    void commit(int64_t lastCommittedSpHandle, int64_t spHandle, int64_t uniqueId, bool sync, bool flush);
+
+    /** time interval between flushing partially filled buffers */
+    int64_t m_flushInterval;
 
     /** timestamp of most recent flush() */
     int64_t m_lastFlush;
 
     /** size of buffer requested from the top-end */
     size_t m_defaultCapacity;
+
+    /** max allowed buffer capacity */
+    size_t m_maxCapacity;
 
     /** Universal stream offset. Total bytes appended to this stream. */
     size_t m_uso;
@@ -97,8 +105,6 @@ public:
     /** transaction id of the current (possibly uncommitted) transaction */
     int64_t m_openSpHandle;
 
-    int64_t m_openSequenceNumber;
-
     int64_t m_openUniqueId;
 
     /** Universal stream offset when current transaction was opened */
@@ -109,8 +115,6 @@ public:
 
     /** current committed uso */
     size_t m_committedUso;
-
-    int64_t m_committedSequenceNumber;
 
     int64_t m_committedUniqueId;
 

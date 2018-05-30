@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,6 +18,7 @@
 package org.voltdb.iv2;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
@@ -28,19 +29,20 @@ import java.util.List;
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.messaging.VoltMessage;
 import org.voltcore.utils.CoreUtils;
-import org.voltdb.StoredProcedureInvocation;
 import org.voltdb.TheHashinator;
 import org.voltdb.messaging.CompleteTransactionMessage;
 import org.voltdb.messaging.DumpMessage;
 import org.voltdb.messaging.FragmentTaskMessage;
 import org.voltdb.messaging.Iv2InitiateTaskMessage;
 import org.voltdb.messaging.Iv2RepairLogResponseMessage;
+import org.voltdb.messaging.RepairLogTruncationMessage;
 
 /**
- * The repair log stores messages received from a PI in case they need to be
- * shared with less informed RIs should the PI shed its mortal coil.  This includes
- * recording and sharing messages starting and completing multipartition transactions
- * so that a new MPI can repair the cluster state on promotion.
+ * The repair log stores messages received from a partition initiator (leader) in case
+ * they need to be shared with less informed replica initiators should the partition
+ * initiator (leader) shed its mortal coil.  This includes recording and sharing messages
+ * starting and completing multipartition transactions so that a new MPI can repair the
+ * cluster state on promotion.
  */
 public class RepairLog
 {
@@ -54,15 +56,9 @@ public class RepairLog
     long m_lastSpHandle = Long.MAX_VALUE;
     long m_lastMpHandle = Long.MAX_VALUE;
 
-    /*
-     * Track the last master-cluster unique ID associated with an
-     *  @ApplyBinaryLogSP and @ApplyBinaryLogMP invocation so it can be provided to the
-     *  ReplicaDRGateway on repair
-     */
-    private long m_maxSeenSpBinaryLogUniqueId = Long.MIN_VALUE;
-    private long m_maxSeenMpBinaryLogUniqueId = Long.MIN_VALUE;
-    private long m_maxSeenSpBinaryLogDRId = Long.MIN_VALUE;
-    private long m_maxSeenMpBinaryLogDRId = Long.MIN_VALUE;
+    // Truncation point
+    long m_truncationHandle = Long.MIN_VALUE;
+    final List<TransactionCommitInterest> m_txnCommitInterests = new ArrayList<>();
 
     // is this a partition leader?
     boolean m_isLeader = false;
@@ -146,7 +142,9 @@ public class RepairLog
         // wipe out the SP portion of the existing log. This promotion
         // action always happens after repair is completed.
         if (m_isLeader) {
-            truncate(Long.MAX_VALUE, IS_SP);
+            if (!m_logSP.isEmpty()) {
+                truncate(m_logSP.getLast().getHandle(), IS_SP);
+            }
         }
     }
 
@@ -156,62 +154,71 @@ public class RepairLog
     {
         if (!m_isLeader && msg instanceof Iv2InitiateTaskMessage) {
             final Iv2InitiateTaskMessage m = (Iv2InitiateTaskMessage)msg;
-            // We can't repair read-only SP transactions due to their short-circuited nature.
-            // Just don't log them to the repair log.
-            if (!m.isReadOnly()) {
-                m_lastSpHandle = m.getSpHandle();
-                truncate(m.getTruncationHandle(), IS_SP);
-                m_logSP.add(new Item(IS_SP, m, m.getSpHandle(), m.getTxnId()));
-                if ("@ApplyBinaryLogSP".equals(m.getStoredProcedureName())) {
-                    StoredProcedureInvocation spi = m.getStoredProcedureInvocation();
-                    // params[2] is the end sequence number from the original cluster
-                    Object[] params = spi.getParams().toArray();
-                    m_maxSeenSpBinaryLogDRId = Math.max(m_maxSeenSpBinaryLogDRId, ((Number)params[2]).longValue());
-                    m_maxSeenSpBinaryLogUniqueId = Math.max(m_maxSeenSpBinaryLogUniqueId, ((Number)params[3]).longValue());
-                }
+            // We can't repair read only SP transactions. Just don't log them to the repair log.
+            if (m.isReadOnly()) {
+                return;
             }
-        } else if (msg instanceof FragmentTaskMessage) {
-            final FragmentTaskMessage m = (FragmentTaskMessage) msg;
-            if (!m.isReadOnly()) {
-                truncate(m.getTruncationHandle(), IS_MP);
-                // only log the first fragment of a procedure (and handle 1st case)
-                if (m.getTxnId() > m_lastMpHandle || m_lastMpHandle == Long.MAX_VALUE) {
-                    m_logMP.add(new Item(IS_MP, m, m.getSpHandle(), m.getTxnId()));
-                    m_lastMpHandle = m.getTxnId();
-                    m_lastSpHandle = m.getSpHandle();
-                }
 
-                final Iv2InitiateTaskMessage initiateTask = m.getInitiateTask();
-                if (initiateTask != null && "@ApplyBinaryLogMP".equals(initiateTask.getStoredProcedureName())) {
-                    StoredProcedureInvocation spi = initiateTask.getStoredProcedureInvocation();
-                    // params[3] is the end sequence number id from the original cluster
-                    Object[] params = spi.getParams().toArray();
-                    m_maxSeenMpBinaryLogDRId = Math.max(m_maxSeenMpBinaryLogDRId, ((Number)params[2]).longValue());
-                    m_maxSeenMpBinaryLogUniqueId = Math.max(m_maxSeenMpBinaryLogUniqueId, ((Number)params[3]).longValue());
-                }
+            m_lastSpHandle = m.getSpHandle();
+            truncate(m.getTruncationHandle(), IS_SP);
+
+            //Cann't repair MigratePartitionLeader
+            if ("@MigratePartitionLeader".equalsIgnoreCase(m.getStoredProcedureName())) {
+                return;
+            }
+
+            m_logSP.add(new Item(IS_SP, m, m.getSpHandle(), m.getTxnId()));
+        } else if (msg instanceof FragmentTaskMessage) {
+            boolean newMp = false;
+            final FragmentTaskMessage m = (FragmentTaskMessage) msg;
+            if (m.getTxnId() > m_lastMpHandle || m_lastMpHandle == Long.MAX_VALUE) {
+                m_lastMpHandle = m.getTxnId();
+                newMp = true;
+            }
+
+            // We can't repair read only MP transactions. Just don't log them to the repair log.
+            if (m.isReadOnly()) {
+                return;
+            }
+
+            truncate(m.getTruncationHandle(), IS_MP);
+            // only log the first fragment of a procedure (and handle 1st case)
+            if (newMp) {
+                m_logMP.add(new Item(IS_MP, m, m.getSpHandle(), m.getTxnId()));
+                m_lastSpHandle = m.getSpHandle();
             }
         }
         else if (msg instanceof CompleteTransactionMessage) {
             // a CompleteTransactionMessage which indicates restart is not the end of the
             // transaction.  We don't want to log it in the repair log.
             CompleteTransactionMessage ctm = (CompleteTransactionMessage)msg;
-            if (!ctm.isReadOnly() && !ctm.isRestart()) {
-                truncate(ctm.getTruncationHandle(), IS_MP);
-                m_logMP.add(new Item(IS_MP, ctm, ctm.getSpHandle(), ctm.getTxnId()));
-                //Restore will send a complete transaction message with a lower mp transaction id because
-                //the restore transaction precedes the loading of the right mp transaction id from the snapshot
-                //Hence Math.max
-                m_lastMpHandle = Math.max(m_lastMpHandle, ctm.getTxnId());
-                m_lastSpHandle = ctm.getSpHandle();
+
+            //Restore will send a complete transaction message with a lower mp transaction id because
+            //the restore transaction precedes the loading of the right mp transaction id from the snapshot
+            //Hence Math.max
+            m_lastMpHandle = Math.max(m_lastMpHandle, ctm.getTxnId());
+
+            // We can't repair read only MP transactions. Just don't log them to the repair log.
+            // Restart transaction do not need to be repaired here, don't log them as well.
+            if (ctm.isReadOnly() || ctm.isRestart()) {
+                return;
             }
+
+            truncate(ctm.getTruncationHandle(), IS_MP);
+            m_logMP.add(new Item(IS_MP, ctm, ctm.getSpHandle(), ctm.getTxnId()));
+            m_lastSpHandle = ctm.getSpHandle();
         }
         else if (msg instanceof DumpMessage) {
             String who = CoreUtils.hsIdToString(m_HSId);
-            tmLog.warn("Repair log dump for site: " + who + ", isLeader: " + m_isLeader);
-            tmLog.warn("" + who + ": lastSpHandle: " + m_lastSpHandle + ", lastMpHandle: " + m_lastMpHandle);
+            tmLog.warn("Repair log dump for site: " + who + ", isLeader: " + m_isLeader
+                    + ", " + who + ": lastSpHandle: " + m_lastSpHandle + ", lastMpHandle: " + m_lastMpHandle);
             for (Iv2RepairLogResponseMessage il : contents(0l, false)) {
-               tmLog.warn("" + who + ": msg: " + il);
+               tmLog.warn("[Repair log contents]" + who + ": msg: " + il);
             }
+        }
+        else if (msg instanceof RepairLogTruncationMessage) {
+            final RepairLogTruncationMessage truncateMsg = (RepairLogTruncationMessage) msg;
+            truncate(truncateMsg.getHandle(), IS_SP);
         }
     }
 
@@ -226,6 +233,12 @@ public class RepairLog
         Deque<RepairLog.Item> deq = null;
         if (isSP) {
             deq = m_logSP;
+            if (m_truncationHandle < handle) {
+                m_truncationHandle = handle;
+                for (TransactionCommitInterest interest : m_txnCommitInterests) {
+                    interest.transactionCommitted(m_truncationHandle);
+                }
+            }
         }
         else {
             deq = m_logMP;
@@ -268,12 +281,8 @@ public class RepairLog
         List<Item> items = new LinkedList<Item>();
         // All cases include the log of MP transactions
         items.addAll(m_logMP);
-        long maxSeenBinaryLogUniqueId = m_maxSeenMpBinaryLogUniqueId;
-        long maxSeenBinaryLogDRId = m_maxSeenMpBinaryLogDRId;
         // SP repair requests also want the SP transactions
         if (!forMPI) {
-            maxSeenBinaryLogUniqueId = m_maxSeenSpBinaryLogUniqueId;
-            maxSeenBinaryLogDRId = m_maxSeenSpBinaryLogDRId;
             items.addAll(m_logSP);
         }
 
@@ -281,7 +290,9 @@ public class RepairLog
         Collections.sort(items, m_handleComparator);
 
         int ofTotal = items.size() + 1;
-        tmLog.debug("Responding with " + ofTotal + " repair log parts.");
+        if (tmLog.isDebugEnabled()) {
+            tmLog.debug("Responding with " + ofTotal + " repair log parts.");
+        }
         List<Iv2RepairLogResponseMessage> responses =
             new LinkedList<Iv2RepairLogResponseMessage>();
 
@@ -293,12 +304,10 @@ public class RepairLog
                         ofTotal,
                         m_lastSpHandle,
                         m_lastMpHandle,
-                        TheHashinator.getCurrentVersionedConfigCooked(),
-                        maxSeenBinaryLogDRId,
-                        maxSeenBinaryLogUniqueId);
+                        TheHashinator.getCurrentVersionedConfigCooked());
         responses.add(hheader);
 
-        int seq = responses.size();
+        int seq = responses.size(); // = 1, as the first sequence
 
         Iterator<Item> itemator = items.iterator();
         while (itemator.hasNext()) {
@@ -314,5 +323,10 @@ public class RepairLog
             responses.add(response);
         }
         return responses;
+    }
+
+    public void registerTransactionCommitInterest(TransactionCommitInterest interest)
+    {
+        m_txnCommitInterests.add(interest);
     }
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
+import org.voltdb.ProcedurePartitionData;
 import org.voltdb.compiler.VoltCompiler.ProcedureDescriptor;
 import org.voltdb.compiler.VoltCompiler.VoltCompilerException;
 
@@ -41,15 +42,19 @@ import org.voltdb.compiler.VoltCompiler.VoltCompilerException;
  */
 public class VoltDDLElementTracker {
     final VoltCompiler m_compiler;
-    final Map<String, String> m_partitionMap = new HashMap<String, String>();
+    final Map<String, String> m_partitionMap = new HashMap<>();
     final Map<String, ProcedureDescriptor> m_procedureMap =
-            new HashMap<String, ProcedureDescriptor>();
+            new HashMap<>();
     // map from export group name to a sorted set of table names in that group
     final NavigableMap<String, NavigableSet<String>> m_exportsByTargetName = new TreeMap<>();
     // additional non-procedure classes for the jar
-    final Set<String> m_extraClassses = new TreeSet<String>();
-    final Map<String, String> m_drTables = new LinkedHashMap<String, String>();
-    final Set<String> m_importLines = new TreeSet<String>();
+    final Set<String> m_extraClassses = new TreeSet<>();
+    final Map<String, String> m_drTables = new LinkedHashMap<>();
+    /*
+     * We have to keep track of the dropped functions because
+     * we may need to resurrect them.
+     */
+    final Set<String> m_droppedFunctions = new TreeSet<>();
 
     /**
      * Constructor needs a compiler instance to throw VoltCompilerException.
@@ -89,17 +94,13 @@ public class VoltDDLElementTracker {
         m_extraClassses.addAll(classNames);
     }
 
-    void addImportLine(String importLine) {
-        m_importLines.add(importLine);
-    }
-
     /**
      * Tracks the given procedure descriptor if it is not already tracked
      * @param descriptor a {@link VoltCompiler.ProcedureDescriptor}
      * @return name added to procedure map
      * @throws VoltCompilerException if it is already tracked
      */
-    String add(ProcedureDescriptor descriptor) throws VoltCompilerException
+    public String add(ProcedureDescriptor descriptor) throws VoltCompilerException
     {
         assert descriptor != null;
 
@@ -123,7 +124,7 @@ public class VoltDDLElementTracker {
      * @param Name of procedure being removed
      * @throws VoltCompilerException if the procedure does not exist
      */
-    void removeProcedure(String procName, boolean ifExists) throws VoltCompilerException
+    public void removeProcedure(String procName, boolean ifExists) throws VoltCompilerException
     {
         assert procName != null && ! procName.trim().isEmpty();
 
@@ -145,12 +146,8 @@ public class VoltDDLElementTracker {
      * @throws VoltCompilerException when there is no corresponding tracked
      *   procedure
      */
-    void addProcedurePartitionInfoTo( String procedureName, String partitionInfo)
+    public void addProcedurePartitionInfoTo(String procedureName, ProcedurePartitionData data)
             throws VoltCompilerException {
-
-        assert procedureName != null && ! procedureName.trim().isEmpty();
-        assert partitionInfo != null && ! partitionInfo.trim().isEmpty();
-
         ProcedureDescriptor descriptor = m_procedureMap.get(procedureName);
         if( descriptor == null) {
             throw m_compiler.new VoltCompilerException(String.format(
@@ -160,13 +157,11 @@ public class VoltDDLElementTracker {
 
         // need to re-instantiate as descriptor fields are final
         if( descriptor.m_singleStmt == null) {
-            // the longer form costructor asserts on singleStatement
+            // the longer form constructor asserts on singleStatement
             descriptor = m_compiler.new ProcedureDescriptor(
                     descriptor.m_authGroups,
                     descriptor.m_class,
-                    partitionInfo,
-                    descriptor.m_language,
-                    descriptor.m_scriptImpl);
+                    data);
         }
         else {
             descriptor = m_compiler.new ProcedureDescriptor(
@@ -174,10 +169,8 @@ public class VoltDDLElementTracker {
                     descriptor.m_className,
                     descriptor.m_singleStmt,
                     descriptor.m_joinOrder,
-                    partitionInfo,
+                    data,
                     false,
-                    descriptor.m_language,
-                    descriptor.m_scriptImpl,
                     descriptor.m_class);
         }
         m_procedureMap.put(procedureName, descriptor);
@@ -208,7 +201,7 @@ public class VoltDDLElementTracker {
         // insert the table's name into the export group
         NavigableSet<String> tableGroup = m_exportsByTargetName.get(targetName);
         if (tableGroup == null) {
-            tableGroup = new TreeSet<String>();
+            tableGroup = new TreeSet<>();
             m_exportsByTargetName.put(targetName, tableGroup);
         }
         tableGroup.add(tableName);
@@ -242,4 +235,11 @@ public class VoltDDLElementTracker {
         return m_drTables;
     }
 
+    public void addDroppedFunction(String functionName) {
+        m_droppedFunctions.add(functionName);
+    }
+
+    public Set<String>  allDroppedFunctions() {
+        return m_droppedFunctions;
+    }
 }

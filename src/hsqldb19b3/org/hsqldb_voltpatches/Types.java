@@ -110,6 +110,9 @@ public class Types {
     public static final int SQL_INTERVAL_HOUR_TO_SECOND   = 112;
     public static final int SQL_INTERVAL_MINUTE_TO_SECOND = 113;
 
+    public static final int VOLT_GEOGRAPHY_POINT          = 150;
+    public static final int VOLT_GEOGRAPHY                = 151;
+
     // used where local defines are used in the same range as SQL type numbers
     public static final int SQL_TYPE_NUMBER_LIMIT = 256;
 
@@ -568,8 +571,13 @@ public class Types {
         javaTypeNumbers.put("long", Types.SQL_BIGINT);
         javaTypeNumbers.put("java.lang.Long", Types.SQL_BIGINT);
         javaTypeNumbers.put("[B", Types.SQL_BINARY);
+        javaTypeNumbers.put("[Ljava.lang.Byte;", Types.SQL_BINARY);
         javaTypeNumbers.put("java.lang.Object", Types.OTHER);
         javaTypeNumbers.put("java.lang.Void", Types.SQL_ALL_TYPES);
+
+        javaTypeNumbers.put("org.voltdb.types.GeographyPointValue", Types.VOLT_GEOGRAPHY_POINT);
+        javaTypeNumbers.put("org.voltdb.types.GeographyValue", Types.VOLT_GEOGRAPHY);
+        javaTypeNumbers.put("org.voltdb.types.TimestampType", Types.SQL_TIMESTAMP);
 
         //
         illegalParameterClasses = new org.hsqldb_voltpatches.lib.HashSet();
@@ -613,7 +621,7 @@ public class Types {
 */
 
     /**
-     * Retieves the type number corresponding to the class
+     * Retrieves the type number corresponding to the class
      * of an IN, IN OUT or OUT parameter.  <p>
      *
      * This method extends getTypeNr to return OTHER for
@@ -749,6 +757,7 @@ public class Types {
             case Types.SQL_INTERVAL_MINUTE :
             case Types.SQL_INTERVAL_MINUTE_TO_SECOND :
             case Types.SQL_INTERVAL_SECOND :
+            case Types.VOLT_GEOGRAPHY :
                 return true;
 
             default :
@@ -879,6 +888,12 @@ public class Types {
 
             case Types.SQL_XML :
                 return "XML";
+
+            case Types.VOLT_GEOGRAPHY_POINT :
+                return "GEOGRAPHY_POINT";
+
+            case Types.VOLT_GEOGRAPHY :
+                return "GEOGRAPHY";
 
             default :
                 return null;

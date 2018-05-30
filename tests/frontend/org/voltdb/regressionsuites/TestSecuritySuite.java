@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,32 +26,23 @@ package org.voltdb.regressionsuites;
 import java.io.IOException;
 import java.util.ArrayList;
 
-import junit.framework.Test;
-
 import org.voltdb.BackendTarget;
 import org.voltdb.VoltTable;
 import org.voltdb.benchmark.tpcc.TPCCProjectBuilder;
 import org.voltdb.client.Client;
-import org.voltdb.client.ClientAuthHashScheme;
-import org.voltdb.client.ProcCallException;
+import org.voltdb.client.ClientAuthScheme;
 import org.voltdb.client.ClientResponse;
-import org.voltdb.compiler.VoltProjectBuilder.RoleInfo;
+import org.voltdb.client.ProcCallException;
 import org.voltdb.compiler.VoltProjectBuilder.ProcedureInfo;
+import org.voltdb.compiler.VoltProjectBuilder.RoleInfo;
 import org.voltdb.compiler.VoltProjectBuilder.UserInfo;
-import org.voltdb.utils.MiscUtils;
 import org.voltdb_testprocs.regressionsuites.securityprocs.DoNothing1;
 import org.voltdb_testprocs.regressionsuites.securityprocs.DoNothing2;
 import org.voltdb_testprocs.regressionsuites.securityprocs.DoNothing3;
 
+import junit.framework.Test;
+
 public class TestSecuritySuite extends RegressionSuite {
-
-    // procedures used by these tests
-    static final Class<?>[] PROCEDURES = {
-        DoNothing1.class,
-        DoNothing2.class,
-        DoNothing3.class
-    };
-
     public TestSecuritySuite(String name) {
         super(name);
     }
@@ -91,7 +82,7 @@ public class TestSecuritySuite extends RegressionSuite {
         this.m_password = "wrongpassword";
         boolean exceptionThrown = false;
         try {
-            getClient(ClientAuthHashScheme.HASH_SHA1);
+            getClient(ClientAuthScheme.HASH_SHA1);
         } catch (IOException e) {
             e.printStackTrace();
             exceptionThrown = true;
@@ -106,7 +97,7 @@ public class TestSecuritySuite extends RegressionSuite {
         this.m_username = "wronguser";
         exceptionThrown = false;
         try {
-            getClient(ClientAuthHashScheme.HASH_SHA1);
+            getClient(ClientAuthScheme.HASH_SHA1);
         } catch (IOException e) {
             e.printStackTrace();
             exceptionThrown = true;
@@ -424,10 +415,10 @@ public class TestSecuritySuite extends RegressionSuite {
         TPCCProjectBuilder project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        ArrayList<ProcedureInfo> procedures = new ArrayList<ProcedureInfo>();
-        procedures.add(new ProcedureInfo(new String[0], PROCEDURES[0]));
-        procedures.add(new ProcedureInfo(new String[] {"group1"}, PROCEDURES[1]));
-        procedures.add(new ProcedureInfo(new String[] {"group1", "group2"}, PROCEDURES[2]));
+        ArrayList<ProcedureInfo> procedures = new ArrayList<>();
+        procedures.add(new ProcedureInfo(DoNothing1.class));
+        procedures.add(new ProcedureInfo(DoNothing2.class, null, new String[] {"group1"}));
+        procedures.add(new ProcedureInfo(DoNothing3.class, null, new String[] {"group1", "group2"}));
         project.addProcedures(procedures);
 
         UserInfo users[] = new UserInfo[] {
@@ -457,10 +448,7 @@ public class TestSecuritySuite extends RegressionSuite {
         // suite defines its own ADMINISTRATOR user
         project.setSecurityEnabled(true, false);
 
-        // export disabled in community
-        if (MiscUtils.isPro()) {
-            project.addExport(true /*enabled*/);
-        }
+        project.addExport(true /*enabled*/);
 
         /////////////////////////////////////////////////////////////
         // CONFIG #1: 1 Local Site/Partitions running on JNI backend
@@ -473,7 +461,7 @@ public class TestSecuritySuite extends RegressionSuite {
         if (!config.compile(project)) fail();
 
         // add this config to the set of tests to run
-        builder.addServerConfig(config);
+        builder.addServerConfig(config, false);
 
         // Not testing a cluster and assuming security shouldn't be affected by this
 

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -14,27 +14,40 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with VoltDB.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 #ifndef BINARYLOGSINK_H
 #define BINARYLOGSINK_H
+
+#include "common/serializeio.h"
+
 #include <boost/unordered_map.hpp>
+#include <boost/shared_ptr.hpp>
 
 namespace voltdb {
 
 class PersistentTable;
 class Pool;
 class VoltDBEngine;
+
 /*
  * Responsible for applying binary logs to table data
  */
 class BinaryLogSink {
 public:
     BinaryLogSink();
-    void apply(const char* taskParams, boost::unordered_map<int64_t, PersistentTable*> &tables, Pool *pool, VoltDBEngine *engine);
+    int64_t applyTxn(ReferenceSerializeInputLE *taskInfo,
+                     boost::unordered_map<int64_t, PersistentTable*> &tables,
+                     Pool *pool, VoltDBEngine *engine, int32_t remoteClusterId,
+                     const char *txnStart,
+                     int64_t localUniqueId);
+
 private:
-    void validateChecksum(uint32_t expected, const char *start, const char *end);
+    int64_t apply(ReferenceSerializeInputLE *taskInfo, const DRRecordType type,
+                  boost::unordered_map<int64_t, PersistentTable*> &tables,
+                  Pool *pool, VoltDBEngine *engine, int32_t remoteClusterId,
+                  const char *txnStart, int64_t sequenceNumber, int64_t uniqueId, bool skipRow, bool replicatedTableOperation);
 };
 
 
 }
 #endif
-

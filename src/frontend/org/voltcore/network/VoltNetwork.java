@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -43,7 +43,7 @@
  */
 
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -60,8 +60,6 @@
  */
 
 package org.voltcore.network;
-
-import io.netty_voltpatches.NinjaKeySet;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -83,12 +81,17 @@ import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import jsr166y.ThreadLocalRandom;
+import javax.net.ssl.SSLEngine;
 
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.network.VoltNetworkPool.IOStatsIntf;
 import org.voltcore.utils.LatencyWatchdog;
 import org.voltcore.utils.Pair;
+
+import com.google_voltpatches.common.util.concurrent.SettableFuture;
+
+import io.netty_voltpatches.NinjaKeySet;
+import jsr166y.ThreadLocalRandom;
 
 /** Produces work for registered ports that are selected for read, write */
 class VoltNetwork implements Runnable, IOStatsIntf
@@ -104,8 +107,6 @@ class VoltNetwork implements Runnable, IOStatsIntf
     final NetworkDBBPool m_pool = new NetworkDBBPool();
     private final String m_coreBindId;
     final String networkThreadName;
-
-    private final int m_networkId;
 
     private final NinjaKeySet m_ninjaSelectedKeys;
 
@@ -124,7 +125,6 @@ class VoltNetwork implements Runnable, IOStatsIntf
     VoltNetwork(int networkId, String coreBindId, String networkName) {
         m_thread = new Thread(this, "Volt " + networkName + " Network - " + networkId);
         networkThreadName = new String("Volt " + networkName + " Network - " + networkId);
-        m_networkId = networkId;
         m_thread.setDaemon(true);
         m_coreBindId = coreBindId;
         try {
@@ -138,7 +138,6 @@ class VoltNetwork implements Runnable, IOStatsIntf
 
     VoltNetwork( Selector s) {
         m_thread = null;
-        m_networkId = 0;
         m_selector = s;
         m_coreBindId = null;
         networkThreadName = new String("Test Selector Thread");
@@ -155,6 +154,13 @@ class VoltNetwork implements Runnable, IOStatsIntf
     }
 
     /**
+     * Helps {@link VoltPort} discern cases when the network is shutting down
+     */
+    boolean isStopping() {
+        return m_shouldStop;
+    }
+
+    /**
      * Register a channel with the selector and create a Connection that will pass incoming events
      * to the provided handler.
      * @param channel
@@ -165,19 +171,26 @@ class VoltNetwork implements Runnable, IOStatsIntf
             final SocketChannel channel,
             final InputHandler handler,
             final int interestOps,
-            final ReverseDNSPolicy dns) throws IOException {
-        channel.configureBlocking (false);
-        channel.socket().setKeepAlive(true);
+            final ReverseDNSPolicy dns,
+            final CipherExecutor cipherService,
+            final SSLEngine sslEngine) throws IOException {
+
+        synchronized(channel.blockingLock()) {
+            channel.configureBlocking (false);
+            channel.socket().setKeepAlive(true);
+        }
 
         Callable<Connection> registerTask = new Callable<Connection>() {
             @Override
             public Connection call() throws Exception {
-                final VoltPort port =
-                        new VoltPort(
+                final VoltPort port = VoltPortFactory.createVoltPort(
+                                channel,
                                 VoltNetwork.this,
                                 handler,
                                 (InetSocketAddress)channel.socket().getRemoteSocketAddress(),
-                                m_pool);
+                                m_pool,
+                                cipherService,
+                                sslEngine);
                 port.registering();
 
                 /*
@@ -371,7 +384,7 @@ class VoltNetwork implements Runnable, IOStatsIntf
     void installInterests(VoltPort port) {
         try {
             if (port.isRunning()) {
-                assert(false); //Shouldn't be running since it is all single threaded now?
+                assert(false) : "Shouldn't be running since it is all single threaded now?";
                 return;
             }
 
@@ -550,5 +563,17 @@ class VoltNetwork implements Runnable, IOStatsIntf
 
     int numPorts() {
         return m_numPorts.get();
+    }
+
+    public Future<Set<Connection>> getConnections() {
+        final SettableFuture<Set<Connection>> connectionsFuture = SettableFuture.create();
+        queueTask(new Runnable() {
+            @Override
+            public void run() {
+                // Make a copy of m_ports to avoid concurrent modification
+                connectionsFuture.set(new HashSet<Connection>(m_ports));
+            }
+        });
+        return connectionsFuture;
     }
 }

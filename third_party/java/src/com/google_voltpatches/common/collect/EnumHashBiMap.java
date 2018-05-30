@@ -20,14 +20,13 @@ import static com.google_voltpatches.common.base.Preconditions.checkNotNull;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
 import com.google_voltpatches.common.annotations.GwtIncompatible;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -37,15 +36,14 @@ import javax.annotation_voltpatches.Nullable;
  * serializable.
  * 
  * <p>See the Guava User Guide article on <a href=
- * "http://code.google.com/p/guava-libraries/wiki/NewCollectionTypesExplained#BiMap">
+ * "https://github.com/google/guava/wiki/NewCollectionTypesExplained#bimap">
  * {@code BiMap}</a>.
  *
  * @author Mike Bostock
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible(emulated = true)
-public final class EnumHashBiMap<K extends Enum<K>, V>
-    extends AbstractBiMap<K, V> {
+public final class EnumHashBiMap<K extends Enum<K>, V> extends AbstractBiMap<K, V> {
   private transient Class<K> keyType;
 
   /**
@@ -53,8 +51,7 @@ public final class EnumHashBiMap<K extends Enum<K>, V>
    *
    * @param keyType the key type
    */
-  public static <K extends Enum<K>, V> EnumHashBiMap<K, V>
-      create(Class<K> keyType) {
+  public static <K extends Enum<K>, V> EnumHashBiMap<K, V> create(Class<K> keyType) {
     return new EnumHashBiMap<K, V>(keyType);
   }
 
@@ -68,18 +65,16 @@ public final class EnumHashBiMap<K extends Enum<K>, V>
    * @throws IllegalArgumentException if map is not an {@code EnumBiMap} or an
    *     {@code EnumHashBiMap} instance and contains no mappings
    */
-  public static <K extends Enum<K>, V> EnumHashBiMap<K, V>
-      create(Map<K, ? extends V> map) {
+  public static <K extends Enum<K>, V> EnumHashBiMap<K, V> create(Map<K, ? extends V> map) {
     EnumHashBiMap<K, V> bimap = create(EnumBiMap.inferKeyType(map));
     bimap.putAll(map);
     return bimap;
   }
 
   private EnumHashBiMap(Class<K> keyType) {
-    super(WellBehavedMap.wrap(
-        new EnumMap<K, V>(keyType)),
-        Maps.<V, K>newHashMapWithExpectedSize(
-            keyType.getEnumConstants().length));
+    super(
+        WellBehavedMap.wrap(new EnumMap<K, V>(keyType)),
+        Maps.<V, K>newHashMapWithExpectedSize(keyType.getEnumConstants().length));
     this.keyType = keyType;
   }
 
@@ -90,11 +85,15 @@ public final class EnumHashBiMap<K extends Enum<K>, V>
     return checkNotNull(key);
   }
 
-  @Override public V put(K key, @Nullable V value) {
+  @CanIgnoreReturnValue
+  @Override
+  public V put(K key, @Nullable V value) {
     return super.put(key, value);
   }
 
-  @Override public V forcePut(K key, @Nullable V value) {
+  @CanIgnoreReturnValue
+  @Override
+  public V forcePut(K key, @Nullable V value) {
     return super.forcePut(key, value);
   }
 
@@ -107,7 +106,7 @@ public final class EnumHashBiMap<K extends Enum<K>, V>
    * @serialData the key class, number of entries, first key, first value,
    *     second key, second value, and so on.
    */
-  @GwtIncompatible("java.io.ObjectOutputStream")
+  @GwtIncompatible // java.io.ObjectOutputStream
   private void writeObject(ObjectOutputStream stream) throws IOException {
     stream.defaultWriteObject();
     stream.writeObject(keyType);
@@ -115,16 +114,16 @@ public final class EnumHashBiMap<K extends Enum<K>, V>
   }
 
   @SuppressWarnings("unchecked") // reading field populated by writeObject
-  @GwtIncompatible("java.io.ObjectInputStream")
-  private void readObject(ObjectInputStream stream)
-      throws IOException, ClassNotFoundException {
+  @GwtIncompatible // java.io.ObjectInputStream
+  private void readObject(ObjectInputStream stream) throws IOException, ClassNotFoundException {
     stream.defaultReadObject();
     keyType = (Class<K>) stream.readObject();
-    setDelegates(WellBehavedMap.wrap(new EnumMap<K, V>(keyType)),
+    setDelegates(
+        WellBehavedMap.wrap(new EnumMap<K, V>(keyType)),
         new HashMap<V, K>(keyType.getEnumConstants().length * 3 / 2));
     Serialization.populateMap(this, stream);
   }
 
-  @GwtIncompatible("only needed in emulated source.")
+  @GwtIncompatible // only needed in emulated source.
   private static final long serialVersionUID = 0;
 }

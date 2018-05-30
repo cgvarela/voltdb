@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,10 +16,13 @@
  */
 package org.voltdb;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
 import org.voltcore.utils.Pair;
+import org.voltdb.DRConsumerDrIdTracker.DRSiteDrIdTracker;
+import org.voltdb.sysprocs.saverestore.SnapshotPathType;
 
 public interface SnapshotCompletionInterest {
 
@@ -35,10 +38,13 @@ public interface SnapshotCompletionInterest {
         public final String requestId;
         public final Map<String, Map<Integer, Pair<Long,Long>>> exportSequenceNumbers;
         public final Map<Integer, Long> drSequenceNumbers;
-        public final Map<Integer, Map<Integer, Pair<Long, Long>>> remoteDCLastIds;
+        public final Map<Integer, Map<Integer, Map<Integer, DRSiteDrIdTracker>>> drMixedClusterSizeConsumerState;
+        public final int drVersion;
+        public final long clusterCreateTime;
 
         public SnapshotCompletionEvent(
                 String path,
+                SnapshotPathType stype,
                 String nonce,
                 final long multipartTxnId,
                 final Map<Integer, Long> partitionTxnIds,
@@ -47,7 +53,9 @@ public interface SnapshotCompletionInterest {
                 final String requestId,
                 final Map<String, Map<Integer, Pair<Long,Long>>> exportSequenceNumbers,
                 final Map<Integer, Long> drSequenceNumbers,
-                final Map<Integer, Map<Integer, Pair<Long,Long>>> remoteDCLastIds) {
+                final Map<Integer, Map<Integer, Map<Integer, DRSiteDrIdTracker>>> drMixedClusterSizeConsumerState,
+                final int drVersion,
+                final long clusterCreateTime) {
             this.path = path;
             this.nonce = nonce;
             this.multipartTxnId = multipartTxnId;
@@ -57,20 +65,25 @@ public interface SnapshotCompletionInterest {
             this.requestId = requestId;
             this.exportSequenceNumbers = exportSequenceNumbers;
             this.drSequenceNumbers = drSequenceNumbers;
-            this.remoteDCLastIds = remoteDCLastIds;
+            this.drMixedClusterSizeConsumerState = drMixedClusterSizeConsumerState;
+            this.drVersion = drVersion;
+            this.clusterCreateTime = clusterCreateTime;
         }
 
         // Factory method for simplified instances used in testing,
         // to avoid repeating this long series of dummy-valued initializers.
         public static SnapshotCompletionEvent newInstanceForTest(
                 String path,
+                SnapshotPathType stype,
                 String nonce,
                 long multipartTxnId,
                 Map<Integer, Long> partitionTxnIds,
-                boolean truncationSnapshot) {
+                boolean truncationSnapshot,
+                int drVersion,
+                long clusterCreateTime) {
             return new SnapshotCompletionEvent(
-                    path, nonce, multipartTxnId, partitionTxnIds, truncationSnapshot,
-                    true, "", null, null, null);
+                    path, stype, nonce, multipartTxnId, partitionTxnIds, truncationSnapshot,
+                    true, "", null, null, new HashMap<>(), drVersion, clusterCreateTime);
         }
     }
 

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,6 +23,8 @@
 
 package org.voltdb.regressionsuites;
 
+import java.util.Arrays;
+
 import org.voltdb.BackendTarget;
 import org.voltdb.VoltTable;
 import org.voltdb.client.Client;
@@ -30,8 +32,6 @@ import org.voltdb.compiler.VoltProjectBuilder;
 import org.voltdb_testprocs.regressionsuites.delete.DeleteOrderByLimit;
 import org.voltdb_testprocs.regressionsuites.delete.DeleteOrderByLimitOffset;
 import org.voltdb_testprocs.regressionsuites.fixedsql.Insert;
-
-import java.util.Arrays;
 
 /**
  * System tests for DELETE
@@ -41,7 +41,7 @@ import java.util.Arrays;
 public class TestSqlDeleteSuite extends RegressionSuite {
 
     /** Procedures used by this suite */
-    static final Class<?>[] PROCEDURES = {
+    static final Class<?>[] MP_PROCEDURES = {
         DeleteOrderByLimit.class,
         DeleteOrderByLimitOffset.class
         };
@@ -112,6 +112,7 @@ public class TestSqlDeleteSuite extends RegressionSuite {
             // Expect all rows to be deleted
             executeAndTestDelete(table, delete, ROWS);
         }
+        verifyStmtFails(getClient(), "DELETE FROM P1 WHERE COUNT(*) = 1", "invalid WHERE expression");
     }
 
     public void testDeleteWithEqualToIndexPredicate()
@@ -414,7 +415,7 @@ public class TestSqlDeleteSuite extends RegressionSuite {
                 "DELETE statement with LIMIT or OFFSET but no ORDER BY would produce non-deterministic results.");
 
         verifyStmtFails(client, "DELETE FROM P1_VIEW ORDER BY ID ASC LIMIT 1",
-                "INSERT, UPDATE, or DELETE not permitted for view");
+                "DELETE with ORDER BY, LIMIT or OFFSET is currently unsupported on views");
 
         // Check failure for partitioned table where where clause cannot infer
         // partitioning
@@ -555,6 +556,37 @@ public class TestSqlDeleteSuite extends RegressionSuite {
         }
     }
 
+    public void testDeleteWithExpresionSubquery()  throws Exception {
+        Client client = getClient();
+        String tables[] = {"P3", "R3"};
+        // insert rows where ID is 0..3
+        insertRows(client, "R1", 4);
+
+        for (String table : tables) {
+            // insert rows where ID is 0 and num is 0..9
+            insertRows(client, table, 10);
+
+            // delete rows where ID is IN 0..3
+            VoltTable vt = client.callProcedure("@AdHoc",
+                    "DELETE FROM " + table + " WHERE ID IN (SELECT NUM FROM R1)")
+                    .getResults()[0];
+            validateTableOfScalarLongs(vt, new long[] { 4 });
+
+            String stmt = "SELECT ID FROM " + table + " ORDER BY ID";
+            validateTableOfScalarLongs(client, stmt, new long[] { 4, 5, 6, 7, 8, 9 });
+
+            // delete rows where NUM is 4 and 5
+            vt = client.callProcedure("@AdHoc",
+                    "DELETE FROM " + table + " WHERE NUM IN (SELECT NUM + 2 FROM R1 WHERE R1.ID + 2 = " +
+                    table + ".ID)")
+                    .getResults()[0];
+            validateTableOfScalarLongs(vt, new long[] { 2 });
+            stmt = "SELECT NUM FROM " + table + " ORDER BY NUM";
+            validateTableOfScalarLongs(client, stmt, new long[] { 6, 7, 8, 9 });
+        }
+
+    }
+
     //
     // JUnit / RegressionSuite boilerplate
     //
@@ -570,7 +602,7 @@ public class TestSqlDeleteSuite extends RegressionSuite {
 
         VoltProjectBuilder project = new VoltProjectBuilder();
         project.addSchema(Insert.class.getResource("sql-update-ddl.sql"));
-        project.addProcedures(PROCEDURES);
+        project.addMultiPartitionProcedures(MP_PROCEDURES);
 
         config = new LocalCluster("sqldelete-onesite.jar", 1, 1, 0, BackendTarget.NATIVE_EE_JNI);
         if (!config.compile(project)) fail();

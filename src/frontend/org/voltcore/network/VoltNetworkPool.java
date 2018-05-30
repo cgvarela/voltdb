@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -22,15 +22,19 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+
+import javax.net.ssl.SSLEngine;
 
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.utils.Pair;
@@ -42,7 +46,6 @@ public class VoltNetworkPool {
     }
 
     private static final VoltLogger m_logger = new VoltLogger(VoltNetworkPool.class.getName());
-    private static final VoltLogger networkLog = new VoltLogger("NETWORK");
 
     private final VoltNetwork m_networks[];
     private final AtomicLong m_nextNetwork = new AtomicLong();
@@ -87,15 +90,19 @@ public class VoltNetworkPool {
 
     public Connection registerChannel(
             final SocketChannel channel,
-            final InputHandler handler) throws IOException {
-        return registerChannel( channel, handler, SelectionKey.OP_READ, ReverseDNSPolicy.ASYNCHRONOUS);
+            final InputHandler handler,
+            final CipherExecutor cipherService,
+            final SSLEngine sslEngine) throws IOException {
+        return registerChannel( channel, handler, SelectionKey.OP_READ, ReverseDNSPolicy.ASYNCHRONOUS, cipherService, sslEngine);
     }
 
     public Connection registerChannel(
             final SocketChannel channel,
             final InputHandler handler,
             final int interestOps,
-            final ReverseDNSPolicy dns) throws IOException {
+            final ReverseDNSPolicy dns,
+            final CipherExecutor cipherService,
+            final SSLEngine sslEngine) throws IOException {
         //Start with a round robin base policy
         VoltNetwork vn = m_networks[(int)(m_nextNetwork.getAndIncrement() % m_networks.length)];
         //Then do a load based policy which is a little racy
@@ -105,7 +112,7 @@ public class VoltNetworkPool {
                 vn = m_networks[ii];
             }
         }
-        return vn.registerChannel(channel, handler, interestOps, dns);
+        return vn.registerChannel(channel, handler, interestOps, dns, cipherService, sslEngine);
     }
 
     public List<Long> getThreadIds() {
@@ -150,5 +157,23 @@ public class VoltNetworkPool {
         retval.put(-1L, Pair.of("GLOBAL", globalStats));
 
         return retval;
+    }
+
+    public Set<Connection> getConnections() {
+        List<Future<Set<Connection>>> futures = new ArrayList<>(m_networks.length);
+        for (VoltNetwork vn : m_networks) {
+            futures.add(vn.getConnections());
+        }
+        Set<Connection> conns = new HashSet<>();
+        for (Future<Set<Connection>> fut : futures) {
+            Set<Connection> connsForNetwork;
+            try {
+                connsForNetwork = fut.get();
+            } catch (InterruptedException | ExecutionException e) {
+                connsForNetwork = new HashSet<>();
+            }
+            conns.addAll(connsForNetwork);
+        }
+        return conns;
     }
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -32,20 +32,20 @@ import org.voltdb.types.QuantifierType;
  */
 public class ComparisonExpression extends AbstractExpression {
 
-    public enum Members {
-        QUANTIFIER;
+    private static class Members {
+        private static final String QUANTIFIER = "QUANTIFIER";
     }
 
     private QuantifierType m_quantifier = QuantifierType.NONE;
 
     public ComparisonExpression(ExpressionType type) {
         super(type);
-        setValueType(VoltType.BIGINT);
+        setValueType(VoltType.BOOLEAN);
     }
 
     public ComparisonExpression(ExpressionType type, AbstractExpression left, AbstractExpression right) {
         super(type, left, right);
-        setValueType(VoltType.BIGINT);
+        setValueType(VoltType.BOOLEAN);
     }
 
     public ComparisonExpression() {
@@ -82,33 +82,27 @@ public class ComparisonExpression extends AbstractExpression {
     }
 
     @Override
-    public Object clone() {
-        ComparisonExpression clone = (ComparisonExpression) super.clone();
-        clone.m_quantifier = m_quantifier;
-        return clone;
-    }
-
-    @Override
     protected void loadFromJSONObject(JSONObject obj) throws JSONException {
-        super.loadFromJSONObject(obj);
-       if (obj.has(Members.QUANTIFIER.name())) {
-           m_quantifier = QuantifierType.get(obj.getInt(Members.QUANTIFIER.name()));
-       } else {
-           m_quantifier = QuantifierType.NONE;
-       }
+        if (obj.has(Members.QUANTIFIER)) {
+            m_quantifier = QuantifierType.get(obj.getInt(Members.QUANTIFIER));
+        }
+        else {
+            m_quantifier = QuantifierType.NONE;
+        }
     }
 
     @Override
     public void toJSONString(JSONStringer stringer) throws JSONException {
         super.toJSONString(stringer);
         if (m_quantifier != QuantifierType.NONE) {
-            stringer.key(Members.QUANTIFIER.name()).value(m_quantifier.getValue());
+            stringer.keySymbolValuePair(Members.QUANTIFIER, m_quantifier.getValue());
         }
     }
 
     public static final Map<ExpressionType,ExpressionType> reverses = new HashMap<ExpressionType, ExpressionType>();
     static {
         reverses.put(ExpressionType.COMPARE_EQUAL, ExpressionType.COMPARE_EQUAL);
+        reverses.put(ExpressionType.COMPARE_NOTDISTINCT, ExpressionType.COMPARE_NOTDISTINCT);
         reverses.put(ExpressionType.COMPARE_NOTEQUAL, ExpressionType.COMPARE_NOTEQUAL);
         reverses.put(ExpressionType.COMPARE_LESSTHAN, ExpressionType.COMPARE_GREATERTHAN);
         reverses.put(ExpressionType.COMPARE_GREATERTHAN, ExpressionType.COMPARE_LESSTHAN);
@@ -136,7 +130,7 @@ public class ComparisonExpression extends AbstractExpression {
         // Therefore, it is safe to assume that the output is always going to be an
         // integer (for booleans)
         //
-        m_valueType = VoltType.BIGINT;
+        m_valueType = VoltType.BOOLEAN;
         m_valueSize = m_valueType.getLengthInBytesForFixedTypes();
     }
 
@@ -213,6 +207,13 @@ public class ComparisonExpression extends AbstractExpression {
             (m_quantifier == QuantifierType.NONE ? "" :
                 (m_quantifier.name() + " ")) +
             m_right.explain(impliedTableName) + ")";
+    }
+
+    @Override
+    public boolean isValueTypeIndexable(StringBuffer msg) {
+        // comparison expression result in boolean result type, which is not indexable
+        msg.append("comparison expression '" + getExpressionType().symbol() +"'");
+        return false;
     }
 
 }

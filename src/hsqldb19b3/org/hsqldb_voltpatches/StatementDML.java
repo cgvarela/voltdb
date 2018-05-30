@@ -86,7 +86,7 @@ public class StatementDML extends StatementDMQL {
         this.restartIdentity        = restartIdentity;
         this.isTransactionStatement = true;
 
-        setDatabseObjects(compileContext);
+        setDatabaseObjects(compileContext);
         checkAccessRights(session);
     }
 
@@ -109,7 +109,7 @@ public class StatementDML extends StatementDMQL {
         this.targetRangeVariables   = rangeVars;
         this.isTransactionStatement = true;
 
-        setDatabseObjects(compileContext);
+        setDatabaseObjects(compileContext);
         checkAccessRights(session);
     }
 
@@ -137,7 +137,7 @@ public class StatementDML extends StatementDMQL {
         this.condition            = mergeCondition;
         isTransactionStatement    = true;
 
-        setDatabseObjects(compileContext);
+        setDatabaseObjects(compileContext);
         checkAccessRights(session);
     }
 
@@ -160,7 +160,7 @@ public class StatementDML extends StatementDMQL {
         this.targetRangeVariables = rangeVars;
         isTransactionStatement    = false;
 
-        setDatabseObjects(compileContext);
+        setDatabaseObjects(compileContext);
         checkAccessRights(session);
     }
 
@@ -172,6 +172,7 @@ public class StatementDML extends StatementDMQL {
               null);
     }
 
+    @Override
     Result getResult(Session session) {
 
         Result result = null;
@@ -204,9 +205,13 @@ public class StatementDML extends StatementDMQL {
     }
 
     // this fk references -> other  :  other read lock
+    @Override
     void getTableNamesForRead(OrderedHashSet set) {
 
-        if (!baseTable.isTemp()) {
+        /* A VoltDB Extension.
+         * Base table could be null for views.
+         */
+        if (baseTable != null && !baseTable.isTemp()) {
             for (int i = 0; i < baseTable.fkConstraints.length; i++) {
                 set.add(baseTable.fkConstraints[i].getMain().getName());
             }
@@ -237,9 +242,13 @@ public class StatementDML extends StatementDMQL {
     }
 
     // other fk references this :  if constraint trigger action  : other write lock
+    @Override
     void getTableNamesForWrite(OrderedHashSet set) {
 
-        if (baseTable.isTemp()) {
+        /* A VoltDB Extension.
+         * Base table could be null for views.
+         */
+        if (baseTable==null || baseTable.isTemp()) {
             return;
         }
 

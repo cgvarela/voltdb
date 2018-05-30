@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -31,6 +31,8 @@ import geb.navigator.Navigator
 import geb.waiting.WaitTimeoutException
 
 import org.openqa.selenium.JavascriptExecutor
+import org.openqa.selenium.StaleElementReferenceException
+import org.openqa.selenium.WebElement
 
 /**
  * This class represents a generic VoltDB Management Center page (without
@@ -43,22 +45,28 @@ class VoltDBManagementCenterPage extends Page {
 
     static url = ''  // relative to the baseUrl
     static content = {
-        navTabs { $('#nav') }
-        dbMonitorTab { navTabs.find('#navDbmonitor') }
-	adminTab { navTabs.find('#navAdmin') }
-        schemaTab    { navTabs.find('#navSchema') }
-        sqlQueryTab  { navTabs.find('#navSqlQuery') }
-        dbMonitorLink(to: DbMonitorPage) { dbMonitorTab.find('a') }
-	adminLink(to: AdminPage) { adminTab.find('a') }
-        schemaLink   (to: SchemaPage)    { schemaTab.find('a') }
-        sqlQueryLink (to: SqlQueryPage)  { sqlQueryTab.find('a') }
-        loginDialog  (required: false) { $('#loginBox') }
-        usernameInput   (required: false) { loginDialog.find('input#username') }
-        passwordInput   (required: false) { loginDialog.find('input#password') }
-        loginButton  (required: false) { loginDialog.find('#LoginBtn') }
-	
-	header { module Header }
-        footer { module Footer }	
+        navTabs                             { $('#nav') }
+        dbMonitorTab                        { navTabs.find('#navDbmonitor') }
+        adminTab                            { navTabs.find('#navAdmin') }
+        schemaTab                           { navTabs.find('#navSchema') }
+        sqlQueryTab                         { navTabs.find('#navSqlQuery') }
+        drTab                               { $('#navDR') }
+        importerTab                         { $('#navImporter') }
+        analysisTab                         { $('#navAnalysis') }
+        dbMonitorLink (to: DbMonitorPage)   { dbMonitorTab.find('a') }
+        adminLink (to: AdminPage)           { adminTab.find('a') }
+        schemaLink (to: SchemaPage)         { schemaTab.find('a') }
+        sqlQueryLink (to: SqlQueryPage)     { sqlQueryTab.find('a') }
+        drLink (to: DrPage)                 { $('#navDR > a') }
+        importerLink (to: ImporterPage)     { $('#navImporter > a') }
+        analysisLink (to: AnalysisPage)     { analysisTab.find('a') }
+        loginDialog (required: false)       { $('#loginBox') }
+        usernameInput (required: false)     { loginDialog.find('input#username') }
+        passwordInput (required: false)     { loginDialog.find('input#password') }
+        loginButton (required: false)       { loginDialog.find('#LoginBtn') }
+
+        header { module Header }
+        footer { module Footer }
     }
     static at = {
         title == 'VoltDB Management Center'
@@ -74,11 +82,26 @@ class VoltDBManagementCenterPage extends Page {
      * for visibility.
      * @return true if at least one of the specified elements is displayed.
      */
-    protected boolean atLeastOneIsDisplayed(Navigator navElements) {
+    protected boolean isDisplayed(Navigator navElements) {
         for (navElem in navElements.findAll()) {
             if (navElem.displayed) {
                 return true
             }
+        }
+        return false
+    }
+
+    /**
+     * Returns true if the specified element is stale, i.e., no longer present
+     * in the DOM.
+     * @param webElement - a WebElement whose staleness is to be checked.
+     * @return true if the specified WebElement is stale.
+     */
+    protected boolean isStale(WebElement webElement) {
+        try {
+            webElement.isDisplayed()
+        } catch (StaleElementReferenceException e) {
+            return true
         }
         return false
     }
@@ -106,11 +129,11 @@ class VoltDBManagementCenterPage extends Page {
      * should become visible.
      */
     protected void clickToDisplay(Navigator clickElement, Navigator displayElements) {
-        if (!atLeastOneIsDisplayed(displayElements)) {
+        if (!isDisplayed(displayElements)) {
             scrollIntoView(clickElement)
             clickElement.click()
             scrollIntoView(displayElements.first())
-            waitFor { atLeastOneIsDisplayed(displayElements) }
+            waitFor { isDisplayed(displayElements) }
         }
     }
 
@@ -123,10 +146,10 @@ class VoltDBManagementCenterPage extends Page {
      * should become invisible.
      */
     protected void clickToNotDisplay(Navigator clickElement, Navigator displayElements) {
-        if (atLeastOneIsDisplayed(displayElements)) {
+        if (isDisplayed(displayElements)) {
             scrollIntoView(clickElement)
             clickElement.click()
-            waitFor { !atLeastOneIsDisplayed(displayElements) }
+            waitFor { !isDisplayed(displayElements) }
         }
     }
 
@@ -196,7 +219,7 @@ class VoltDBManagementCenterPage extends Page {
      * should refer to a "table" HTML element. The table contents are returned
      * in the form of a Map, with each element a List of Strings; each Key of
      * the Map is a column header of the table, and its List contains the
-     * displayed text of that column. 
+     * displayed text of that column.
      * @param tableElement - a Navigator specifying the "table" element whose
      * contents are to be returned.
      * @param colHeaderFormat - the case in which you want the table's column
@@ -237,7 +260,7 @@ class VoltDBManagementCenterPage extends Page {
         }
     }
 
-/**
+    /**
      * Returns true if the current page is a AdminPage (i.e., the "Admin"
      * tab of the VoltDB Management Center page is currently open).
      * @return true if a AdminPage is currently open.
@@ -277,6 +300,45 @@ class VoltDBManagementCenterPage extends Page {
     }
 
     /**
+     * Returns true if the current page is a DrPage (i.e., the "Dr"
+     * tab of the VoltDB Management Center page is currently open).
+     * @return true if a DrPage is currently open.
+     */
+    def boolean isDrPageOpen() {
+        if (drTab.attr('class') == 'active') {
+            return true
+        } else {
+            return false
+        }
+    }
+
+    /**
+     * Returns true if the current page is a ImporterPage (i.e., the "Importer"
+     * tab of the VoltDB Management Center page is currently open).
+     * @return true if a ImporterPage is currently open.
+     */
+    def boolean isImporterPageOpen() {
+        if (importerTab.attr('class') == 'active') {
+            return true
+        } else {
+            return false
+        }
+    }
+
+    /**
+     * Returns true if the current page is a AnalysisPage (i.e., the "Analysis"
+     * tab of the VoltDB Management Center page is currently open).
+     * @return true if a AnalysisPage is currently open.
+     */
+    def boolean isAnalysisPageOpen() {
+        if (analysisTab.attr('class') == 'active') {
+            return true
+        } else {
+            return false
+        }
+    }
+
+    /**
      * Clicks the "DB Monitor" link, opening the "DB Monitor" page (or tab);
      * if the "DB Monitor" page is already open, no action is taken.
      */
@@ -286,7 +348,7 @@ class VoltDBManagementCenterPage extends Page {
         }
     }
 
-/**
+    /**
      * Clicks the "Admin" link, opening the "Admin" page (or tab);
      * if the "Admin" page is already open, no action is taken.
      */
@@ -300,8 +362,6 @@ class VoltDBManagementCenterPage extends Page {
      * Clicks the "Schema" link, opening the "Schema" page (or tab);
      * if the "Schema" page is already open, no action is taken.
      */
-   
-
     def void openSchemaPage() {
         if (!isSchemaPageOpen()) {
             schemaLink.click()
@@ -316,6 +376,36 @@ class VoltDBManagementCenterPage extends Page {
         if (!isSqlQueryPageOpen()) {
             sqlQueryLink.click()
             waitFor() { !$('#tabMain').find('#tabScroller').text().isEmpty() }
+        }
+    }
+
+    /**
+     * Clicks the "Dr" link, opening the "Dr" page (or tab);
+     * if the "Dr" page is already open, no action is taken.
+     */
+    def void openDrPage() {
+        if (!isDrPageOpen()) {
+            drLink.click()
+        }
+    }
+
+    /**
+     * Clicks the "Importer" link, opening the "Importer" page (or tab);
+     * if the "Importer" page is already open, no action is taken.
+     */
+    def void openImporterPage() {
+        if (!isImporterPageOpen()) {
+            importerLink.click()
+        }
+    }
+
+    /**
+     * Clicks the "Analysis" link, opening the "Analysis" page (or tab);
+     * if the "Analysis" page is already open, no action is taken.
+     */
+    def void openAnalysisPage() {
+        if (!isAnalysisPageOpen()) {
+            analysisLink.click()
         }
     }
 
@@ -388,20 +478,20 @@ class VoltDBManagementCenterPage extends Page {
 
     }
 
-	def void loginEmpty(username = "", password = "") {
+    def void loginEmpty(username = "", password = "") {
         usernameInput = username
         passwordInput = password
         loginButton.click()
-		waitFor() { !loginDialog.displayed }
-   
+        waitFor() { !loginDialog.displayed }
+
     }
-    
+
     def void loginInvalid(username = "invalid", password = "invalid") {
         usernameInput = username
         passwordInput = password
         loginButton.click()
-		waitFor() { !loginDialog.displayed }
-   
+        waitFor() { !loginDialog.displayed }
+
     }
 
     def String getUsername() {

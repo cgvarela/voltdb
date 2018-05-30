@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,19 +19,62 @@
 #define _EXECUTORCONTEXT_HPP_
 
 #include "Topend.h"
+#include "common/LargeTempTableBlockCache.h"
 #include "common/UndoQuantum.h"
 #include "common/valuevector.h"
 #include "common/subquerycontext.h"
+#include "common/ValuePeeker.hpp"
+#include "common/UniqueId.hpp"
+#include "execution/ExecutorVector.h"
+#include "execution/VoltDBEngine.h"
+#include "common/ThreadLocalPool.h"
 
 #include <vector>
+#include <stack>
 #include <map>
+#include <memory>
 
 namespace voltdb {
 
-class AbstractExecutor;
-class DRTupleStream;
-class VoltDBEngine;
+extern const int64_t VOLT_EPOCH;
+extern const int64_t VOLT_EPOCH_IN_MILLIS;
 
+// how many initial tuples to scan before calling into java
+const int64_t LONG_OP_THRESHOLD = 10000;
+
+class AbstractExecutor;
+class AbstractDRTupleStream;
+class VoltDBEngine;
+class UndoQuantum;
+struct EngineLocals;
+
+class TempTable;
+
+void globalDestroyOncePerProcess();
+
+struct ProgressStats {
+    int64_t TuplesProcessedInBatch;
+    int64_t TuplesProcessedInFragment;
+    int64_t TuplesProcessedSinceReport;
+    int64_t TupleReportThreshold;
+    PlanNodeType LastAccessedPlanNodeType;
+
+    ProgressStats() {
+        TuplesProcessedInBatch = TuplesProcessedInFragment = TuplesProcessedSinceReport = 0;
+        TupleReportThreshold = LONG_OP_THRESHOLD;
+        LastAccessedPlanNodeType = PLAN_NODE_TYPE_INVALID;
+    }
+
+    inline void resetForNewBatch() {
+        TuplesProcessedInBatch = TuplesProcessedInFragment = TuplesProcessedSinceReport = 0;
+    }
+
+    inline void rollUpForPlanFragment() {
+        TuplesProcessedInBatch += TuplesProcessedInFragment;
+        TuplesProcessedInFragment = 0;
+        TuplesProcessedSinceReport = 0;
+    }
+};
 
 /*
  * EE site global data required by executors at runtime.
@@ -51,26 +94,27 @@ class ExecutorContext {
                     UndoQuantum *undoQuantum,
                     Topend* topend,
                     Pool* tempStringPool,
-                    NValueArray* params,
                     VoltDBEngine* engine,
                     std::string hostname,
                     CatalogId hostId,
-                    DRTupleStream *drTupleStream,
-                    DRTupleStream *drReplicatedStream);
+                    AbstractDRTupleStream *drTupleStream,
+                    AbstractDRTupleStream *drReplicatedStream,
+                    CatalogId drClusterId);
 
     ~ExecutorContext();
 
     // It is the thread-hopping VoltDBEngine's responsibility to re-establish the EC for each new thread it runs on.
     void bindToThread();
+    static void assignThreadLocals(const EngineLocals& mapping);
+    static void resetStateForTest();
 
     // not always known at initial construction
     void setPartitionId(CatalogId partitionId) {
         m_partitionId = partitionId;
     }
 
-    // not always known at initial construction
-    void setEpoch(int64_t epoch) {
-        m_epoch = epoch;
+    int32_t getPartitionId() {
+        return static_cast<int32_t>(m_partitionId);
     }
 
     // helper to configure the context for a new jni call
@@ -78,14 +122,17 @@ class ExecutorContext {
                                int64_t txnId,
                                int64_t spHandle,
                                int64_t lastCommittedSpHandle,
-                               int64_t uniqueId)
+                               int64_t uniqueId,
+                               bool traceOn)
     {
         m_undoQuantum = undoQuantum;
         m_spHandle = spHandle;
         m_txnId = txnId;
         m_lastCommittedSpHandle = lastCommittedSpHandle;
-        m_currentTxnTimestamp = (m_uniqueId >> 23) + m_epoch;
         m_uniqueId = uniqueId;
+        m_currentTxnTimestamp = (m_uniqueId >> 23) + VOLT_EPOCH_IN_MILLIS;
+        m_currentDRTimestamp = createDRTimestampHiddenValue(static_cast<int64_t>(m_drClusterId), m_uniqueId);
+        m_traceOn = traceOn;
     }
 
     // data available via tick()
@@ -114,14 +161,26 @@ class ExecutorContext {
         assert(executorsMap != NULL);
         m_executorsMap = executorsMap;
         assert(m_subqueryContextMap.empty());
+
+        assert(m_commonTableMap.empty());
+    }
+
+    static int64_t createDRTimestampHiddenValue(int64_t clusterId, int64_t uniqueId) {
+        return (clusterId << 49) | (uniqueId >> 14);
+    }
+
+    static int64_t getDRTimestampFromHiddenNValue(const NValue &value) {
+        int64_t hiddenValue = ValuePeeker::peekAsBigInt(value);
+        return UniqueId::tsCounterSinceUnixEpoch(hiddenValue & UniqueId::TIMESTAMP_PLUS_COUNTER_MAX_VALUE);
+    }
+
+    static int8_t getClusterIdFromHiddenNValue(const NValue &value) {
+        int64_t hiddenValue = ValuePeeker::peekAsBigInt(value);
+        return static_cast<int8_t>(hiddenValue >> 49);
     }
 
     UndoQuantum *getCurrentUndoQuantum() {
         return m_undoQuantum;
-    }
-
-    NValueArray* getParameterContainer() {
-        return m_staticParams;
     }
 
     static VoltDBEngine* getEngine() {
@@ -132,9 +191,13 @@ class ExecutorContext {
         return getExecutorContext()->m_undoQuantum;
     }
 
-    Topend* getTopend() {
-        return m_topEnd;
-    }
+    /*
+     * This returns the topend for the currently running
+     * thread.  This may be a thread working on behalf of
+     * some other thread.  Calls to the jni have to use
+     * this function to get the topend.
+     */
+    static Topend* getPhysicalTopend();
 
     /** Current or most recent sp handle */
     int64_t currentSpHandle() {
@@ -156,9 +219,27 @@ class ExecutorContext {
         return m_currentTxnTimestamp;
     }
 
+    /** DR cluster id for the local cluster */
+    int32_t drClusterId() {
+        return m_drClusterId;
+    }
+
     /** Last committed transaction known to this EE */
     int64_t lastCommittedSpHandle() {
         return m_lastCommittedSpHandle;
+    }
+
+    /** DR timestamp field value for this transaction */
+    int64_t currentDRTimestamp() {
+        return m_currentDRTimestamp;
+    }
+
+    bool isTraceOn() {
+        return m_traceOn;
+    }
+
+    VoltDBEngine* getContextEngine() {
+        return m_engine;
     }
 
     /** Executor List for a given sub statement id */
@@ -183,7 +264,7 @@ class ExecutorContext {
     SubqueryContext* setSubqueryContext(int subqueryId, const std::vector<NValue>& lastParams)
     {
         SubqueryContext fromCopy(lastParams);
-#ifdef DEBUG
+#ifndef NDEBUG
         std::pair<std::map<int, SubqueryContext>::iterator, bool> result =
 #endif
             m_subqueryContextMap.insert(std::make_pair(subqueryId, fromCopy));
@@ -191,25 +272,83 @@ class ExecutorContext {
         return &(m_subqueryContextMap.find(subqueryId)->second);
     }
 
-    Table* executeExecutors(int subqueryId);
-    Table* executeExecutors(const std::vector<AbstractExecutor*>& executorList,
-                            int subqueryId);
+    /**
+     * Execute all the executors in the given vector.
+     *
+     * This method will clean up intermediate temporary results, and
+     * return the result table of the last executor.
+     *
+     * The class UniqueTempTableResult is a smart pointer-like object
+     * that will delete the rows of the temp table when it goes out of
+     * scope.
+     *
+     * In absence of subqueries, which cache their results for
+     * performance, this method takes care of all cleanup
+     * aotomatically.
+     */
+    UniqueTempTableResult executeExecutors(const std::vector<AbstractExecutor*>& executorList,
+                                           int subqueryId = 0);
 
+    /**
+     * Similar to above method.  Execute the executors associated with
+     * the given subquery ID, as defined in m_executorsMap.
+     */
+    UniqueTempTableResult executeExecutors(int subqueryId);
+
+    /**
+     * Return the result produced by the given subquery.
+     */
     Table* getSubqueryOutputTable(int subqueryId) const;
 
+    /**
+     * Cleanup all the executors in m_executorsMap (includes top-level
+     * enclosing fragments and any subqueries), and delete any tuples
+     * in temp tables used by the executors.
+     */
     void cleanupAllExecutors();
 
+    /**
+     * Clean up the executors in the given list.
+     */
+    void cleanupExecutorsForSubquery(const std::vector<AbstractExecutor*>& executorList) const;
+
+    /**
+     * Clean up the executors for the given subquery, as contained in m_executorsMap.
+     */
     void cleanupExecutorsForSubquery(int subqueryId) const;
 
-    DRTupleStream* drStream() {
+    void resetExecutionMetadata(ExecutorVector* executorVector);
+
+    void setDrStream(AbstractDRTupleStream *drStream);
+    void setDrReplicatedStream(AbstractDRTupleStream *drReplicatedStream);
+
+    AbstractDRTupleStream* drStream() {
         return m_drStream;
     }
 
-    DRTupleStream* drReplicatedStream() {
+    AbstractDRTupleStream* drReplicatedStream() {
         return m_drReplicatedStream;
     }
 
+    /**
+     * Get the executor context of the site which is
+     * currently the logically executing thread.
+     *
+     * @return The executor context of the logical site.
+     */
     static ExecutorContext* getExecutorContext();
+
+    /**
+     * Get the top end of the site which is currently
+     * working.  This is generally the same as getExecutorContext()->getTopend().
+     * But sometimes, when updating a shared replicated table, the
+     * site doing the updating does work on behalf of all other
+     * sites.  In this case the other sites, not the sites doing
+     * the work, are acting as free riders.
+     *
+     * @return The ExecutorContext of the working site.
+     */
+    static Topend *getThreadTopend();
 
     static Pool* getTempStringPool() {
         ExecutorContext* singleton = getExecutorContext();
@@ -218,42 +357,161 @@ class ExecutorContext {
         return singleton->m_tempStringPool;
     }
 
-    void setDrStreamForTest(DRTupleStream *drStream) {
-        m_drStream = drStream;
-    }
-
     bool allOutputTempTablesAreEmpty() const;
 
+    void checkTransactionForDR();
+
+    void setUsedParameterCount(int usedParamcnt) { m_usedParamcnt = usedParamcnt; }
+    int getUsedParameterCount() const { return m_usedParamcnt; }
+    NValueArray& getParameterContainer() { return m_staticParams; }
+    const NValueArray& getParameterContainer() const { return m_staticParams; }
+
+    void pushNewModifiedTupleCounter() { m_tuplesModifiedStack.push(0); }
+    void popModifiedTupleCounter() { m_tuplesModifiedStack.pop(); }
+    const int64_t getModifiedTupleCount() const {
+        assert(m_tuplesModifiedStack.size() > 0);
+        return m_tuplesModifiedStack.top();
+    }
+    const size_t getModifiedTupleStackSize() const { return m_tuplesModifiedStack.size(); }
+
+    /** DML executors call this to indicate how many tuples
+         * have been modified */
+    void addToTuplesModified(int64_t amount) {
+        assert(m_tuplesModifiedStack.size() > 0);
+        m_tuplesModifiedStack.top() += amount;
+    }
+
+    /**
+     * Called just before a potentially long-running operation
+     * begins execution.
+     *
+     * Track total tuples accessed for this query.  Set up
+     * statistics for long running operations thru m_engine if
+     * total tuples accessed passes the threshold.
+     */
+    inline int64_t pullTuplesRemainingUntilProgressReport(PlanNodeType planNodeType) {
+        m_progressStats.LastAccessedPlanNodeType = planNodeType;
+        return m_progressStats.TupleReportThreshold - m_progressStats.TuplesProcessedSinceReport;
+    }
+
+    /**
+     * Called periodically during a long-running operation to see
+     * if we need to report a long-running fragment.
+     */
+    inline int64_t pushTuplesProcessedForProgressMonitoring(const TempTableLimits* limits,
+                                                            int64_t tuplesProcessed) {
+        m_progressStats.TuplesProcessedSinceReport += tuplesProcessed;
+        if (m_progressStats.TuplesProcessedSinceReport >= m_progressStats.TupleReportThreshold) {
+            reportProgressToTopend(limits);
+        }
+        return m_progressStats.TupleReportThreshold; // size of next batch
+    }
+
+    /**
+     * Called when a long-running operation completes.
+     */
+    inline void pushFinalTuplesProcessedForProgressMonitoring(const TempTableLimits* limits,
+                                                              int64_t tuplesProcessed) {
+        try {
+            pushTuplesProcessedForProgressMonitoring(limits, tuplesProcessed);
+        } catch(const SerializableEEException &e) {
+            e.serialize(m_engine->getExceptionOutputSerializer());
+        }
+
+        m_progressStats.LastAccessedPlanNodeType = PLAN_NODE_TYPE_INVALID;
+    }
+
+    /**
+     * Get the common table with the specified name.
+     * If the table does not yet exist, run the specified statement
+     * to generate it.
+     */
+    AbstractTempTable* getCommonTable(const std::string& tableName,
+                                      int cteStmtId);
+
+    /**
+     * Set the common table map entry for the specified name
+     * to point to the specified table.
+     */
+    void setCommonTable(const std::string& tableName,
+                        AbstractTempTable* table) {
+        m_commonTableMap[tableName] = table;
+    }
+
+    /**
+     * Call into the topend with information about how executing a plan fragment is going.
+     */
+    void reportProgressToTopend(const TempTableLimits* limits);
+
+    LargeTempTableBlockCache* lttBlockCache() {
+        return &m_lttBlockCache;
+    }
+
   private:
-    Topend *m_topEnd;
+    /**
+     * This holds the top end for this executor context.  Don't
+     * use this, however.  Use the result of calling getPhysicalTopend().
+     * This is because sometimes this ExecutorContext is used by some
+     * other site when this site is a free rider.  In this case we will
+     * always, always, always want to use the top end of the site
+     * actually doing the work.
+     */
+    Topend *m_topend;
     Pool *m_tempStringPool;
     UndoQuantum *m_undoQuantum;
 
-    // Pointer to the static parameters
-    NValueArray* m_staticParams;
+    /** reused parameter container. */
+    NValueArray m_staticParams;
+    /** TODO : should be passed as execute() parameter..*/
+    int m_usedParamcnt;
+
+    /** Counts tuples modified by a plan fragments.  Top of stack is the
+     * most deeply nested executing plan fragment.
+     */
+    std::stack<int64_t> m_tuplesModifiedStack;
+
     // Executor stack map. The key is the statement id (0 means the main/parent statement)
     // The value is the pointer to the executor stack for that statement
     std::map<int, std::vector<AbstractExecutor*>* >* m_executorsMap;
+    std::map<std::string, AbstractTempTable*> m_commonTableMap;
     std::map<int, SubqueryContext> m_subqueryContextMap;
 
-    DRTupleStream *m_drStream;
-    DRTupleStream *m_drReplicatedStream;
+    AbstractDRTupleStream *m_drStream;
+    AbstractDRTupleStream *m_drReplicatedStream;
     VoltDBEngine *m_engine;
     int64_t m_txnId;
     int64_t m_spHandle;
     int64_t m_uniqueId;
     int64_t m_currentTxnTimestamp;
+    int64_t m_currentDRTimestamp;
+    LargeTempTableBlockCache m_lttBlockCache;
+    bool m_traceOn;
+
   public:
     int64_t m_lastCommittedSpHandle;
     int64_t m_siteId;
     CatalogId m_partitionId;
     std::string m_hostname;
     CatalogId m_hostId;
-
-    /** local epoch for voltdb, somtime around 2008, pulled from catalog */
-    int64_t m_epoch;
+    CatalogId m_drClusterId;
+    ProgressStats m_progressStats;
 };
 
+struct EngineLocals : public PoolLocals {
+    inline EngineLocals() : PoolLocals(), context(ExecutorContext::getExecutorContext()) {}
+    inline explicit EngineLocals(bool dummyEntry) : PoolLocals(dummyEntry), context(NULL) {}
+    inline explicit EngineLocals(ExecutorContext* ctxt) : PoolLocals(), context(ctxt) {}
+    inline EngineLocals(const EngineLocals& src) : PoolLocals(src), context(src.context)
+    {}
+
+    inline EngineLocals& operator = (EngineLocals const& rhs) {
+        PoolLocals::operator = (rhs);
+        context = rhs.context;
+        return *this;
+    }
+
+    ExecutorContext* context;
+};
 }
 
 #endif

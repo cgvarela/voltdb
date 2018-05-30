@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,7 +20,6 @@ package org.voltdb;
 import org.voltdb.AuthSystem.AuthUser;
 import org.voltdb.SystemProcedureCatalog.Config;
 import org.voltdb.catalog.Procedure;
-import org.voltdb.client.ProcedureInvocationType;
 
 /**
  * An invocation acceptance policy targeting all types of invocations in
@@ -33,53 +32,30 @@ public class ReplicaInvocationAcceptancePolicy extends InvocationValidationPolic
     }
 
 
-    private ClientResponseImpl shouldAcceptHelper(AuthUser user, StoredProcedureInvocation invocation,
-                                 boolean isReadOnly) {
-        // NOT a dragent invocation.
-        if (invocation.getType() == ProcedureInvocationType.ORIGINAL) {
-            if (!isOn) {
-                return null;
-            }
-
-            // This path is only executed before the AdHoc statement is run through the planner. After the
-            // Planner, the client interface will figure out what kind of statement this is.
-            if (invocation.procName.equals("@AdHoc")) {
-                return null;
-            }
-
-            if (isReadOnly) {
-                return null;
-            } else {
-                return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,
-                        new VoltTable[0],
-                        "Write procedure " + invocation.procName +
-                        " is not allowed in replica cluster",
-                        invocation.clientHandle);
-            }
+    private ClientResponseImpl shouldAcceptHelper(
+            AuthUser user,
+            StoredProcedureInvocation invocation,
+            boolean isReadOnly)
+    {
+        if (!isOn) {
+            return null;
         }
 
-        // IS a dragent invocation
-        else {
-            if (!isOn) {
-                return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,
-                        new VoltTable[0],
-                        "Master cluster rejected dragent transaction " + invocation.procName
-                        + ". A DR master cluster will not accept transactions from the dragent.",
-                        invocation.clientHandle);
-            }
-
-            if (isReadOnly) {
-                // This should be impossible since the dragent isn't passed read-only txns.
-                return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,
-                        new VoltTable[0],
-                        "Read-only procedure " + invocation.procName +
-                        " was not replayed on replica cluster. " +
-                        "Reads are not replicated across DR connections.",
-                        invocation.clientHandle);
-            } else {
-                return null;
-            }
+        // This path is only executed before the AdHoc statement is run through the planner. After the
+        // Planner, the client interface will figure out what kind of statement this is.
+        if (invocation.getProcName().equals("@AdHoc")) {
+            return null;
         }
+
+        if (isReadOnly) {
+            return null;
+        }
+
+        return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,
+                new VoltTable[0],
+                "Write procedure " + invocation.getProcName() +
+                " is not allowed in replica cluster",
+                invocation.clientHandle);
     }
 
     @Override
@@ -95,14 +71,14 @@ public class ReplicaInvocationAcceptancePolicy extends InvocationValidationPolic
             procName = "@UpdateApplicationCatalog";
         }
 
-        if (invocation.getType() == ProcedureInvocationType.ORIGINAL &&
-                !procName.equalsIgnoreCase("@AdHoc")) {
+        if (!procName.equalsIgnoreCase("@AdHoc")) {
             Config sysProc = SystemProcedureCatalog.listing.get(procName);
             if (sysProc != null && sysProc.allowedInReplica) {
                 // white-listed sysprocs, adhoc is a special case
                 return null;
             }
         }
+
         return shouldAcceptHelper(user, invocation, proc.getReadonly());
     }
 }

@@ -17,9 +17,8 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.List;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -32,23 +31,29 @@ import javax.annotation_voltpatches.Nullable;
  * @since 3.0
  */
 @GwtCompatible
-public abstract class ForwardingListMultimap<K, V>
-    extends ForwardingMultimap<K, V> implements ListMultimap<K, V> {
+public abstract class ForwardingListMultimap<K, V> extends ForwardingMultimap<K, V>
+    implements ListMultimap<K, V> {
 
   /** Constructor for use by subclasses. */
   protected ForwardingListMultimap() {}
 
-  @Override protected abstract ListMultimap<K, V> delegate();
+  @Override
+  protected abstract ListMultimap<K, V> delegate();
 
-  @Override public List<V> get(@Nullable K key) {
+  @Override
+  public List<V> get(@Nullable K key) {
     return delegate().get(key);
   }
 
-  @Override public List<V> removeAll(@Nullable Object key) {
+  @CanIgnoreReturnValue
+  @Override
+  public List<V> removeAll(@Nullable Object key) {
     return delegate().removeAll(key);
   }
 
-  @Override public List<V> replaceValues(K key, Iterable<? extends V> values) {
+  @CanIgnoreReturnValue
+  @Override
+  public List<V> replaceValues(K key, Iterable<? extends V> values) {
     return delegate().replaceValues(key, values);
   }
 }

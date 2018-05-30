@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,6 @@
  */
 #include "storage/RecoveryContext.h"
 #include "common/RecoveryProtoMessageBuilder.h"
-#include "common/DefaultTupleSerializer.h"
 #include "common/TupleOutputStream.h"
 #include "common/TupleOutputStreamProcessor.h"
 #include "storage/persistenttable.h"
@@ -29,9 +28,8 @@ RecoveryContext::RecoveryContext(
         PersistentTable &table,
         PersistentTableSurgeon &surgeon,
         int32_t partitionId,
-        TupleSerializer &serializer,
         int32_t tableId) :
-    TableStreamerContext(table, surgeon, partitionId, serializer),
+    TableStreamerContext(table, surgeon, partitionId),
     m_firstMessage(true),
     m_iterator(getTable().iterator()),
     m_tableId(tableId),
@@ -57,7 +55,6 @@ bool RecoveryContext::nextMessage(ReferenceSerializeOutput *out) {
     {
         m_iterator = getTable().iterator();
         m_firstMessage = false;
-
     }
 
     if (!m_iterator.hasNext()) {
@@ -73,7 +70,6 @@ bool RecoveryContext::nextMessage(ReferenceSerializeOutput *out) {
         //No tuple count added to message because completion message is only used in Java
         return false;
     }
-    DefaultTupleSerializer serializer;
     //Use allocated tuple count to size stuff at the other end
     uint32_t allocatedTupleCount = static_cast<uint32_t>(getTable().allocatedTupleCount());
     RecoveryProtoMsgBuilder message(
@@ -81,7 +77,6 @@ bool RecoveryContext::nextMessage(ReferenceSerializeOutput *out) {
             m_tableId,
             allocatedTupleCount,
             out,
-            &m_serializer,
             getTable().schema());
     TableTuple tuple(getTable().schema());
     while (message.canAddMoreTuples() && m_iterator.next(tuple)) {

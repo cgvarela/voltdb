@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,7 +26,9 @@ package vmcTest.pages
 import geb.error.RequiredPageContentNotPresent
 import geb.navigator.Navigator
 import geb.waiting.WaitTimeoutException
+
 import org.openqa.selenium.support.ui.Select
+import org.openqa.selenium.WebElement
 
 /**
  * This class represents the 'SQL Query' tab of the VoltDB Management Center
@@ -34,90 +36,112 @@ import org.openqa.selenium.support.ui.Select
  */
 class SqlQueryPage extends VoltDBManagementCenterPage {
     static content = {
-        // Tables, Views & Stored Procedures elements
+        // Tables, Streams, Views & Stored Procedures elements
         tabArea     { $('#tabMain') }
         tabControls { tabArea.find('.tabs') }
         tablesTab   { tabControls.find("a[href='#tab1']") }
-        viewsTab    { tabControls.find("a[href='#tab2']") }
-        storedProcsTab  { tabControls.find("a[href='#tab3']") }
+        streamsTab  { tabControls.find("a[href='#tab2']") }
+        viewsTab    { tabControls.find("a[href='#tab3']") }
+        storedProcsTab  { tabControls.find("a[href='#tab4']") }
         listsArea   { tabArea.find('#tabScroller') }
         tablesNames { listsArea.find('#accordionTable').find('h3') }
+        streamsNames{ listsArea.find('#accordionStreamedTable').find('h3') }
         viewsNames  { listsArea.find('#accordionViews').find('h3') }
         storedProcs { listsArea.find('#accordionProcedures') }
         systemStoredProcsHeader  { storedProcs.find('.systemHeader').first() }
-        defaultStoredProcsHeader { storedProcs.find('.systemHeader').last() }
+        defaultStoredProcsHeader { systemStoredProcsHeader.next('.systemHeader') }
+        userStoredProcsHeader    { storedProcs.find('.systemHeader').last() }
         systemStoredProcs   { storedProcs.find('#systemProcedure').find('h3') }
         defaultStoredProcs  { storedProcs.find('#defaultProcedure').find('h3') }
-        userStoredProcs { defaultStoredProcsHeader.nextAll('h3') }
+        userStoredProcs     { storedProcs.find('#userProcedure').find('h3') }
         allStoredProcs  { storedProcs.find('h3') }
 
-        queryStatus			{ $("th", text:"STATUS") }
-
         // Query elements
-        queryInput  { $('#theQueryText') }
-        runButton   { $('#runBTn') }
-        clearButton { $('#clearQuery') }
-        qrFormatDropDown    { $('#exportType') }
+        queryInput  { $('#querybox-1') }
+        runButton   { $('#runBTn-1') }
+        clearButton { $('#clearQuery-1') }
+        qrFormatDropDown    { $('#exportType-1') }
         qrfddOptions    { qrFormatDropDown.find('option') }
         qrfddSelected   { qrFormatDropDown.find('option', selected: "selected") }
-        queryResHtml    { $('#resultHtml') }
+        queryRes        { $('.queryResult-1') }
+        queryResHtml    { queryRes.find('#resultHtml-1') }
         queryTables     (required: false) { queryResHtml.find('table') }
-        queryErrHtml    (required: false) { queryResHtml.find('span') }
-        queryDurHtml    { $('#queryResults') }
+        queryErrHtml    (required: false) { queryResHtml.find('.errorValue') }
+        queryDur        { $('#queryResults-1') }
 
 
         //popup query ok and cancel
-        cancelpopupquery        { $("#btnQueryDatabasePausedErrorCancel", text:"Cancel")}
-        okpopupquery            { $("#btnQueryDatabasePausedErrorOk", text:"Ok")}
+        cancelpopupquery        { $("#btnQueryDatabasePausedErrorCancel") }
+        okpopupquery            { $("#btnQueryDatabasePausedErrorOk") }
         switchadminport         { $("#queryDatabasePausedInnerErrorPopup > div.overlay-contentError.errorQueryDbPause > p:nth-child(3) > span")}
         queryexecutionerror     { $("#queryDatabasePausedInnerErrorPopup > div.overlay-title", text:"Query Execution Error")}
         queryerrortxt           { $("#queryDatabasePausedInnerErrorPopup > div.overlay-contentError.errorQueryDbPause > p:nth-child(1)")}
 
-        htmltableresult 	    { $("#table_r0_html_0")}
-        createerrorresult	    { $("#resultHtml > span")}
-        htmlresultallcolumns	{ $("#table_r0_html_0 > thead")}
+        htmltableresult         { $("#table_r0_html_0")}
+        createerrorresult       { $("#resultHtml-1 > span")}
+        htmlresultallcolumns    { $("#table_r0_html_0 > thead")}
 
-        htmlresultselect	    { $("#table_r0_html_0 > thead > tr")}
-        refreshquery		    { $("#tabMain > button", text:"Refresh")}
+        htmlresultselect        { $("#table_r0_html_0 > thead > tr")}
+        refreshquery            { $("#tabMain > button", text:"Refresh")}
 
         //options
-        htmlOptions				{ $("option", text:"HTML") }
-        csvOptions				{ $("option", text:"CSV") }
-        monospaceOptions		{ $("option", text:"Monospace") }
+        htmlOptions             { $("option", text:"HTML") }
+        csvOptions              { $("option", text:"CSV") }
+        monospaceOptions        { $("option", text:"Monospace") }
 
         // for view
-        checkview		{ $("#tabMain > ul > li.active > a")}
+        checkview       { $("#tabMain > ul > li.active > a")}
 
         //result
-        resultHtml		{ $("#resultHtml") }
-        resultCsv		{ $("#resultCsv") }
-        resultMonospace	{ $("#resultMonospace") }
-        
+        resultHtml      { $("#resultHtml-1") }
+        resultCsv       { $("#resultCsv-1") }
+        resultMonospace { $("#resultMonospace-1") }
+
         errorObjectNameAlreadyExist     { $("span", class:"errorValue") }
+
+        // Query Box
+        addQueryTab             { $("#new-query > span") }
+        saveTabPopupOk          { $("#btnSaveQueryOk") }
+        saveTabPopupTextField   { $("#txtQueryName") }
+
+        deleteTabOk             { $("#btnCloseTabOk") }
+        deleteTabCancel         { $("#btnCloseTabCancel") }
+
+        // SqlQueriesTextBox
+        queryResultBox          { $("#table_r0_html_0 > tbody") }
+        queryResultBoxTd        { queryResultBox.find("td") }
     }
     static at = {
         sqlQueryTab.displayed
         sqlQueryTab.attr('class') == 'active'
         tablesTab.displayed
+        streamsTab.displayed
         viewsTab.displayed
         storedProcsTab.displayed
         listsArea.displayed
-        queryInput.displayed
-        queryResHtml.displayed
+//        queryInput.displayed
+//        queryRes.displayed
+//        queryDur.displayed
     }
+    boolean textHasChanged = false
 
     /**
      * Displays the list of Tables (by clicking the "Tables" tab).
      */
-
     def showTables() {
         clickToDisplay(tablesTab, tablesNames)
     }
 
     /**
+     * Displays the list of Streams (by clicking the "Streams" tab).
+     */
+    def showStreams() {
+        clickToDisplay(streamsTab, streamsNames)
+    }
+
+    /**
      * Displays the list of Views (by clicking the "Views" tab).
      */
-
     def showViews() {
         clickToDisplay(viewsTab, viewsNames)
     }
@@ -125,7 +149,6 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
     /**
      * Displays the list of Stored Procedures (by clicking the "Stored Procedures" tab).
      */
-
     def showStoredProcedures() {
         clickToDisplay(storedProcsTab, allStoredProcs)
     }
@@ -139,6 +162,21 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
         def names = []
         showTables()
         tablesNames.each {
+            scrollIntoView(it);
+            names.add(it.text())
+        }
+        return names
+    }
+
+    /**
+     * Returns the list of Streams (as displayed on the "Streams" tab).<p>
+     * Note: as a side effect, the "Streams" tab is opened.
+     * @return the list of Stream names.
+     */
+    def List<String> getStreamNames() {
+        def names = []
+        showStreams()
+        streamsNames.each {
             scrollIntoView(it);
             names.add(it.text())
         }
@@ -161,6 +199,37 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
     }
 
     /**
+     * Given two Navigators, for a specific category of Stored Procedures
+     * (System, Default or User), returns the list of that category of Stored
+     * Procedures (as displayed on the "Stored Procedures" tab, under the
+     * specified heading).<p>
+     * Note: as a side effect, the "Stored Procedures" tab is opened (if
+     * needed), and the specfied list of Stored Procedures  is opened (if
+     * needed), and then closed.
+     * @param storedProcsHeaderNav - a Navigator specifiying the header for
+     * the desired category (System, Default or User) of Stored Procedures.
+     * @param storedProcsNav - a Navigator specifiying each of the Stored
+     * Procedures the desired category (System, Default or User).
+     * @return the list of Default Stored Procedure names.
+     */
+    private List<String> getSpecifiedStoredProcedures(Navigator storedProcsHeaderNav,
+                                                      Navigator storedProcsNav) {
+        def storedProcs = []
+        try {
+            showStoredProcedures()
+            clickToDisplay(storedProcsHeaderNav, storedProcsNav)
+            storedProcsNav.each {
+                scrollIntoView(it)
+                storedProcs.add(it.text())
+            }
+            clickToNotDisplay(storedProcsHeaderNav, storedProcsNav)
+        } catch (RequiredPageContentNotPresent e) {
+            // do nothing: empty list will be returned
+        }
+        return storedProcs
+    }
+
+    /**
      * Returns the list of System Stored Procedures (as displayed on the
      * "Stored Procedures" tab, under the "System Stored Procedures" heading).<p>
      * Note: as a side effect, the "Stored Procedures" tab is opened (if
@@ -169,15 +238,7 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
      * @return the list of System Stored Procedure names.
      */
     def List<String> getSystemStoredProcedures() {
-        def storedProcs = []
-        showStoredProcedures()
-        clickToDisplay(systemStoredProcsHeader, systemStoredProcs)
-        systemStoredProcs.each {
-            scrollIntoView(it);
-            storedProcs.add(it.text())
-        }
-        clickToNotDisplay(systemStoredProcsHeader, systemStoredProcs)
-        return storedProcs
+        return getSpecifiedStoredProcedures(systemStoredProcsHeader, systemStoredProcs)
     }
 
     /**
@@ -189,15 +250,7 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
      * @return the list of Default Stored Procedure names.
      */
     def List<String> getDefaultStoredProcedures() { // defaultStoredProcsHeader
-        def storedProcs = []
-        showStoredProcedures()
-        clickToDisplay(defaultStoredProcsHeader, defaultStoredProcs)
-        defaultStoredProcs.each {
-            scrollIntoView(it);
-            storedProcs.add(it.text())
-        }
-        clickToNotDisplay(defaultStoredProcsHeader, defaultStoredProcs)
-        return storedProcs
+        return getSpecifiedStoredProcedures(defaultStoredProcsHeader, defaultStoredProcs)
     }
 
     /**
@@ -210,12 +263,14 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
      */
     def List<String> getUserStoredProcedures() {
         def storedProcs = []
-        showStoredProcedures()
         try {
+            showStoredProcedures()
+            clickToDisplay(userStoredProcsHeader, userStoredProcs)
             userStoredProcs.each {
                 scrollIntoView(it)
                 storedProcs.add(it.text())
             }
+            clickToNotDisplay(userStoredProcsHeader, userStoredProcs)
         } catch (RequiredPageContentNotPresent e) {
             // do nothing: empty list will be returned
         }
@@ -239,21 +294,25 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
     }
 
     /**
-     * Returns the list of Columns (as displayed on the "Tables" or "Views"
-     * tab), for the specified table or view; each column returned includes
-     * both the column name and type, e.g. "CONTESTANT_NUMBER (integer)".<p>
-     * Note: as a side effect, the "Tables" or "Views" tab is opened (if
-     * needed), and the specified table or view is opened (if needed), and
-     * then closed.
-     * @param tableOrViewName - the name of the table or view whose columns
-     * are to be returned.
-     * @param getViewColumns - if true, get columns for the specified view,
-     * rather than table.
-     * @return the list of (table or view) Column names and data types.
+     * Returns the list of Columns (as displayed on the "Tables", "Streams",
+     * or "Views" tab), for the specified table or view; each column returned
+     * includes both the column name and type, e.g. "ROWID (bigint)".
+     * <p>
+     * Note: as a side effect, the "Tables", "Streams", or "Views" tab is opened
+     * (if needed), and the specified table, stream, or view is opened (if
+     * needed), and then closed.
+     * @param name - the name of the table, stream, or view whose columns are
+     * to be returned.
+     * @param type - the type of object whose columns are to be returned; should
+     * be 'table' (default value), 'stream', or 'view'
+     * @return the list of (table, stream, or view) Column names and data types.
      */
-    private def List<String> getColumns(String tableOrViewName, boolean getViewColumns) {
+    private def List<String> getColumns(String name, String type='table') {
         def names = null
-        if (getViewColumns) {
+        if ("stream".equalsIgnoreCase(type)) {
+            showStreams()
+            names = streamsNames
+        } else if ("view".equalsIgnoreCase(type)) {
             showViews()
             names = viewsNames
         } else {
@@ -263,7 +322,7 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
         def columns = []
         names.each {
             scrollIntoView(it)
-            if (it.text() == tableOrViewName) {
+            if (it.text() == name) {
                 def columnList = it.next()
                 clickToDisplay(it, columnList)
                 columnList.find('ul').find('li').each {
@@ -279,27 +338,40 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
     /**
      * Returns the list of Columns (as displayed on the "Tables" tab), for the
      * specified table; each column returned includes both the column name and
-     * type, e.g. "CONTESTANT_NUMBER (integer)".<p>
+     * type, e.g. "ROWID (bigint)".<p>
      * Note: as a side effect, the "Tables" tab is opened (if needed), and the
      * specified table is opened (if needed), and then closed.
      * @param tableName - the name of the table whose columns are to be returned.
      * @return the list of table Column names and data types.
      */
     def List<String> getTableColumns(String tableName) {
-        return getColumns(tableName, false)
+        return getColumns(tableName)
+    }
+
+    /**
+     * Returns the list of Columns (as displayed on the "Streams" tab), for the
+     * specified stream; each column returned includes both the column name and
+     * type, e.g. "ROWID (bigint)".<p>
+     * Note: as a side effect, the "Streams" tab is opened (if needed), and the
+     * specified stream is opened (if needed), and then closed.
+     * @param streamName - the name of the stream whose columns are to be returned.
+     * @return the list of stream Column names and data types.
+     */
+    def List<String> getStreamColumns(String streamName) {
+        return getColumns(streamName, 'stream')
     }
 
     /**
      * Returns the list of Columns (as displayed on the "Views" tab), for the
      * specified view; each column returned includes both the column name and
-     * type, e.g. "CONTESTANT_NUMBER (integer)".<p>
+     * type, e.g. "RECORD_COUNT (integer)".<p>
      * Note: as a side effect, the "Views" tab is opened (if needed), and the
      * specified view is opened (if needed), and then closed.
      * @param viewName - the name of the view whose columns are to be returned.
      * @return the list of view Column names and data types.
      */
     def List<String> getViewColumns(String viewName) {
-        return getColumns(viewName, true)
+        return getColumns(viewName, 'view')
     }
 
     /**
@@ -328,6 +400,36 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
      */
     def List<String> getTableColumnTypes(String tableName) {
         def columns = getTableColumns(tableName)
+        columns = columns.collect { it.substring(it.indexOf('(')+1).replace(")", "").trim() }
+        return columns
+    }
+
+    /**
+     * Returns the list of Column names (as displayed on the "Streams" tab), for
+     * the specified stream.<p>
+     * Note: as a side effect, the "Streams" tab is opened (if needed), and the
+     * specified stream is opened (if needed), and then closed.
+     * @param streamName - the name of the stream whose column names are to be
+     * returned.
+     * @return the list of stream Column names.
+     */
+    def List<String> getStreamColumnNames(String streamName) {
+        def columns = getStreamColumns(streamName)
+        columns = columns.collect { it.substring(0, it.indexOf('(')).trim() }
+        return columns
+    }
+
+    /**
+     * Returns the list of Column data types (as displayed on the "Streams"
+     * tab), for the specified stream.<p>
+     * Note: as a side effect, the "Streams" tab is opened (if needed), and the
+     * specified stream is opened (if needed), and then closed.
+     * @param streamName - the name of the stream whose column types are to be
+     * returned.
+     * @return the list of stream Column data types.
+     */
+    def List<String> getStreamColumnTypes(String streamName) {
+        def columns = getStreamColumns(streamName)
         columns = columns.collect { it.substring(it.indexOf('(')+1).replace(")", "").trim() }
         return columns
     }
@@ -367,7 +469,7 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
      * @param queryText - the text to be entered into the Query textarea.
      */
     def setQueryText(def queryText) {
-        queryInput.value(queryText)
+        queryInput.jquery.html(queryText)
     }
 
     /**
@@ -375,7 +477,7 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
      * @return the current contents of the Query textarea.
      */
     def String getQueryText() {
-        return queryInput.value()
+        return queryInput.text()
     }
 
     /**
@@ -386,28 +488,51 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
     }
 
     /**
+     * Returns true if the text of the query duration element has changed to a
+     * different value - even if it subsequently changed back to the same value.
+     * @param navDurElem - a Navigator specifying the query duration element
+     * to be checked for having changed.
+     * @param initDurText - the original text of the query duration element,
+     * before running a new query.
+     * @return true if the query duration text has changed.
+     */
+    private boolean hasChanged(Navigator navDurElem, String initDurText) {
+        if (textHasChanged) {
+            return true
+        }
+        if (navDurElem.text() != initDurText ) {
+            textHasChanged = true
+        }
+        return textHasChanged
+    }
+
+    /**
      * Runs whatever query is currently listed in the Query text
      * (by clicking the "Run" button).
      */
     def runQuery() {
-        String initQueryResultText = queryResHtml.text()
-        String initQueryDurationText = queryDurHtml.text()
+        String initQueryDurationText = queryDur.text()
         runButton.click()
-        // TODO: improve this wait, so that it waits for the old element(s) to
-        // become "stale", rather than relying on the text to change (which it
-        // sometimes does not, which is why we have to catch a WaitTimeoutException
+
+        // Wait for both the query result and duration to be displayed, with
+        // (non-null) non-empty text; and for the latter to have changed
         try {
+            textHasChanged = false
             waitFor() {
-                queryResHtml.text() != null && !queryResHtml.text().isEmpty() &&
-                        queryDurHtml.text() != null && !queryDurHtml.text().isEmpty() &&
-                        (queryResHtml.text() != initQueryResultText || queryDurHtml.text() != initQueryDurationText)
+                hasChanged(queryDur, initQueryDurationText) &&
+                        isDisplayed(queryRes) && queryRes.text() != null && !queryRes.text().isEmpty() &&
+                        isDisplayed(queryDur) && queryDur.text() != null && !queryDur.text().isEmpty()
             }
         } catch (WaitTimeoutException e) {
             String message = '\nIn SqlQueryPage.runQuery(), caught WaitTimeoutException; this is probably nothing to worry about'
             println message + '.'
+            println 'See Standard error for stack trace.'
+            println 'Previous Duration text: ' + initQueryDurationText
+            println 'Current  Duration text: ' + queryDur.text()
+            println 'Duration text changed : ' + hasChanged(queryDur, initQueryDurationText)
+            println 'Current  Result   text:\n' + queryRes.text()
             System.err.println message + ':'
             e.printStackTrace()
-            println 'See Standard error for stack trace.\n'
         }
         return this
     }
@@ -516,7 +641,7 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
      * @return the text of whatever is shown in the "Query Result" area.
      */
     def String getQueryResultText() {
-        return queryResHtml.text()
+        return queryRes.text()
     }
 
     /**
@@ -534,12 +659,12 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
      * @return the text of any "Query Duration" message; or null.
      */
     def String getQueryDuration() {
-        return queryDurHtml.text()
+        return queryDur.text()
     }
 
     /*
-	 * click DbMonitor tab to go to Db Monitor
-	 */
+     * click DbMonitor tab to go to Db Monitor
+     */
     def boolean gotoDbMonitor() {
         header.tabDBMonitor.click()
     }
@@ -549,6 +674,13 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
      */
     def boolean gotoSchema() {
         header.tabSchema.click()
+    }
+
+    /*
+     * click DbMonitor tab to go to Db Monitor
+     */
+    def boolean gotoAnalysis() {
+        header.tabAnalysis.click()
     }
 
     /*
@@ -571,8 +703,8 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
     }
 
     /*
-	 *	Get delete query
-	 */
+     *  Get delete query
+     */
     def String getQueryToDeleteTable() {
         BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
         String line;
@@ -581,7 +713,45 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
         while((line = br.readLine()) != "#delete") {
         }
 
+        while ((line = br.readLine()) != "#deleteOnly") {
+            // process the line.
+            query = query + line + "\n"
+        }
+
+        return query
+    }
+
+    /*
+    * get query to delete a table only
+    */
+    def String getQueryToDeleteTableOnly() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryDbMonitor.txt"));
+        String line;
+        String query = ""
+
+        while((line = br.readLine()) != "#deleteOnly") {
+        }
+
         while ((line = br.readLine()) != "#name") {
+            // process the line.
+            query = query + line + "\n"
+        }
+
+        return query
+    }
+
+    /*
+     *
+     */
+    def String getQueryToDropTableAndProcedureQuery() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueryAnalysis.txt"));
+        String line;
+        String query = ""
+
+        while((line = br.readLine()) != "#dropTableAndProcedure") {
+        }
+
+        while ((line = br.readLine()) != "#insertQuery") {
             // process the line.
             query = query + line + "\n"
         }
@@ -600,7 +770,7 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
         while((line = br.readLine()) != "#name") {
         }
 
-        while ((line = br.readLine()) != null) {
+        while ((line = br.readLine()) != "#index") {
             query = query + line + "\n"
         }
 
@@ -629,8 +799,8 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
     }
 
     /*
-	 *	Get delete query
-	 */
+     *  Get query to delete a view
+     */
     def String getQueryToDeleteView() {
         BufferedReader br = new BufferedReader(new FileReader("src/resources/viewtable.txt"));
         String line;
@@ -663,5 +833,112 @@ class SqlQueryPage extends VoltDBManagementCenterPage {
         }
 
         return query
+    }
+
+    def String getCssPathOfTab(int index) {
+        return "#qTab-" + String.valueOf(index) +" > a"
+    }
+
+    def String getIdOfQueryBox(int index) {
+        return "#querybox-" + String.valueOf(index)
+    }
+
+    def String getIdOfSaveButton(int index) {
+        return "#querySaveBtn-" + String.valueOf(index)
+    }
+
+    def String getIdOfDeleteTab(int index) {
+        return "close-tab-" + String.valueOf(index)
+    }
+
+    def String getCreateQueryForSqlQueriesTextBoxTest() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueriesTextBox.txt"));
+        String line = null;
+        String query = "";
+        int count = 0;
+        while((line = br.readLine()) != null && count <= 2) {
+            if (count == 2)
+                query = line;
+            count++;
+        }
+        return query;
+    }
+
+    def String getDeleteQueryForSqlQueriesTextBoxTest() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueriesTextBox.txt"));
+        String line = null;
+        String query = "";
+        int count = 0;
+        while((line = br.readLine()) != null && count <= 1) {
+            if (count == 1)
+                query = line;
+            count++;
+        }
+        return query;
+    }
+
+    def String getInsertQueryForSqlQueriesTextBoxTest() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueriesTextBox.txt"));
+        String line = null;
+        String query = "";
+        int count = 0;
+        while((line = br.readLine()) != null && count <= 4) {
+            if (count == 4)
+                query = line;
+            count++;
+        }
+        return query;
+    }
+
+    def String getSelectQueryForSqlQueriesTextBoxTest() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueriesTextBox.txt"));
+        String line = null;
+        String query = "";
+        int count = 0;
+        while((line = br.readLine()) != null && count <= 3) {
+            if (count == 3)
+                query = line;
+            count++;
+        }
+        return query;
+    }
+
+    def String getInsertQueryWithSpecialCharactersForSqlQueriesTextBoxTest() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueriesTextBox.txt"));
+        String line = null;
+        String query = "";
+        int count = 0;
+        while((line = br.readLine()) != null && count <= 5) {
+            if (count == 5)
+                query = line;
+            count++;
+        }
+        return query;
+    }
+
+    def String getUpdateQueryWithSpecialCharactersForSqlQueriesTextBoxTest() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueriesTextBox.txt"));
+        String line = null;
+        String query = "";
+        int count = 0;
+        while((line = br.readLine()) != null && count <= 6) {
+            if (count == 6)
+                query = line;
+            count++;
+        }
+        return query;
+    }
+
+    def String getInsertQueryWithSpacesForSqlQueriesTextBoxTest() {
+        BufferedReader br = new BufferedReader(new FileReader("src/resources/sqlQueriesTextBox.txt"));
+        String line = null;
+        String query = "";
+        int count = 0;
+        while((line = br.readLine()) != null && count <= 7) {
+            if (count == 7)
+                query = line;
+            count++;
+        }
+        return query;
     }
 }

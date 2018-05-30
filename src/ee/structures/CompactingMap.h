@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -56,7 +56,11 @@ public:
     const Data& getValue() const { return std::pair<Key, Data>::second; }
     void setKey(const Key &key) { std::pair<Key, Data>::first = key; }
     void setValue(const Data &value) { std::pair<Key, Data>::second = value; }
-
+    void setKeyValuePair(const Key &key, const Data &value)
+    {
+        std::pair<Key, Data>::first = key;
+        std::pair<Key, Data>::second = value;
+    }
     // This function does nothing, and is only to offer the same API as PointerKeyValuePair.
     const void *setPointerValue(const void *value) { return NULL; }
 };
@@ -68,16 +72,15 @@ public:
  * The interface is stl::map-like, but is a loose subset with a few
  * simplifications and no STL inheritence compatibility.
  *
- * The twist is that the memory storage for all nodes is tightly
- * packed into a buffer chain (CongtiguousAllocator). When nodes
- * are removed, other nodes are moved into the holes to keep
- * the memory contiguous. This prevents fragmenting of memory on
- * the heap (or in a pool) and allows deletion to return memory
- * to the operating system.
+ * The twist is that the memory storage for all nodes is tightly packed into
+ * a buffer chain (ContiguousAllocator). As a node is removed, another
+ * node is moved into the hole to keep the memory contiguous. This prevents
+ * fragmenting of memory on the heap (or in a pool) and allows shrinkage to
+ * return memory to the operating system.
  *
  * Three issues to be aware of:
- * 1. Nodes can be moved in memory randomly. This currently calls
- *    copy constructors.
+ * 1. Nodes can be moved in memory randomly.
+ *    This currently calls assignment operators.
  * 2. Key types and Value types may not have their destructors
  *    called in all scenarios.
  * 3. Iterators are invalidated by any table mutation. Further,
@@ -86,18 +89,23 @@ public:
  *    problem so please be aware of this issue.
  * 4. Iterators have no overloaded operators yet. You can't
  *    compare them using ==. Compare keys and values instead.
- *
- * Some or all of these issues may be fixed in the future.
- *
  */
+
+/* Some older compilers apparently do not allow static const data members
+ * (of templates?) to be referenced by nested classes, so, for example,
+ * TreeNode methods could not see the definition of CompactingMap::RED.
+ * as a workaround, define these uglier qualified names outside the class.
+ */
+static const char COMPACTING_MAP_RED = 0;
+static const char COMPACTING_MAP_BLACK = 1;
 
 template<typename KeyValuePair, typename Compare, bool hasRank=false>
 class CompactingMap {
     typedef typename KeyValuePair::first_type Key;
     typedef typename KeyValuePair::second_type Data;
 protected:
-    static const char RED = 0;
-    static const char BLACK = 1;
+    static const char RED = COMPACTING_MAP_RED;
+    static const char BLACK = COMPACTING_MAP_BLACK;
 
     struct TreeNode {
         KeyValuePair kv;
@@ -107,10 +115,42 @@ protected:
         char color;
         NodeCount subct;
 
+        // The storage for all the nodes in a map except for the "NIL"
+        // instance, are managed within blocks by the map's contiguous
+        // allocator.
+        void* operator new(std::size_t unused_sz, ContiguousAllocator& ca)
+        {
+            void *memory = ca.alloc();
+            assert(memory);
+            return memory;
+        }
+
+        // This no-op implementation allows use of "delete x;" as a less
+        // awkward equivalent to calling "x->~TreeNode();".
+        // Actual deallocation must be handled externally
+        // by an explicit follow-on call to allocator.trim().
+        void operator delete(void* unused) { }
+
+        // As reported by valgrind, the implicit no-argument constructor
+        // that C++ would generate if none were explicitly defined here
+        // MAY cause a mysterious 8-byte write that runs 4-bytes past the
+        // end of the allocation. (!?)
+        // Define an explicit constructor for safety.
+        TreeNode(TreeNode* toNIL, TreeNode* toParent, NodeCount count = 1)
+          : parent(toParent)
+          , left(toNIL)
+          , right(toNIL)
+          , color((toParent == toNIL) ?
+          COMPACTING_MAP_BLACK :
+                  COMPACTING_MAP_RED)
+        {
+            if (hasRank) {
+                subct = count;
+            }
+        }
+
         const Key &key() const { return kv.getKey(); };
         const Data &value() const { return kv.getValue(); };
-        void setKey(const Key &value) { kv.setKey(value); }
-        void setValue(const Data &value) { kv.setValue(value); }
     };
 
     int64_t m_count;
@@ -156,9 +196,9 @@ public:
     ~CompactingMap();
 
     // TODO: remove this. But two eecheck depend on this.
-    bool insert(std::pair<Key, Data> value) { return insert(value.first, value.second); };
+    bool insert(std::pair<Key, Data> value) { return (insert(value.first, value.second) == NULL); };
     // A syntactically convenient analog to CompactingHashTable's insert function
-    bool insert(const Key &key, const Data &data);
+    const Data *insert(const Key &key, const Data &data);
     bool erase(const Key &key);
     bool erase(iterator &iter);
 
@@ -186,9 +226,8 @@ public:
 
     size_t bytesAllocated() const { return m_allocator.bytesAllocated(); }
 
-    // TODO(xin): later rename it to rankLower
     // Must pass a key that already in map, or else return -1
-    int64_t rankAsc(const Key& key) const;
+    int64_t rankLower(const Key& key) const;
     int64_t rankUpper(const Key& key) const;
 
     /**
@@ -196,6 +235,8 @@ public:
      */
     bool verify() const;
     bool verifyRank() const;
+    /** Do we have a cached last buffer?  This is used in testing. */
+    bool hasCachedLastBuffer() const { return (m_allocator.hasCachedLastBuffer()); }
 
 protected:
     // main internal functions
@@ -208,7 +249,6 @@ protected:
     inline void decSubct(TreeNode* x);
     inline void updateSubct(TreeNode* x);
 
-    // static for iterator use
     TreeNode *minimum(const TreeNode *subRoot) const;
     TreeNode *maximum(const TreeNode *subRoot) const;
     TreeNode *successor(const TreeNode *x) const;
@@ -237,14 +277,9 @@ CompactingMap<KeyValuePair, Compare, hasRank>::CompactingMap(bool unique, Compar
       m_root(&NIL),
       m_allocator(static_cast<int>(sizeof(TreeNode) - (hasRank ? 0 : sizeof(NodeCount))), static_cast<int>(10000)),
       m_unique(unique),
+      NIL(&NIL, &NIL, INVALIDCT),
       m_comper(comper)
-{
-    NIL.left = NIL.right = NIL.parent = &NIL;
-    NIL.color = BLACK;
-    if (hasRank) {
-        NIL.subct = INVALIDCT;
-    }
-}
+{ }
 
 template<typename KeyValuePair, typename Compare, bool hasRank>
 CompactingMap<KeyValuePair, Compare, hasRank>::~CompactingMap()
@@ -276,17 +311,20 @@ bool CompactingMap<KeyValuePair, Compare, hasRank>::erase(iterator &iter)
 }
 
 template<typename KeyValuePair, typename Compare, bool hasRank>
-bool CompactingMap<KeyValuePair, Compare, hasRank>::insert(const Key &key, const Data &value)
+const typename CompactingMap<KeyValuePair, Compare, hasRank>::Data *
+CompactingMap<KeyValuePair, Compare, hasRank>::insert(const Key &key, const Data &value)
 {
     if (m_root != &NIL) {
         // find a place to put the new node
         TreeNode *y = &NIL;
         TreeNode *x = m_root;
+        bool sortsLeftOfParent = false;
         while (x != &NIL) {
             y = x;
             int cmp = m_comper(key, x->key());
             if (cmp < 0) {
                 x = x->left;
+                sortsLeftOfParent = true;
             }
             else {
                 // For non-unique indexes -- not really being used since unique tuple addresses
@@ -295,15 +333,17 @@ bool CompactingMap<KeyValuePair, Compare, hasRank>::insert(const Key &key, const
                 if (m_unique && (cmp == 0)) {
                     // Inserting exact matches fails for unique indexes.
                     // Undo the optimistic bumping of subcounts done already on the way down.
+                    const Data *collidingData = &x->value();
                     if (hasRank) {
                         while (x != &NIL) {
                             x = x->parent;
                             decSubct(x);
                         }
                     }
-                    return false;
+                    return collidingData;
                 }
                 x = x->right;
+                sortsLeftOfParent = false;
             }
 
             if (hasRank) {
@@ -311,25 +351,14 @@ bool CompactingMap<KeyValuePair, Compare, hasRank>::insert(const Key &key, const
             }
         }
 
-        // create a new node
-        void *memory = m_allocator.alloc();
-        assert(memory);
-        // placement new
-        TreeNode *z = new(memory) TreeNode();
-        z->setKey(key);
-        z->setValue(value); // for PointerKeyType, this is a little duplicating process
-        z->left = z->right = &NIL;
-        z->parent = y;
-        z->color = RED;
-        if (hasRank) {
-            z->subct = 1;
-        }
+        assert(y != &NIL);
+
+        // create a new node using the custom operator new
+        TreeNode *z = new (m_allocator) TreeNode(&NIL, y);
+        z->kv.setKeyValuePair(key, value);
 
         // stitch it in
-        if (y == &NIL) {
-            m_root = z;
-        }
-        else if (m_comper(z->key(), y->key()) < 0) {
+        if (sortsLeftOfParent) {
             y->left = z;
         }
         else {
@@ -340,25 +369,15 @@ bool CompactingMap<KeyValuePair, Compare, hasRank>::insert(const Key &key, const
         insertFixup(z);
     }
     else {
-        // create a new node as root
-        void *memory = m_allocator.alloc();
-        assert(memory);
-        // placement new
-        TreeNode *z = new(memory) TreeNode();
-        z->setKey(key);
-        z->setValue(value); // for PointerKeyType, this is a little duplicating process
-        z->left = z->right = &NIL;
-        z->parent = &NIL;
-        z->color = BLACK;
-        if (hasRank) {
-            z->subct = 1;
-        }
+        // create a new node as root using the custom operator new
+        TreeNode *z = new (m_allocator) TreeNode(&NIL, &NIL);
+        z->kv.setKeyValuePair(key, value);
         // make it root
         m_root = z;
     }
     m_count++;
     assert(m_allocator.count() == m_count);
-    return true;
+    return NULL;
 }
 
 template<typename KeyValuePair, typename Compare, bool hasRank>
@@ -413,16 +432,20 @@ CompactingMap<KeyValuePair, Compare, hasRank>::equalRange(const Key &key) const
 template<typename KeyValuePair, typename Compare, bool hasRank>
 void CompactingMap<KeyValuePair, Compare, hasRank>::erase(TreeNode *z)
 {
-    TreeNode *y, *x, *delnode = z;
-
-    // find a replacement node to swap with
+    TreeNode *y;
     if ((z->left == &NIL) || (z->right == &NIL)) {
         y = z;
     }
     else {
+        // Deleting a parent with two children is too complicated.
+        // Find a more easily deleted adjacent node to swap with.
         y = successor(z);
+        // z assumes y's content so that
+        // y can be deleted in z's place.
+        z->kv = y->kv;
     }
 
+    TreeNode *x;
     if (y->left != &NIL) {
         x = y->left;
     }
@@ -442,25 +465,23 @@ void CompactingMap<KeyValuePair, Compare, hasRank>::erase(TreeNode *z)
         y->parent->right = x;
     }
 
-    if (y != z) {
-        z->kv = y->kv;
-        delnode = y;
-    }
     if (hasRank) {
-        TreeNode *ct = delnode;
+        TreeNode *ct = y;
         while (ct != &NIL) {
             ct = ct->parent;
             decSubct(ct);
         }
     }
 
+    // Rebalance the tree.
     if (y->color == BLACK) {
         deleteFixup(x);
     }
     m_count--;
 
-    // move a node to fill this hole
-    fragmentFixup(delnode);
+    // Fix up the contiguous allocation --
+    // move a node to fill a hole.
+    fragmentFixup(y);
 }
 
 template<typename KeyValuePair, typename Compare, bool hasRank>
@@ -654,21 +675,17 @@ void CompactingMap<KeyValuePair, Compare, hasRank>::deleteFixup(TreeNode *x)
 }
 
 template<typename KeyValuePair, typename Compare, bool hasRank>
-void CompactingMap<KeyValuePair, Compare, hasRank>::fragmentFixup(TreeNode *X) {
-    // tree is empty now (after the recent delete)
-    if (m_count == 0) {
-        X->~TreeNode();
-        m_allocator.trim();
-        assert(m_allocator.count() == m_count);
-        return;
-    }
+void CompactingMap<KeyValuePair, Compare, hasRank>::fragmentFixup(TreeNode *x) {
+    // If the tree is empty now (after the recent delete),
+    // x is the last node -- in every sense,
+    // because it is the ONLY node.
+    // Find the last item allocated in our contiguous memory
+    TreeNode *last = (m_count == 0) ? x : static_cast<TreeNode*>(m_allocator.last());
 
-    // last item allocated in our contiguous memory
-    TreeNode *last = static_cast<TreeNode*>(m_allocator.last());
-
-    // if deleting the last item
-    if (last == X) {
-        X->~TreeNode();
+    // Deleting the last node, the one at the end of the last contiguous block,
+    // is trivial.
+    if (last == x) {
+        delete last;
         m_allocator.trim();
         assert(m_allocator.count() == m_count);
         return;
@@ -677,44 +694,45 @@ void CompactingMap<KeyValuePair, Compare, hasRank>::fragmentFixup(TreeNode *X) {
     // last should be a real node
     //assert(isReachableNode(m_root, last));
 
-    // if there's a parent node, make it point to the hole
-    if (last->parent != &NIL) {
+    if (last->parent == &NIL) {
+        // fix the root pointer if needed
+        assert(last == m_root);
+        m_root = x;
+    }
+    else {
+        assert(last != m_root);
+        // Last has a parent node.
+        // Make its pointer to last now point to the hole.
         //assert(isReachableNode(m_root, last->parent));
-
         if (last->parent->left == last) {
-            last->parent->left = X;
+            last->parent->left = x;
         }
         else {
             assert(last->parent->right == last);
-            last->parent->right = X;
+            last->parent->right = x;
         }
     }
 
-    // if there's children, make their parents point to hole
+    // If last has children, make their parent pointers point to the hole.
     if (last->left != &NIL) {
-        last->left->parent = X;
+        last->left->parent = x;
     }
     if (last->right != &NIL) {
-        last->right->parent = X;
+        last->right->parent = x;
     }
 
-    // copy the last node over the deleted node
-    assert(X != &NIL);
-    X->parent = last->parent;
-    X->left = last->left;
-    X->right = last->right;
-    X->color = last->color;
-    X->kv = last->kv;
+    // Copy the last node over the hole left by the deleted node.
+    assert(x != &NIL);
+    x->parent = last->parent;
+    x->left = last->left;
+    x->right = last->right;
+    x->color = last->color;
+    x->kv = last->kv;
     if (hasRank) {
-        X->subct = last->subct;
+        x->subct = last->subct;
     }
 
-    // fix the root pointer if needed
-    if (last == m_root) {
-        m_root = X;
-    }
-
-    last->~TreeNode();
+    delete last;
     m_allocator.trim();
     assert(m_allocator.count() == m_count);
 }
@@ -787,6 +805,10 @@ bool CompactingMap<KeyValuePair, Compare, hasRank>::isReachableNode(const TreeNo
 template<typename KeyValuePair, typename Compare, bool hasRank>
 inline int64_t CompactingMap<KeyValuePair, Compare, hasRank>::getSubct(const TreeNode* x) const
 {
+    if (! hasRank) {
+        return INVALIDCT;
+    }
+
     if (x == &NIL) {
         return 0;
     }
@@ -794,7 +816,7 @@ inline int64_t CompactingMap<KeyValuePair, Compare, hasRank>::getSubct(const Tre
     if (x->subct == INVALIDCT) {
         return getSubct(x->left) + getSubct(x->right) + 1;
     }
-    // return 32_t, cast it to 64_t automatically
+    // return int_32_t, cast it to int_64_t automatically
     return x->subct;
 }
 
@@ -845,7 +867,7 @@ inline void CompactingMap<KeyValuePair, Compare, hasRank>::updateSubct(TreeNode*
 }
 
 template<typename KeyValuePair, typename Compare, bool hasRank>
-int64_t CompactingMap<KeyValuePair, Compare, hasRank>::rankAsc(const Key& key) const
+int64_t CompactingMap<KeyValuePair, Compare, hasRank>::rankLower(const Key& key) const
 {
     if (!hasRank) {
         return -1;
@@ -864,7 +886,7 @@ int64_t CompactingMap<KeyValuePair, Compare, hasRank>::rankAsc(const Key& key) c
             ctr = getSubct(m_root->right);
         }
         ct = getSubct(m_root) - ctr;
-        while(p->parent != &NIL) {
+        while (p->parent != &NIL) {
             if (compareKeyRegardlessOfPointer(key, p) == 0) {
                 if (p->right != &NIL) {
                     if (compareKeyRegardlessOfPointer(key, p->right) == 0) {
@@ -875,7 +897,8 @@ int64_t CompactingMap<KeyValuePair, Compare, hasRank>::rankAsc(const Key& key) c
             }
             p = p->parent;
         }
-    } else if (m > 0) {
+    }
+    else if (m > 0) {
         if (p->right != &NIL) {
             ctr = getSubct(p->right);
         }
@@ -886,7 +909,8 @@ int64_t CompactingMap<KeyValuePair, Compare, hasRank>::rankAsc(const Key& key) c
             }
             p = p->parent;
         }
-    } else {
+    }
+    else {
         if (p->left != &NIL) {
             ctl = getSubct(p->left);
         }
@@ -909,7 +933,7 @@ int64_t CompactingMap<KeyValuePair, Compare, hasRank>::rankUpper(const Key& key)
         return -1;
     }
     if (m_unique) {
-        return rankAsc(key);
+        return rankLower(key);
     }
     TreeNode *n = lookup(key);
     // return -1 if the key passed in is not in the map
@@ -922,7 +946,7 @@ int64_t CompactingMap<KeyValuePair, Compare, hasRank>::rankUpper(const Key& key)
     if (it.isEnd()) {
         return m_count;
     }
-    return rankAsc(it.key()) - 1;
+    return rankLower(it.key()) - 1;
 }
 
 template<typename KeyValuePair, typename Compare, bool hasRank>
@@ -944,9 +968,11 @@ CompactingMap<KeyValuePair, Compare, hasRank>::lookupRank(int64_t ith) const
         if (rk == xl + 1) {
             retval = x;
             rk = 0;
-        } else if (rk < xl + 1) {
+        }
+        else if (rk < xl + 1) {
             x = x->left;
-        } else {
+        }
+        else {
             x = x->right;
             rk -= (xl + 1);
         }
@@ -973,11 +999,12 @@ bool CompactingMap<KeyValuePair, Compare, hasRank>::verifyRank() const
         }
 
         if (m_unique) {
-            if ((rkasc = rankAsc(it.key())) != i) {
-                printf("false: unique_rankAsc expected %ld, but got %ld\n", (long)i, (long)rkasc);
+            if ((rkasc = rankLower(it.key())) != i) {
+                printf("false: unique_rankLower expected %ld, but got %ld\n", (long)i, (long)rkasc);
                 return false;
             }
-        } else {
+        }
+        else {
             const Key k = it.key();
             // test rankUpper
             iterator up = upperBound(k);
@@ -990,7 +1017,8 @@ bool CompactingMap<KeyValuePair, Compare, hasRank>::verifyRank() const
                         return false;
                     }
                 }
-            } else {
+            }
+            else {
                 up.movePrev();
                 if (it.equals(up)) {
                     rkUpper = rankUpper(k);
@@ -1000,8 +1028,8 @@ bool CompactingMap<KeyValuePair, Compare, hasRank>::verifyRank() const
                     }
                 }
             }
-            // test rankAsc
-            rkasc = rankAsc(k);
+            // test rankLower
+            rkasc = rankLower(k);
             int64_t nc = 0;
             it.movePrev();
             while (k == it.key()) {
@@ -1009,8 +1037,8 @@ bool CompactingMap<KeyValuePair, Compare, hasRank>::verifyRank() const
                 it.movePrev();
             }
             if (rkasc + nc != i) {
-                printf("false: multi_rankAsc %ld keys are the same", (long)nc);
-                printf("false: multi_rankAsc expected %ld, but got %ld\n", (long)i, (long)rkasc);
+                printf("false: multi_rankLower %ld keys are the same", (long)nc);
+                printf("false: multi_rankLower expected %ld, but got %ld\n", (long)i, (long)rkasc);
                 return false;
             }
         }
@@ -1021,7 +1049,7 @@ bool CompactingMap<KeyValuePair, Compare, hasRank>::verifyRank() const
 template<typename KeyValuePair, typename Compare, bool hasRank>
 bool CompactingMap<KeyValuePair, Compare, hasRank>::verify() const
 {
-    if (NIL.color != BLACK) {
+    if (NIL.color == RED) {
         printf("NIL is red\n");
         return false;
     }
@@ -1160,11 +1188,7 @@ template<typename KeyValuePair, typename Compare, bool hasRank>
 inline int
 CompactingMap<KeyValuePair, Compare, hasRank>::compareKeyRegardlessOfPointer(const Key& key, TreeNode *node) const
 {
-    // assume key's pointer field is NULL, if there is a pointer field in key
-    const void *tmp = node->kv.setPointerValue(NULL);
-    int rv = m_comper(key, node->key());
-    node->kv.setPointerValue(tmp);
-    return rv;
+    return m_comper.compareWithoutPointer(key, node->key());
 }
 
 } // namespace voltdb

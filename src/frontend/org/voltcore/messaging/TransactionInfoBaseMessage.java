@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,6 +20,8 @@ package org.voltcore.messaging;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+import org.voltdb.iv2.TxnEgo;
+
 
 /**
  * Message from an initiator to an execution site, informing the
@@ -39,14 +41,14 @@ public abstract class TransactionInfoBaseMessage extends VoltMessage {
     private long m_spHandle;
     // IV2: allow PI to signal RI repair log truncation with a new task.
     private long m_truncationHandle;
-    // The originalTxnId for DR. Duplicates logic in ProcedureInvocation
-    // to communicate DR state and ordering for CompleteTransaction
-    // and FragmentTaskMessages and MultipartitionParticipantMessages.
-    protected long m_originalDRTxnId = -1;
     protected boolean m_isReadOnly;
     // Message create for command log replay.
     protected boolean m_isForReplay;
 
+    // If its is true, the message is created on partition leader and sent to replicas.
+    protected boolean m_isForReplica = false;
+
+    public static final long INITIAL_TIMESTAMP = Long.MIN_VALUE;
 
     /** Empty constructor for de-serialization */
     protected TransactionInfoBaseMessage() {
@@ -84,7 +86,6 @@ public abstract class TransactionInfoBaseMessage extends VoltMessage {
         m_subject = rhs.m_subject;
         m_spHandle = rhs.m_spHandle;
         m_truncationHandle = rhs.m_truncationHandle;
-        m_originalDRTxnId = rhs.m_originalDRTxnId;
     }
 
     public long getInitiatorHSId() {
@@ -139,18 +140,6 @@ public abstract class TransactionInfoBaseMessage extends VoltMessage {
         return m_isForReplay;
     }
 
-    public boolean isForDR() {
-        return m_originalDRTxnId != -1;
-    }
-
-    public void setOriginalTxnId(long txnId) {
-        m_originalDRTxnId = txnId;
-    }
-
-    public long getOriginalTxnId() {
-        return m_originalDRTxnId;
-    }
-
     @Override
     public int getSerializedSize() {
         int msgsize = super.getSerializedSize();
@@ -160,9 +149,10 @@ public abstract class TransactionInfoBaseMessage extends VoltMessage {
             + 8        // m_timestamp
             + 8        // m_spHandle
             + 8        // m_truncationHandle
-            + 8        // m_originalDRTxnId
             + 1        // m_isReadOnly
-            + 1;       // is for replay flag
+            + 1        // is for replay flag
+            + 1;       // m_isLeaderToReplica
+
         return msgsize;
     }
 
@@ -174,9 +164,9 @@ public abstract class TransactionInfoBaseMessage extends VoltMessage {
         buf.putLong(m_uniqueId);
         buf.putLong(m_spHandle);
         buf.putLong(m_truncationHandle);
-        buf.putLong(m_originalDRTxnId);
         buf.put(m_isReadOnly ? (byte) 1 : (byte) 0);
         buf.put(m_isForReplay ? (byte) 1 : (byte) 0);
+        buf.put(m_isForReplica ? (byte) 1 : (byte) 0);
     }
 
     @Override
@@ -187,8 +177,21 @@ public abstract class TransactionInfoBaseMessage extends VoltMessage {
         m_uniqueId = buf.getLong();
         m_spHandle = buf.getLong();
         m_truncationHandle = buf.getLong();
-        m_originalDRTxnId = buf.getLong();
         m_isReadOnly = buf.get() == 1;
         m_isForReplay = buf.get() == 1;
+        m_isForReplica = buf.get() == 1;
+    }
+
+    public void setForReplica(boolean toReplica) {
+        m_isForReplica = toReplica;
+    }
+
+    public boolean isForReplica() {
+        return m_isForReplica;
+    }
+
+    @Override
+    public String getMessageInfo() {
+        return getClass().getSimpleName() + " TxnId:" + TxnEgo.txnIdToString(m_txnId);
     }
 }

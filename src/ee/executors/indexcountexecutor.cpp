@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,17 +17,10 @@
 
 #include "indexcountexecutor.h"
 
-#include "common/debuglog.h"
-#include "common/common.h"
-#include "common/tabletuple.h"
-#include "common/ValueFactory.hpp"
-#include "expressions/abstractexpression.h"
 #include "expressions/expressionutil.h"
 #include "indexes/tableindex.h"
 #include "plannodes/indexcountnode.h"
-#include "storage/table.h"
 #include "storage/tableiterator.h"
-#include "storage/temptable.h"
 #include "storage/persistenttable.h"
 
 using namespace voltdb;
@@ -50,7 +43,7 @@ static long countNulls(TableIndex * tableIndex, AbstractExpression * countNULLEx
 
 
 bool IndexCountExecutor::p_init(AbstractPlanNode *abstractNode,
-                                TempTableLimits* limits)
+                                const ExecutorVector& executorVector)
 {
     VOLT_DEBUG("init IndexCount Executor");
 
@@ -60,7 +53,7 @@ bool IndexCountExecutor::p_init(AbstractPlanNode *abstractNode,
     assert(m_node->getPredicate() == NULL);
 
     // Create output table based on output schema from the plan
-    setTempOutputTable(limits);
+    setTempOutputTable(executorVector);
 
     //
     // Make sure that we have search keys and that they're not null
@@ -98,7 +91,7 @@ bool IndexCountExecutor::p_init(AbstractPlanNode *abstractNode,
         }
     }
     //output table should be temptable
-    m_outputTable = static_cast<TempTable*>(m_node->getOutputTable());
+    m_outputTable = static_cast<AbstractTempTable*>(m_node->getOutputTable());
     m_numOfColumns = static_cast<int>(m_outputTable->columnCount());
     assert(m_numOfColumns == 1);
 
@@ -112,13 +105,10 @@ bool IndexCountExecutor::p_init(AbstractPlanNode *abstractNode,
         m_endType = m_node->getEndType();
     }
 
-    //
-    // Grab the Index from our inner table
-    // We'll throw an error if the index is missing
-    //
-    Table* targetTable = m_node->getTargetTable();
-    //target table should be persistenttable
-    assert(dynamic_cast<PersistentTable*>(targetTable));
+    // The target table should be a persistent table
+    // Grab the Index from the table. Throw an error if the index is missing.
+    PersistentTable* targetTable = dynamic_cast<PersistentTable*>(m_node->getTargetTable());
+    assert(targetTable);
 
     TableIndex *tableIndex = targetTable->index(m_node->getTargetIndexName());
     assert (tableIndex != NULL);
@@ -143,7 +133,8 @@ bool IndexCountExecutor::p_init(AbstractPlanNode *abstractNode,
 bool IndexCountExecutor::p_execute(const NValueArray &params)
 {
     // update local target table with its most recent reference
-    Table* targetTable = m_node->getTargetTable();
+    assert(dynamic_cast<PersistentTable*>(m_node->getTargetTable()));
+    PersistentTable* targetTable = static_cast<PersistentTable*>(m_node->getTargetTable());
     TableIndex * tableIndex = targetTable->index(m_node->getTargetIndexName());
     IndexCursor indexCursor(tableIndex->getTupleSchema());
 
@@ -181,7 +172,7 @@ bool IndexCountExecutor::p_execute(const NValueArray &params)
         VOLT_DEBUG("<Index Count>Initial (all null) search key: '%s'", searchKey.debugNoHeader().c_str());
         for (int ctr = 0; ctr < activeNumOfSearchKeys; ctr++) {
             NValue candidateValue = m_searchKeyArray[ctr]->eval(NULL, NULL);
-            if (candidateValue.isNull()) {
+            if (candidateValue.isNull() && m_node->getCompareNotDistinctFlags()[ctr] == false) {
                 // when any part of the search key is NULL, the result is false when it compares to anything.
                 // do early return optimization, our index comparator may not handle null comparison correctly.
                 earlyReturnForSearchKeyOutOfRange = true;
@@ -191,32 +182,53 @@ bool IndexCountExecutor::p_execute(const NValueArray &params)
                 searchKey.setNValue(ctr, candidateValue);
             }
             catch (const SQLException &e) {
-                // This next bit of logic handles underflow and overflow while
+                // This next bit of logic handles underflow, overflow and search key length
+                // exceeding variable length column size (variable lenght mismatch) when
                 // setting up the search keys.
                 // e.g. TINYINT > 200 or INT <= 6000000000
-
-                // re-throw if not an overflow or underflow
+                // VarChar(3 bytes) < "abcd" or VarChar(3) > "abbd"
+                //
+                // Shouldn't this all be the same as the code in indexscanexecutor?
+                // Here the localLookupType can only be NE, EQ, GT or GTE, and never LT
+                // or LTE.  But that seems like something a template could puzzle out.
+                //
+                // re-throw if not an overflow or underflow or variable length mismatch
                 // currently, it's expected to always be an overflow or underflow
-                if ((e.getInternalFlags() & (SQLException::TYPE_OVERFLOW | SQLException::TYPE_UNDERFLOW)) == 0) {
+                if ((e.getInternalFlags() & (SQLException::TYPE_OVERFLOW | SQLException::TYPE_UNDERFLOW | SQLException::TYPE_VAR_LENGTH_MISMATCH)) == 0) {
                     throw e;
                 }
 
                 // handle the case where this is a comparison, rather than equality match
                 // comparison is the only place where the executor might return matching tuples
                 // e.g. TINYINT < 1000 should return all values
-
                 if ((localLookupType != INDEX_LOOKUP_TYPE_EQ) &&
                     (ctr == (activeNumOfSearchKeys - 1))) {
                     assert (localLookupType == INDEX_LOOKUP_TYPE_GT || localLookupType == INDEX_LOOKUP_TYPE_GTE);
 
+                    // See throwCastSQLValueOutOfRangeException to see that
+                    // these three cases, TYPE_OVERFLOW, TYPE_UNDERFLOW and
+                    // TYPE_VAR_LENGTH_MISMATCH are orthogonal.
                     if (e.getInternalFlags() & SQLException::TYPE_OVERFLOW) {
                         earlyReturnForSearchKeyOutOfRange = true;
                         break;
                     } else if (e.getInternalFlags() & SQLException::TYPE_UNDERFLOW) {
                         searchKeyUnderflow = true;
                         break;
-                    } else {
-                        throw e;
+                    } else if (e.getInternalFlags() & SQLException::TYPE_VAR_LENGTH_MISMATCH) {
+                        // shrink the search key and add the updated key to search key table tuple
+                        searchKey.shrinkAndSetNValue(ctr, candidateValue);
+                        // search will be performed on shrinked key, so update lookup operation
+                        // to account for it.  We think localLookupType can only be
+                        // GT and GTE here (cf. the assert above).
+                        switch (localLookupType) {
+                            case INDEX_LOOKUP_TYPE_GT:
+                            case INDEX_LOOKUP_TYPE_GTE:
+                                localLookupType = INDEX_LOOKUP_TYPE_GT;
+                                break;
+                            default:
+                                assert(!"IndexCountExecutor::p_execute - can't index on not equals");
+                                return false;
+                        }
                     }
                 }
                 // if a EQ comparision is out of range, then return no tuples
@@ -243,7 +255,7 @@ bool IndexCountExecutor::p_execute(const NValueArray &params)
         VOLT_DEBUG("Initial (all null) end key: '%s'", endKey.debugNoHeader().c_str());
         for (int ctr = 0; ctr < m_numOfEndkeys; ctr++) {
             NValue endKeyValue = m_endKeyArray[ctr]->eval(NULL, NULL);
-            if (endKeyValue.isNull()) {
+            if (endKeyValue.isNull() && m_node->getCompareNotDistinctFlags()[ctr] == false) {
                 // when any part of the search key is NULL, the result is false when it compares to anything.
                 // do early return optimization, our index comparator may not handle null comparison correctly.
                 earlyReturnForSearchKeyOutOfRange = true;
@@ -257,9 +269,8 @@ bool IndexCountExecutor::p_execute(const NValueArray &params)
                 // setting up the search keys.
                 // e.g. TINYINT > 200 or INT <= 6000000000
 
-                // re-throw if not an overflow or underflow
-                // currently, it's expected to always be an overflow or underflow
-                if ((e.getInternalFlags() & (SQLException::TYPE_OVERFLOW | SQLException::TYPE_UNDERFLOW)) == 0) {
+                // re-throw if not an overflow or underflow or TYPE_VAR_LENGTH_MISMATCH.
+                if ((e.getInternalFlags() & (SQLException::TYPE_OVERFLOW | SQLException::TYPE_UNDERFLOW | SQLException::TYPE_VAR_LENGTH_MISMATCH)) == 0) {
                     throw e;
                 }
 
@@ -270,14 +281,32 @@ bool IndexCountExecutor::p_execute(const NValueArray &params)
                         break;
                     } else if (e.getInternalFlags() & SQLException::TYPE_OVERFLOW) {
                         endKeyOverflow = true;
+                        //
+                        // We promise never to generate an end key unless the
+                        // following will work.  That is to say, unless the
+                        // end key type is some kind of integer.  Will DECIMAL
+                        // even work here?  FLOAT won't work at all.
+                        //
                         const ValueType type = endKey.getSchema()->columnType(ctr);
                         NValue tmpEndKeyValue = ValueFactory::getBigIntValue(getMaxTypeValue(type));
                         endKey.setNValue(ctr, tmpEndKeyValue);
 
                         VOLT_DEBUG("<Index count> end key out of range, MAX value: %ld...\n", (long)getMaxTypeValue(type));
                         break;
-                    } else {
-                        throw e;
+                    } else if (e.getInternalFlags() & SQLException::TYPE_VAR_LENGTH_MISMATCH) {
+                        // shrink the end key and add the updated key to end key table tuple
+                        endKey.shrinkAndSetNValue(ctr, endKeyValue);
+                        // search will be performed on shrinked key, so update lookup operation
+                        // to account for it
+                        switch (m_endType) {
+                            case INDEX_LOOKUP_TYPE_LT:
+                            case INDEX_LOOKUP_TYPE_LTE:
+                                m_endType = INDEX_LOOKUP_TYPE_LTE;
+                                break;
+                            default:
+                                assert(!"IndexCountExecutor::p_execute - invalid end type.");
+                                return false;
+                        }
                     }
                 }
                 // if a EQ comparision is out of range, then return no tuples

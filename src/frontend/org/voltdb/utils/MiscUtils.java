@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,18 +18,20 @@
 package org.voltdb.utils;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.BindException;
 import java.net.ServerSocket;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
+import java.util.Deque;
 import java.util.GregorianCalendar;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -40,12 +42,17 @@ import java.util.regex.Pattern;
 import org.json_voltpatches.JSONArray;
 import org.json_voltpatches.JSONObject;
 import org.voltcore.logging.VoltLogger;
-import org.voltdb.ReplicationRole;
+import org.voltcore.utils.CoreUtils;
+import org.voltdb.PrivateVoltTableFactory;
 import org.voltdb.StoredProcedureInvocation;
+import org.voltdb.TheHashinator;
 import org.voltdb.VoltDB;
 import org.voltdb.VoltTable;
+import org.voltdb.VoltType;
 import org.voltdb.client.Client;
 import org.voltdb.client.ClientResponse;
+import org.voltdb.compiler.deploymentfile.DrRoleType;
+import org.voltdb.iv2.TxnEgo;
 import org.voltdb.licensetool.LicenseApi;
 import org.voltdb.licensetool.LicenseException;
 
@@ -62,6 +69,17 @@ public class MiscUtils {
     private static final VoltLogger hostLog = new VoltLogger("HOST");
     private static final VoltLogger consoleLog = new VoltLogger("CONSOLE");
     private static final String licenseFileName = "license.xml";
+    private static final boolean assertsEnabled;
+
+    static {
+        boolean assertCaught = false;
+        assert(assertCaught = true);
+        assertsEnabled = assertCaught;
+    }
+
+    public static boolean areAssertsEnabled() {
+        return assertsEnabled;
+    }
 
     /**
      * Simple code to copy a file from one place to another...
@@ -76,6 +94,7 @@ public class MiscUtils {
     /**
      * Serialize a file into bytes. Used to serialize catalog and deployment
      * file for UpdateApplicationCatalog on the client.
+     * Notice that if the file is larger than 2GB, readAllBytes() will throw a OutOfMemoryError.
      *
      * @param path
      * @return a byte array of the file
@@ -83,16 +102,7 @@ public class MiscUtils {
      *             If there are errors reading the file
      */
     public static byte[] fileToBytes(File path) throws IOException {
-        FileInputStream fin = new FileInputStream(path);
-        byte[] buffer = new byte[(int) fin.getChannel().size()];
-        try {
-            if (fin.read(buffer) == -1) {
-                throw new IOException("File " + path.getAbsolutePath() + " is empty");
-            }
-        } finally {
-            fin.close();
-        }
-        return buffer;
+        return Files.readAllBytes(path.toPath());
     }
 
     /**
@@ -131,7 +141,17 @@ public class MiscUtils {
                 }
 
                 @Override
-                public boolean isTrial() {
+                public boolean isAnyKindOfTrial() {
+                    return false;
+                }
+
+                @Override
+                public boolean isProTrial() {
+                    return false;
+                }
+
+                @Override
+                public boolean isEnterpriseTrial() {
                     return false;
                 }
 
@@ -158,8 +178,54 @@ public class MiscUtils {
                 }
 
                 @Override
+                public boolean isDrActiveActiveAllowed() {
+                    return false;
+                }
+
+                @Override
                 public boolean isCommandLoggingAllowed() {
                     return false;
+                }
+
+                @Override
+                public boolean isAWSMarketplace() {
+                    return false;
+                }
+
+                @Override
+                public boolean isEnterprise() {
+                    return false;
+                }
+
+                @Override
+                public boolean isPro() {
+                    return false;
+                }
+
+                @Override
+                public String licensee() {
+                    return "VoltDB Community Edition User";
+                }
+
+                @Override
+                public Calendar issued() {
+                    Calendar result = Calendar.getInstance();
+                    return result;
+                }
+
+                @Override
+                public String note() {
+                    return "";
+                }
+
+                @Override
+                public boolean hardExpiration() {
+                    return false;
+                }
+
+                @Override
+                public boolean secondaryInitialization() {
+                    return true;
                 }
             };
         }
@@ -190,6 +256,8 @@ public class MiscUtils {
         if (licenseFile.exists() == false) {
             return null;
         }
+
+        hostLog.info("Found VoltDB license file at path: " + pathToLicense);
 
         // Initialize the API. This parses the file but does NOT verify signatures.
         if (licenseApi.initializeFromFile(licenseFile) == false) {
@@ -256,7 +324,7 @@ public class MiscUtils {
      * @return true if the licensing constraints are met
      */
     public static boolean validateLicense(LicenseApi licenseApi,
-            int numberOfNodes, ReplicationRole replicationRole)
+                                          int numberOfNodes, DrRoleType replicationRole)
     {
         // Delay the handling of an invalid license file until here so
         // that the leader can terminate the full cluster.
@@ -265,14 +333,28 @@ public class MiscUtils {
             return false;
         }
 
+        // do some extra initialization here
+        if (!licenseApi.secondaryInitialization()) {
+            return false;
+        }
+
         Calendar now = GregorianCalendar.getInstance();
         SimpleDateFormat sdf = new SimpleDateFormat("MMM d, yyyy");
         String expiresStr = sdf.format(licenseApi.expires().getTime());
         boolean valid = true;
 
-        if (now.after(licenseApi.expires())) {
-            if (licenseApi.isTrial()) {
-                hostLog.fatal("VoltDB trial license expired on " + expiresStr + ".");
+        // make it really expire tomorrow to deal with timezone whiners
+        Calendar yesterday = GregorianCalendar.getInstance();
+        yesterday.add(Calendar.DATE, -1);
+
+        if (yesterday.after(licenseApi.expires())) {
+            if (licenseApi.hardExpiration()) {
+                if (licenseApi.isAnyKindOfTrial()) {
+                    hostLog.fatal("VoltDB trial license expired on " + expiresStr + ".");
+                }
+                else {
+                    hostLog.fatal("VoltDB license expired on " + expiresStr + ".");
+                }
                 hostLog.fatal("Please contact sales@voltdb.com to request a new license.");
                 return false;
             }
@@ -284,33 +366,60 @@ public class MiscUtils {
         }
 
         // enforce DR replication constraint
-        if (replicationRole == ReplicationRole.REPLICA) {
-            if (licenseApi.isDrReplicationAllowed() == false) {
+        if (licenseApi.isDrReplicationAllowed() == false) {
+            if (replicationRole != DrRoleType.NONE) {
                 hostLog.fatal("Warning, VoltDB license does not allow use of DR replication.");
+                return false;
+            }
+        } else if (licenseApi.isDrActiveActiveAllowed() == false) {
+            if (replicationRole == DrRoleType.XDCR) {
+                hostLog.fatal("Warning, VoltDB license does not allow use of XDCR.");
                 return false;
             }
         }
 
+        // check node count
+        if (licenseApi.maxHostcount() < numberOfNodes) {
+            // Enterprise gets a pass on this one for now
+            if (licenseApi.isEnterprise()) {
+                hostLog.error("Warning, VoltDB commercial license for " + licenseApi.maxHostcount() +
+                        " nodes, starting cluster with " + numberOfNodes + " nodes.");
+                valid = false;
+            }
+            // Trial, Pro & AWS licenses have a hard enforced limit
+            else {
+                hostLog.fatal("Warning, VoltDB license for a " + licenseApi.maxHostcount() + " node " +
+                        "attempted for use with a " + numberOfNodes + " node cluster.");
+                return false;
+            }
+        }
+
+        // If this is a commercial license, and there is less than or equal to 30 days until expiration,
+        // issue a "days remaining" warning message.
+        long diff = licenseApi.expires().getTimeInMillis() - now.getTimeInMillis();
+        // The original license is only a whole data (no minutes/millis).
+        // There should thus be no issue with daylight savings time,
+        // but just in case, if the diff is a negative number, round up to zero.
+        if (diff < 0) {
+            diff = 0;
+        }
+        long diffDays = diff / (24 * 60 * 60 * 1000);
+
         // print out trial success message
-        if (licenseApi.isTrial()) {
-            consoleLog.info("Starting VoltDB with trial license. License expires on " + expiresStr + ".");
+        if (licenseApi.isAnyKindOfTrial()) {
+            consoleLog.info("Starting VoltDB with trial license. License expires on " + expiresStr + " (" + diffDays + " days remaining).");
             return true;
         }
 
-        // ASSUME CUSTOMER LICENSE HERE
-
-        // single node product strictly enforces the single node detail...
-        if (licenseApi.maxHostcount() == 1 && numberOfNodes > 1) {
-            hostLog.fatal("Warning, VoltDB commercial license for a 1 node " +
-                    "attempted for use with a " + numberOfNodes + " node cluster." +
-                    " A single node subscription is only valid with a single node cluster.");
-            return false;
+        if (licenseApi.isAWSMarketplace()) {
+            return true;
         }
-        // multi-node commercial licenses only warn
-        else if (numberOfNodes > licenseApi.maxHostcount()) {
-            hostLog.error("Warning, VoltDB commercial license for " + licenseApi.maxHostcount() +
-                          " nodes, starting cluster with " + numberOfNodes + " nodes.");
-            valid = false;
+
+        // print out a warning within a month for other licenses
+        if ((diff > 0) && (diff <= 30))
+        {
+            String msg = "Warning: VoltDB license expires in " + diffDays + " day(s).";
+            consoleLog.info(msg);
         }
 
         // this gets printed even if there are non-fatal problems, so it
@@ -321,23 +430,6 @@ public class MiscUtils {
                                    licenseApi.maxHostcount(),
                                    expiresStr);
         consoleLog.info(msg);
-
-        // If this is a commercial license, and there is less than or equal to 30 days until expiration,
-        // issue a "days remaining" warning message.
-        long diff = licenseApi.expires().getTimeInMillis() - now.getTimeInMillis();
-        // The original license is only a whole data (no minutes/millis).
-        // There should thus be no issue with daylight savings time,
-        // but just in case, if the diff is a negative number, round up to zero.
-        if (diff < 0)
-        {
-            diff = 0;
-        }
-        long diffDays = diff / (24 * 60 * 60 * 1000);
-        if ((diff > 0) && (diff <= 30))
-        {
-            msg = "Warning, VoltDB commercial license expires in " + diffDays + " day(s).";
-            consoleLog.info(msg);
-        }
 
         return true;
     }
@@ -510,7 +602,12 @@ public class MiscUtils {
     // check if we're running pro code
     public static boolean isPro() {
         if (m_isPro == null) {
-            m_isPro = null != MiscUtils.loadProClass("org.voltdb.CommandLogImpl", "Command logging", true);
+            //Allow running pro kit as community.
+            if (!Boolean.parseBoolean(System.getProperty("community", "false"))) {
+                m_isPro = null != MiscUtils.loadProClass("org.voltdb.CommandLogImpl", "Command logging", true);
+            } else {
+                m_isPro = false;
+            }
         }
         return m_isPro.booleanValue();
     }
@@ -594,41 +691,6 @@ public class MiscUtils {
         }
         catch (IOException e) {
             throw new RuntimeException(e);
-        }
-    }
-
-    /**
-     * Log (to the fatal logger) the list of ports in use.
-     * Uses "lsof -i" internally.
-     *
-     * @param log VoltLogger used to print output or warnings.
-     */
-    public static synchronized void printPortsInUse(VoltLogger log) {
-        try {
-            /*
-             * Don't do DNS resolution, don't use names for port numbers
-             */
-            ProcessBuilder pb = new ProcessBuilder("lsof", "-i", "-n", "-P");
-            pb.redirectErrorStream(true);
-            Process p = pb.start();
-            java.io.InputStreamReader reader = new java.io.InputStreamReader(p.getInputStream());
-            java.io.BufferedReader br = new java.io.BufferedReader(reader);
-            String str = br.readLine();
-            log.fatal("Logging ports that are bound for listening, " +
-                      "this doesn't include ports bound by outgoing connections " +
-                      "which can also cause a failure to bind");
-            log.fatal("The PID of this process is " + CLibrary.getpid());
-            if (str != null) {
-                log.fatal(str);
-            }
-            while((str = br.readLine()) != null) {
-                if (str.contains("LISTEN")) {
-                    log.fatal(str);
-                }
-            }
-        }
-        catch (Exception e) {
-            log.fatal("Unable to list ports in use at this time.");
         }
     }
 
@@ -725,9 +787,38 @@ public class MiscUtils {
     }
 
     /**
+     * Aggregates the elements from each of the given deque. It takes one
+     * element from the head of each deque in each loop and put them into a
+     * single list. This method modifies the deques in-place.
+     * @param stuff
+     * @return
+     */
+    public static <K> List<K> zip(Collection<Deque<K>> stuff)
+    {
+        final List<K> result = Lists.newArrayList();
+
+        // merge the results
+        Iterator<Deque<K>> iter = stuff.iterator();
+        while (iter.hasNext()) {
+            final K next = iter.next().poll();
+            if (next != null) {
+                result.add(next);
+            } else {
+                iter.remove();
+            }
+
+            if (!iter.hasNext()) {
+                iter = stuff.iterator();
+            }
+        }
+
+        return result;
+    }
+
+    /**
      * Create an ArrayListMultimap that uses TreeMap as the container map, so order is preserved.
      */
-    public static <K extends Comparable, V> ListMultimap<K, V> sortedArrayListMultimap()
+    public static <K extends Comparable<?>, V> ListMultimap<K, V> sortedArrayListMultimap()
     {
         Map<K, Collection<V>> map = Maps.newTreeMap();
         return Multimaps.newListMultimap(map, new Supplier<List<V>>() {
@@ -747,17 +838,16 @@ public class MiscUtils {
      */
     public static StoredProcedureInvocation roundTripForCL(StoredProcedureInvocation invocation) throws IOException
     {
-        if (invocation.getSerializedParams() == null) {
-            ByteBuffer buf = ByteBuffer.allocate(invocation.getSerializedSize());
-            invocation.flattenToBuffer(buf);
-            buf.flip();
-
-            StoredProcedureInvocation rti = new StoredProcedureInvocation();
-            rti.initFromBuffer(buf);
-            return rti;
-        } else {
+        if (invocation.getSerializedParams() != null) {
             return invocation;
         }
+        ByteBuffer buf = ByteBuffer.allocate(invocation.getSerializedSize());
+        invocation.flattenToBuffer(buf);
+        buf.flip();
+
+        StoredProcedureInvocation rti = new StoredProcedureInvocation();
+        rti.initFromBuffer(buf);
+        return rti;
     }
 
     /**
@@ -914,5 +1004,62 @@ public class MiscUtils {
             assert this.value != null;
             return this.value;
         }
+    }
+
+    public static String hsIdTxnIdToString(long hsId, long txnId) {
+        final StringBuilder sb = new StringBuilder();
+        CoreUtils.hsIdToString(hsId, sb);
+        sb.append(" ");
+        TxnEgo.txnIdToString(txnId, sb);
+        return sb.toString();
+    }
+
+    public static String hsIdPairTxnIdToString(final long srcHsId, final long destHsId,
+                                               final long txnId, final long uniqID) {
+        final StringBuilder sb = new StringBuilder(32);
+        CoreUtils.hsIdToString(srcHsId, sb);
+        sb.append("->");
+        CoreUtils.hsIdToString(destHsId, sb);
+        sb.append(" ");
+        TxnEgo.txnIdToString(txnId, sb);
+        sb.append(" ").append(uniqID);
+        return sb.toString();
+    }
+
+    /**
+     * Get VARBINARY partition keys for the current topology.
+     * @return A map from partition IDs to partition keys, null if failed to get the keys.
+     */
+    public static Map<Integer, byte[]> getBinaryPartitionKeys() {
+        return getBinaryPartitionKeys(null);
+    }
+
+    /**
+     * Get VARBINARY partition keys for the specified topology.
+     * @return A map from partition IDs to partition keys, null if failed to get the keys.
+     */
+    public static Map<Integer, byte[]> getBinaryPartitionKeys(TheHashinator hashinator) {
+        Map<Integer, byte[]> partitionMap = new HashMap<>();
+
+        VoltTable partitionKeys = null;
+        if (hashinator == null) {
+            partitionKeys = TheHashinator.getPartitionKeys(VoltType.VARBINARY);
+        }
+        else {
+            partitionKeys = TheHashinator.getPartitionKeys(hashinator, VoltType.VARBINARY);
+        }
+        if (partitionKeys == null) {
+            return null;
+        } else {
+            // This is a shared resource so make a copy of the table to protect the cache copy in TheHashinator
+            ByteBuffer buf = ByteBuffer.allocate(partitionKeys.getSerializedSize());
+            partitionKeys.flattenToBuffer(buf);
+            buf.flip();
+            VoltTable keyCopy = PrivateVoltTableFactory.createVoltTableFromSharedBuffer(buf);
+            while (keyCopy.advanceRow()) {
+                partitionMap.put((int) keyCopy.getLong(0), keyCopy.getVarbinary(1));
+            }
+        }
+        return partitionMap;
     }
 }

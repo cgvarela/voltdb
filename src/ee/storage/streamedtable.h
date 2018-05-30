@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -22,15 +22,18 @@
 
 #include "common/ids.h"
 #include "table.h"
+
 #include "storage/StreamedTableStats.h"
 #include "storage/TableStats.h"
 
-namespace voltdb {
+namespace catalog {
+class MaterializedViewInfo;
+}
 
-// forward decl.
-class Topend;
+namespace voltdb {
 class ExecutorContext;
 class ExportTupleStream;
+class MaterializedViewTriggerForStreamInsert;
 
 /**
  * A streamed table does not store data. It may not be read. It may
@@ -43,50 +46,45 @@ class StreamedTable : public Table {
     friend class TableFactory;
     friend class StreamedTableStats;
 
-  public:
-    StreamedTable(bool exportEnabled);
-    static StreamedTable* createForTest(size_t, ExecutorContext*);
-
-    //This returns true if a stream was created thus caller can setSignatureAndGeneration to push.
-    bool enableStream();
+public:
+    StreamedTable(int partitionColumn = -1);
+    //Used for test
+    StreamedTable(ExportTupleStream *wrapper, int partitionColumn = -1);
+    static StreamedTable* createForTest(size_t, ExecutorContext*, TupleSchema *schema, std::vector<std::string> & columnNames);
 
     virtual ~StreamedTable();
 
     // virtual Table functions
     // Return a table iterator BY VALUE
-    virtual TableIterator& iterator();
-    virtual TableIterator* makeIterator();
+    TableIterator iterator();
 
-    virtual TableIterator& iteratorDeletingAsWeGo() {
-        throw SerializableEEException(VOLT_EE_EXCEPTION_TYPE_EEEXCEPTION,
-                                      "May not iterate a streamed table.");
-    }
+    TableIterator iteratorDeletingAsWeGo();
 
     // ------------------------------------------------------------------
     // GENERIC TABLE OPERATIONS
     // ------------------------------------------------------------------
-    virtual void deleteAllTuples(bool freeAllocatedStrings);
-    // TODO: change meaningless bool return type to void (starting in class Table) and migrate callers.
-    // The bool argument is irrelevent to StreamedTable.
-    virtual bool deleteTuple(TableTuple &tuple, bool=true);
+    virtual void deleteAllTuples(bool freeAllocatedStrings, bool=true);
     // TODO: change meaningless bool return type to void (starting in class Table) and migrate callers.
     virtual bool insertTuple(TableTuple &tuple);
-    // Updating streamed tuples is not supported
-    // Update is irrelevent to StreamedTable.
-    // TODO: change meaningless bool return type to void (starting in class Table) and migrate callers.
-    virtual bool updateTupleWithSpecificIndexes(TableTuple &targetTupleToUpdate,
-                                                TableTuple &sourceTupleWithNewValues,
-                                                std::vector<TableIndex*> const &indexesToUpdate,
-                                                bool=true);
-
 
     virtual void loadTuplesFrom(SerializeInputBE &serialize_in, Pool *stringPool = NULL);
     virtual void flushOldTuples(int64_t timeInMillis);
-    virtual void setSignatureAndGeneration(std::string signature, int64_t generation);
+    void setSignatureAndGeneration(std::string signature, int64_t generation);
 
-    virtual std::string tableType() const {
-        return "StreamedTable";
-    }
+    // The MatViewType typedef is required to satisfy initMaterializedViews
+    // template code that needs to identify
+    // "whatever MaterializedView*Trigger class is used by this *Table class".
+    // There's no reason to actually use MatViewType in the class definition.
+    // That would just make the code a little harder to analyze.
+    typedef MaterializedViewTriggerForStreamInsert MatViewType;
+
+    /** Add/drop/list materialized views to this table */
+    void addMaterializedView(MaterializedViewTriggerForStreamInsert* view);
+    void dropMaterializedView(MaterializedViewTriggerForStreamInsert* targetView);
+    std::vector<MaterializedViewTriggerForStreamInsert*>& views() { return m_views; }
+    bool hasViews() { return (m_views.size() > 0); }
+
+    virtual std::string tableType() const { return "StreamedTable"; }
 
     // undo interface particular to streamed table.
     void undo(size_t mark);
@@ -107,9 +105,7 @@ class StreamedTable : public Table {
      */
     void setExportStreamPositions(int64_t seqNo, size_t streamBytesUsed);
 
-    virtual bool isExport() {
-        return true;
-    }
+    int partitionColumn() const { return m_partitionColumn; }
 
     /*
      * For an export table return the sequence number
@@ -118,20 +114,39 @@ class StreamedTable : public Table {
         return m_sequenceNo;
     }
 
-private:
-    // Stats
-    voltdb::TableStats *getTableStats();
+    // STATS
+    TableStats* getTableStats() {  return &m_stats; };
 
+    // No Op
+    std::vector<uint64_t> getBlockAddresses() const {
+        return std::vector<uint64_t>();
+    }
+
+    void setWrapper(ExportTupleStream *wrapper) {
+        m_wrapper = wrapper;
+    }
+
+    ExportTupleStream* getWrapper() {
+        return m_wrapper;
+    }
+
+private:
     // Just say 0
     size_t allocatedBlockCount() const;
 
     TBPtr allocateNextBlock();
     virtual void nextFreeTuple(TableTuple *tuple);
 
-    voltdb::StreamedTableStats stats_;
+    voltdb::StreamedTableStats m_stats;
     ExecutorContext *m_executorContext;
     ExportTupleStream *m_wrapper;
     int64_t m_sequenceNo;
+
+    // partition key
+    const int m_partitionColumn;
+
+    // list of materialized views that are sourced from this table
+    std::vector<MaterializedViewTriggerForStreamInsert*> m_views;
 };
 
 }

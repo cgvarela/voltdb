@@ -14,6 +14,8 @@
 
 package com.google_voltpatches.common.collect;
 
+import com.google_voltpatches.common.annotations.GwtIncompatible;
+
 /**
  * "Overrides" the {@link ImmutableMultiset} static methods that lack
  * {@link ImmutableSortedMultiset} equivalents with deprecated, exception-throwing versions. This
@@ -31,6 +33,7 @@ package com.google_voltpatches.common.collect;
  *
  * @author Louis Wasserman
  */
+@GwtIncompatible
 abstract class ImmutableSortedMultisetFauxverideShim<E> extends ImmutableMultiset<E> {
   /**
    * Not supported. Use {@link ImmutableSortedMultiset#naturalOrder}, which offers better
@@ -128,13 +131,7 @@ abstract class ImmutableSortedMultisetFauxverideShim<E> extends ImmutableMultise
    */
   @Deprecated
   public static <E> ImmutableSortedMultiset<E> of(
-      E e1,
-      E e2,
-      E e3,
-      E e4,
-      E e5,
-      E e6,
-      E... remaining) {
+      E e1, E e2, E e3, E e4, E e5, E e6, E... remaining) {
     throw new UnsupportedOperationException();
   }
 

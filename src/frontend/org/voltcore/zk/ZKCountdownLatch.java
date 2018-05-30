@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,22 +18,9 @@
 package org.voltcore.zk;
 
 import org.apache.zookeeper_voltpatches.KeeperException;
-import org.apache.zookeeper_voltpatches.WatchedEvent;
-import org.apache.zookeeper_voltpatches.Watcher;
 import org.apache.zookeeper_voltpatches.ZooKeeper;
 import org.apache.zookeeper_voltpatches.data.Stat;
-import org.voltcore.utils.CoreUtils;
-import org.voltcore.utils.Pair;
-
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * A minimal countdown latch implementation that is not particularly scalable
@@ -70,6 +57,20 @@ public class ZKCountdownLatch
             countedDown = true;
             return;
         }
+    }
+
+    // Returns the current count
+    public int getCount() throws InterruptedException, KeeperException {
+        return ByteBuffer.wrap(m_zk.getData(m_path, false, null)).getInt();
+    }
+
+    // Returns if already counted down to zero
+    public boolean isCountedDown() throws InterruptedException, KeeperException {
+        if (countedDown) return true;
+        int count = ByteBuffer.wrap(m_zk.getData(m_path, false, null)).getInt();
+        if (count > 0) return false;
+        countedDown = true;
+        return true;
     }
 
     public void countDown() throws InterruptedException, KeeperException {

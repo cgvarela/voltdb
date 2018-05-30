@@ -32,9 +32,12 @@
 package org.hsqldb_voltpatches;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.hsqldb_voltpatches.HsqlNameManager.HsqlName;
 import org.hsqldb_voltpatches.HsqlNameManager.SimpleName;
+import org.hsqldb_voltpatches.QueryExpression.WithList;
 import org.hsqldb_voltpatches.lib.ArrayUtil;
 import org.hsqldb_voltpatches.lib.HsqlArrayList;
 import org.hsqldb_voltpatches.lib.HsqlList;
@@ -67,6 +70,7 @@ public class ParserDQL extends ParserBase {
     // A VoltDB extension to reject quoted (delimited) names.
     // TODO: Set flag from property?
     boolean rejectQuotedSchemaObjectNames = true;
+    int withStatementDepth = 0;
     // End of VoltDB extension
 
     //
@@ -95,6 +99,7 @@ public class ParserDQL extends ParserBase {
      *
      * @param sql a new SQL character sequence to replace the current one
      */
+    @Override
     void reset(String sql) {
 
         super.reset(sql);
@@ -615,7 +620,7 @@ public class ParserDQL extends ParserBase {
 
         if (token.tokenType == Tokens.CORRESPONDING) {
             read();
-            queryExpression.setUnionCorresoponding();
+            queryExpression.setUnionCorresponding();
 
             if (token.tokenType == Tokens.BY) {
                 read();
@@ -627,12 +632,151 @@ public class ParserDQL extends ParserBase {
         }
     }
 
+    /*
+     * <with clause> ::= WITH [ RECURSIVE ] <with list>
+     *
+     */
+    private WithList XreadWithClause() {
+        boolean recursive = false;
+        if (withStatementDepth > 0) {
+        	throw Error.error("With statements may not be nested.");
+        }
+        int oldStatementDepth = withStatementDepth;
+        try {
+        	session.clearLocalTables();
+	        withStatementDepth += 1;
+	        readThis(Tokens.WITH);
+	        if (token.tokenType == Tokens.RECURSIVE) {
+	            recursive = true;
+	            read();
+	        }
+	        WithList withList = new WithList(recursive);
+	        XreadWithList(withList);
+	        return withList;
+        } finally {
+        	withStatementDepth = oldStatementDepth;
+        }
+    }
+
+    /*
+     * <with list> ::= <with list element> [ { <comma> <with list element> } ]
+     */
+    private void XreadWithList(WithList withList) {
+        // <with list element> ::= <query name>
+        //                         [ <left paren> <with column list> <right paren> ]
+        //                         AS <left paren> <query expression> <right paren>
+        //                         [ <search or cycle clause> ]
+        //
+        boolean recursive = withList.isRecursive();
+        for (boolean done = false; ! done; done = ! readIfThis(Tokens.COMMA)) {
+            HsqlName queryName = readNewSchemaObjectName(SchemaObject.TABLE);
+            queryName.setSchemaIfNull(session.getCurrentSchemaHsqlName());
+            List<HsqlName> columnNames = parseColumnNames();
+            readThis(Tokens.AS);
+            readThis(Tokens.OPENBRACKET);
+            // Read a query.  If it's recursive it has to be of the form:
+            //    Q1 union all Q2.
+            // In Q1 we can't use an order by or limit.  It's ok
+            // to use group by, aggregates and having, though.  The
+            // query name will be visible in Q2 but not in Q1.
+            //
+            // If this with statement is not recursive then anything goes,
+            // but the query name will not be visible in the query.
+            QueryExpression baseQueryExpression = null;
+            QueryExpression recursionQueryExpression = null;
+            // This is not really standard behavior.  This should
+            // really be just reading a query expression.  However,
+            // This short circuits a great deal of complexity, and
+            // will serve for prototype purposes.
+            if (recursive) {
+                baseQueryExpression = XreadQueryPrimary();
+            } else {
+                baseQueryExpression = XreadQueryExpressionBodyAndSortAndSlice();
+            }
+            // We have to resolve this here because we need
+            // to fetch the types and perhaps the column aliases.
+            // But we can't define the table now, because it is
+            // not visible in the base query expression.
+            baseQueryExpression.resolve(session);
+            //
+            // Calculate the schema of the common table.
+            //
+            HsqlName[] colNames = null;
+            if (columnNames != null) {
+                colNames = columnNames.toArray(new HsqlName[columnNames.size()]);
+            } else {
+                String[] queryNames = baseQueryExpression.getColumnNames();
+                colNames = new HsqlName[queryNames.length];
+                for (int idx = 0; idx < queryNames.length; idx += 1) {
+                    String queryColumnName = queryNames[idx];
+                    colNames[idx] = database.nameManager.newHsqlName(queryColumnName,
+                                                                     false,
+                                                                     SchemaObject.COLUMN);
+                }
+            }
+            Type[] colTypes = baseQueryExpression.getColumnTypes();
+            String cmp = null;
+            if (colNames.length > colTypes.length) {
+                cmp = "many";
+            }
+            else if (colNames.length < colTypes.length) {
+                cmp = "few";
+            }
+            if (cmp != null) {
+                throw Error.error("Too " + cmp + " column names in common table expression " + queryName.name);
+            }
+            // Now, define it.
+            Table newTable = session.defineLocalTable(queryName, colNames, colTypes);
+            if (recursive) {
+                readThis(Tokens.UNION);
+                readThis(Tokens.ALL);
+                recursionQueryExpression = XreadQueryExpressionBody();
+            }
+            readThis(Tokens.CLOSEBRACKET);
+            WithExpression withExpression = new WithExpression();
+            withExpression.setQueryName(queryName);
+            withExpression.setBaseQuery(baseQueryExpression);
+            withExpression.setRecursiveQuery(recursionQueryExpression);
+            withExpression.setTable(newTable);
+            withList.add(withExpression);
+        }
+    }
+
+    private List<HsqlName> parseColumnNames() {
+        List<HsqlName> columnNames = null;
+        if (token.tokenType == Tokens.OPENBRACKET) {
+            columnNames = new ArrayList<>();
+            read();
+            while (true) {
+                columnNames.add(readNewSchemaObjectName(SchemaObject.COLUMN));
+                if (token.tokenType == Tokens.COMMA) {
+                    read();
+                } else if (token.tokenType == Tokens.CLOSEBRACKET) {
+                    read();
+                    break;
+                } else {
+                    throw unexpectedToken();
+                }
+            }
+        }
+        return columnNames;
+    }
+
     QueryExpression XreadQueryExpression() {
 
+        WithList withList = null;
         if (token.tokenType == Tokens.WITH) {
-            throw super.unsupportedFeature();
+            withList = XreadWithClause();
         }
 
+        QueryExpression queryExpression = XreadQueryExpressionBodyAndSortAndSlice();
+
+        queryExpression.addWithList(withList);
+
+        return queryExpression;
+    }
+
+    private QueryExpression XreadQueryExpressionBodyAndSortAndSlice() {
         QueryExpression queryExpression = XreadQueryExpressionBody();
         SortAndSlice    sortAndSlice    = XreadOrderByExpression();
 
@@ -653,7 +797,6 @@ public class ParserDQL extends ParserBase {
                 queryExpression.addSortAndSlice(sortAndSlice);
             }
         }
-
         return queryExpression;
     }
 
@@ -1374,9 +1517,14 @@ public class ParserDQL extends ParserBase {
 
                 case StatementTypes.UPDATE_WHERE :
                 case StatementTypes.DELETE_WHERE :
+                    /* A VoltDB Extension.
+                     * Views from Streams are now updatable.
+                     * Comment out this guard and check if it is a view
+                     * from Stream or PersistentTable in planner.
                     if (!table.isUpdatable()) {
                         throw Error.error(ErrorCode.X_42545);
                     }
+                    A VoltDB Extension */
                     break;
             }
 
@@ -1477,24 +1625,48 @@ public class ParserDQL extends ParserBase {
     private Expression readAggregate() {
 
         int        tokenT = token.tokenType;
-        Expression e;
+        Expression aggExpr;
 
         read();
         readThis(Tokens.OPENBRACKET);
 
-        e = readAggregateExpression(tokenT);
+        aggExpr = readAggregateExpression(tokenT);
 
         readThis(Tokens.CLOSEBRACKET);
+        if (token.tokenType == Tokens.OVER) {
+            read();
+            aggExpr = readWindowSpecification(tokenT, aggExpr);
+            if (aggExpr instanceof ExpressionWindowed) {
+            	ExpressionWindowed aggWinExpr = (ExpressionWindowed)aggExpr;
+            	if (aggWinExpr.isDistinct()) {
+            		throw Error.error("DISTINCT is not allowed in window functions.", "", -1);
+            	}
+            }
+        }
 
-        return e;
+        return aggExpr;
     }
 
-    private Expression readAggregateExpression(int tokenT) {
+    private ExpressionAggregate readAggregateExpression(int tokenT) {
 
         int     type     = ParserDQL.getExpressionType(tokenT);
         boolean distinct = false;
         boolean all      = false;
 
+        // If this is one of the RANK family, it takes no
+        // parameters.  So, just return null here.  The caller
+        // will know what to do with this.
+        switch (tokenT) {
+        case Tokens.RANK:
+        case Tokens.DENSE_RANK:
+        // No current support for WINDOWED_PERCENT_RANK or WINDOWED_CUME_DIST.
+        // case Tokens.PERCENT_RANK:
+        // case Tokens.CUME_DIST:
+            if (token.tokenType != Tokens.CLOSEBRACKET) {
+                throw Error.error("Expected a right parenthesis (')') here.", "", -1);
+            }
+            return null;
+        }
         if (token.tokenType == Tokens.DISTINCT) {
             distinct = true;
 
@@ -1504,7 +1676,9 @@ public class ParserDQL extends ParserBase {
 
             read();
         }
-
+        if (token.tokenType == Tokens.CLOSEBRACKET) {
+            throw Error.error("Expected an expression here.", "", -1);
+        }
         Expression e = XreadValueExpression();
 
         switch (type) {
@@ -1525,6 +1699,9 @@ public class ParserDQL extends ParserBase {
             case OpTypes.STDDEV_SAMP :
             case OpTypes.VAR_POP :
             case OpTypes.VAR_SAMP :
+            // A VoltDB extension APPROX_COUNT_DISTINCT
+            case OpTypes.APPROX_COUNT_DISTINCT :
+            // End of VoltDB extension
                 if (all || distinct) {
                     throw Error.error(ErrorCode.X_42582, all ? Tokens.T_ALL
                                                              : Tokens
@@ -1538,12 +1715,75 @@ public class ParserDQL extends ParserBase {
                 }
         }
 
-        Expression aggregateExp = new ExpressionAggregate(type, distinct, e);
+        ExpressionAggregate aggregateExp = new ExpressionAggregate(type, distinct, e);
 
         return aggregateExp;
     }
 
-//--------------------------------------
+    /**
+     * This is a minimal parsing of the Window Specification.  We only use
+     * partition by and order by lists.  There is a lot of complexity in the
+     * full SQL specification which we don't parse at all.
+     *
+     * @param tokenT
+     * @param aggExpr
+     * @return
+     */
+    private Expression readWindowSpecification(int tokenT, Expression aggExpr) {
+        SortAndSlice sortAndSlice = null;
+
+        readThis(Tokens.OPENBRACKET);
+
+        List<Expression> partitionByList = new ArrayList<>();
+        if (token.tokenType == Tokens.PARTITION) {
+            read();
+            readThis(Tokens.BY);
+
+            while (true) {
+                Expression partitionExpr = XreadValueExpression();
+                partitionByList.add(partitionExpr);
+
+                if (token.tokenType == Tokens.COMMA) {
+                    read();
+                    continue;
+                }
+                break;
+            }
+        }
+
+        if (token.tokenType == Tokens.ORDER) {
+            // order by clause
+            read();
+            readThis(Tokens.BY);
+            sortAndSlice = XreadOrderBy();
+        }
+        readThis(Tokens.CLOSEBRACKET);
+
+        // We don't really care about aggExpr any more.  It has the
+        // aggregate expression as a non-windowed expression.  We do
+        // care about its parameters and whether it's specified as
+        // unique though.
+        assert(aggExpr == null || aggExpr instanceof ExpressionAggregate);
+        Expression nodes[];
+        boolean isDistinct;
+        if (aggExpr != null) {
+            ExpressionAggregate winAggExpr = (ExpressionAggregate)aggExpr;
+            nodes = winAggExpr.nodes;
+            isDistinct = winAggExpr.isDistinctAggregate;
+        } else {
+            nodes = Expression.emptyExpressionArray;
+            isDistinct = false;
+        }
+        ExpressionWindowed windowedExpr = new ExpressionWindowed(tokenT,
+                                                                 nodes,
+                                                                 isDistinct,
+                                                                 sortAndSlice,
+                                                                 partitionByList);
+
+        return windowedExpr;
+    }
+
+    //--------------------------------------
     // returns null
     // := <unsigned literal> | <general value specification>
     Expression XreadValueSpecificationOrNull() {
@@ -1883,6 +2123,7 @@ public class ParserDQL extends ParserBase {
             case Tokens.SOME :
             case Tokens.EVERY :
             case Tokens.COUNT :
+            case Tokens.APPROX_COUNT_DISTINCT :
             case Tokens.MAX :
             case Tokens.MIN :
             case Tokens.SUM :
@@ -1891,6 +2132,8 @@ public class ParserDQL extends ParserBase {
             case Tokens.STDDEV_SAMP :
             case Tokens.VAR_POP :
             case Tokens.VAR_SAMP :
+            case Tokens.RANK :
+            case Tokens.DENSE_RANK:
                 return readAggregate();
 
             case Tokens.NEXT :
@@ -1898,9 +2141,9 @@ public class ParserDQL extends ParserBase {
 
             case Tokens.LEFT :
             case Tokens.RIGHT :
-
                 // CLI function names
                 break;
+
 
             default :
                 if (isCoreReservedKey()) {
@@ -2552,6 +2795,9 @@ public class ParserDQL extends ParserBase {
                 Expression a = e;
 
                 e = XreadBooleanTermOrNull();
+                if (e == null) {
+                    throw Error.error(ErrorCode.X_42568);
+                }
                 e = new ExpressionLogical(type, a, e);
             }
 
@@ -2588,6 +2834,9 @@ public class ParserDQL extends ParserBase {
             Expression a = e;
 
             e = XreadBooleanFactorOrNull();
+            if (e == null) {
+                throw Error.error(ErrorCode.X_42568);
+            }
             e = new ExpressionLogical(type, a, e);
         }
 
@@ -2984,6 +3233,10 @@ public class ParserDQL extends ParserBase {
 
                 e = readAggregateExpression(tokenT);
 
+                if (e == null) {
+                    throw Error.error("Unsupported aggregate expression " + Tokens.getKeyword(tokenT), "", 0);
+                }
+
                 readThis(Tokens.CLOSEBRACKET);
         }
 
@@ -3057,57 +3310,42 @@ public class ParserDQL extends ParserBase {
     }
 
     Expression XreadInValueList(int degree) {
-
-        HsqlArrayList list = new HsqlArrayList();
-
+        List<Expression> rowList = new ArrayList<>();
         while (true) {
-            Expression e = XreadValueExpression();
-
-            if (e.getType() != OpTypes.ROW) {
-                e = new Expression(OpTypes.ROW, new Expression[]{ e });
-            }
-
-            list.add(e);
-
-            if (token.tokenType == Tokens.COMMA) {
-                read();
-
-                continue;
-            }
-
-            break;
-        }
-
-        Expression[] array = new Expression[list.size()];
-
-        list.toArray(array);
-
-        Expression e = new Expression(OpTypes.TABLE, array);
-
-        for (int i = 0; i < array.length; i++) {
-            if (array[i].getType() != OpTypes.ROW) {
-                array[i] = new Expression(OpTypes.ROW,
-                                          new Expression[]{ array[i] });
-            }
-
-            Expression[] args = array[i].nodes;
-
-            if (args.length != degree) {
-
-                // SQL error message
-                throw unexpectedToken();
-            }
-
-            for (int j = 0; j < degree; j++) {
-                if (args[j].getType() == OpTypes.ROW) {
-
+            Expression row = XreadValueExpression();
+            if (row.getType() == OpTypes.ROW) {
+                // Disallow rows of the wrong length or rows of rows.
+                if (row.nodes.length != degree) {
                     // SQL error message
                     throw unexpectedToken();
                 }
+                for (Expression value : row.nodes) {
+                    if (value.getType() == OpTypes.ROW) {
+                        // SQL error message
+                        throw unexpectedToken();
+                    }
+                }
             }
+            // Degree > 1 can only be satisfied by a list of row expressions.
+            else if (degree != 1) {
+                throw unexpectedToken();
+            }
+            // Make a degree 1 row from a non-row value expression.
+            else {
+                row = new Expression(OpTypes.ROW, new Expression[]{ row });
+            }
+            rowList.add(row);
+
+            if (token.tokenType != Tokens.COMMA) {
+                break;
+            }
+            read(); // consume the comma
         }
 
-        return e;
+        Expression[] rowArray = new Expression[rowList.size()];
+        rowList.toArray(rowArray);
+
+        return new Expression(OpTypes.TABLE, rowArray);
     }
 
     private ExpressionLogical XreadLikePredicateRightPart(Expression a) {
@@ -3863,7 +4101,7 @@ public class ParserDQL extends ParserBase {
         if (isUndelimitedSimpleName()) {
             // A VoltDB extension to augment the standard sql function set.
             FunctionSQL function;
-            function = FunctionForVoltDB.newVoltDBFunction(name, token.tokenType);
+            function = FunctionForVoltDB.newVoltDBFunction(name);
             if (function == null) {
                 // These seem to be JDBC ("Open Group"?) aliases and extensions to the standard sql functions.
                 function = FunctionCustom.newCustomFunction(token.tokenString, token.tokenType);
@@ -4093,6 +4331,7 @@ public class ParserDQL extends ParserBase {
 
         // A VoltDB extension to avoid using exceptions for flow control.
         HsqlException e = null;
+        int prevParamCount = compileContext.parameters.size();
         try {
             e = readExpression(exprList, parseList, 0, parseList.length, false, false);
         } catch (HsqlException caught) {
@@ -4114,6 +4353,10 @@ public class ParserDQL extends ParserBase {
             }
 
             rewind(position);
+            // Discard parsed parameters along with the token rewinding.
+            for (int i = compileContext.parameters.size()-1; i >= prevParamCount; i--) {
+                compileContext.parameters.remove(i);
+            }
 
             parseList = function.parseListAlt;
             exprList  = new HsqlArrayList();
@@ -4686,7 +4929,6 @@ public class ParserDQL extends ParserBase {
 
         queryExpression.setAsTopLevel();
         queryExpression.resolve(session);
-
         if (token.tokenType == Tokens.FOR) {
             read();
 

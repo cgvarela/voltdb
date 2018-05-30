@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -33,6 +33,7 @@ import org.voltdb.VoltType;
 import org.voltdb.client.Client;
 import org.voltdb.client.ProcCallException;
 import org.voltdb.compiler.VoltProjectBuilder;
+import org.voltdb.types.TimestampType;
 import org.voltdb_testprocs.regressionsuites.aggregates.Insert;
 
 /**
@@ -45,6 +46,23 @@ public class TestSqlAggregateSuite extends RegressionSuite {
     static final Class<?>[] PROCEDURES = { Insert.class };
 
     static final int ROWS = 10;
+
+    public void testAggregateInArithmetics() throws IOException, ProcCallException {
+        Client client = getClient();
+        String table = "ENG10429";
+        String insert = "INSERT INTO %s VALUES (%d, %d, %d);";
+        client.callProcedure("@AdHoc", String.format(insert, table, 123, 3, 369));
+        client.callProcedure("@AdHoc", String.format(insert, table, 15, 3, 45));
+        client.callProcedure("@AdHoc", String.format(insert, table, 64, 2, 128));
+        client.callProcedure("@AdHoc", String.format(insert, table, 77, 2, 154));
+        String query = "SELECT SUM(a)/b AS val FROM " + table + " GROUP BY b ORDER BY 1;";
+        VoltTable[] results = client.callProcedure("@AdHoc", query).getResults();
+        assertEquals(2, results[0].getRowCount());
+        results[0].advanceRow();
+        assertEquals(46, results[0].getLong(0));
+        results[0].advanceRow();
+        assertEquals(70, results[0].getLong(0));
+    }
 
     public void testDistinct() throws IOException, ProcCallException
     {
@@ -409,6 +427,94 @@ public class TestSqlAggregateSuite extends RegressionSuite {
         }
     }
 
+    // Test case for ENG-4980
+    public void testCountDistinctPartitionColumn() throws IOException, ProcCallException
+    {
+        String[] aggs = {"count", "sum", "min", "max"};
+        long[] expected_results = {5,
+                                   0 + 1 + 2 + 3 + 4,
+                                   0,
+                                   4};
+        Client client = getClient();
+        for (int i = 0; i < ROWS; ++i)
+        {
+            int value = i / 2;
+            String query = "INSERT INTO ENG4980 VALUES (" + value + ", " + value + ");";
+            System.out.println(query);
+            client.callProcedure("@AdHoc", query);
+        }
+        for (int i = 0; i < aggs.length; ++i)
+        {
+            String query = String.format("select %s(distinct pid) from ENG4980",
+                                         aggs[i]);
+            System.out.println(query);
+            VoltTable[] results = client.callProcedure("@AdHoc", query).getResults();
+            results[0].advanceRow();
+            assertEquals(expected_results[i], results[0].getLong(0));
+        }
+    }
+
+    // This is a regression test for ENG-9394
+    public void testInlineVarcharCountDistinct() throws IOException, ProcCallException {
+        Client client = getClient();
+        // These values were empirically determined to
+        // produce a wrong answer before this bug was fixed.
+        String[] codeValues = {
+                "x9knsslnDEx1vPVE3AmoJSyF",
+                "x9iMVxN9IM3PbKn0rVuPfK0GI",
+                "xcsj3vLpLh",
+                "x8DuKNF0GeQ8UG",
+                "xiqRc8iVY2u1oN5kizy3CA7",
+                "xecZXl8bsE4Pw3LBhI7B8G",
+                "xfKP25a2foPTw2FiCRdUsZj",
+                "xp7KR8SOp5B8kopvUdnc3gmeAskWVwJ",
+                "xG6",
+                "xhw0OVDvKJRyYdmUj9z3UcODKNB",
+                "xPy5PXeRtJcZhUFuyIiV09h",
+                "x8Vc4ExuM4c7SU5F6XZ6pWiUnnrO93v",
+                "xNe2H70Em",
+                "x8cepckgTyLhKR8cF10JgR4JzWCUu",
+                "xuT6JlTjfObhqUJ",
+                "xovLMc0FWA04m",
+                "xJroR",
+                "xdSjQW",
+                "xHw",
+                "xMMnkLHq8b493PhefMjtLQjV"
+        };
+
+        for (int i = 0; i < codeValues.length; ++i) {
+            client.callProcedure("ENG_9394.insert",
+                    codeValues[i],
+                    codeValues[i],
+                    Integer.toString(i),
+                    new TimestampType("2010-10-31 11:11:26"),
+                    new TimestampType("2048-10-31 11:11:27"),
+                    "000");
+        }
+
+        VoltTable vt;
+        String stmt = "select count(distinct code) "
+                + "from ENG_9394 "
+                + "where dt1 <= current_timestamp "
+                + "and dt2 >= current_timestamp "
+                + "and acode < '999'";
+        vt = client.callProcedure("@AdHoc", stmt).getResults()[0];
+        vt.advanceRow();
+        long countDistinct = vt.getLong(0);
+
+        stmt = "select count(*) "
+                + "from ("
+                + "  select distinct code "
+                + "  from ENG_9394 "
+                + "  where dt1 <= current_timestamp "
+                + "  and dt2 >= current_timestamp "
+                + "  and acode < '999') as subq";
+        vt = client.callProcedure("@AdHoc", stmt).getResults()[0];
+        vt.advanceRow();
+        long countStarSubquery = vt.getLong(0);
+        assertEquals(countStarSubquery, countDistinct);
+    }
+
     // ENG-3645 crashed on an aggregates memory management issue.
     public void testEng3645() throws IOException, ProcCallException {
         Client client = getClient();
@@ -433,7 +539,7 @@ public class TestSqlAggregateSuite extends RegressionSuite {
         VoltProjectBuilder project = new VoltProjectBuilder();
         project.addSchema(Insert.class.getResource("aggregate-sql-ddl.sql"));
         project.addPartitionInfo("P1", "ID");
-        project.addProcedures(PROCEDURES);
+        project.addProcedure(Insert.class);
 
         config = new LocalCluster("sqlaggregate-onesite.jar", 1, 1, 0, BackendTarget.NATIVE_EE_JNI);
         if (!config.compile(project)) fail();

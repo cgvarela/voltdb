@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,15 +19,8 @@
 #include "common/StlFriendlyNValue.h"
 #include "common/executorcontext.hpp"
 #include "expressions/functionexpression.h" // Really for datefunctions and its dependencies.
-#include "logging/LogManager.h"
-
-#include <cstdio>
-#include <sstream>
-#include <algorithm>
-#include <set>
 
 namespace voltdb {
-
 Pool* NValue::getTempStringPool() {
     return ExecutorContext::getTempStringPool();
 }
@@ -126,14 +119,16 @@ TTInt NValue::s_minInt64AsDecimal(TTInt(-INT64_MAX) * kMaxScaleFactor);
  */
 std::string NValue::debug() const {
     const ValueType type = getValueType();
-    if (isNull()) {
-        return "<NULL>";
-    }
     std::ostringstream buffer;
     std::string out_val;
     const char* ptr;
-    int64_t addr;
+
     buffer << getTypeName(type) << "::";
+    if (isNull()) {
+        buffer << "<NULL>";
+        return buffer.str();
+    }
+
     switch (type) {
     case VALUE_TYPE_BOOLEAN:
         buffer << (getBoolean() ? "true" : "false");
@@ -148,28 +143,51 @@ std::string NValue::debug() const {
         buffer << getInteger();
         break;
     case VALUE_TYPE_BIGINT:
-    case VALUE_TYPE_TIMESTAMP:
         buffer << getBigInt();
         break;
     case VALUE_TYPE_DOUBLE:
         buffer << getDouble();
         break;
     case VALUE_TYPE_VARCHAR:
-        ptr = reinterpret_cast<const char*>(getObjectValue_withoutNull());
-        addr = reinterpret_cast<int64_t>(ptr);
-        out_val = std::string(ptr, getObjectLength_withoutNull());
-        buffer << "[" << getObjectLength_withoutNull() << "]";
-        buffer << "\"" << out_val << "\"[@" << addr << "]";
+    {
+        int32_t length;
+        ptr = getObject_withoutNull(&length);
+        out_val = std::string(ptr, length);
+        buffer << "[" << length << "]";
+        buffer << "\"" << out_val << "\"[@" << static_cast<const void*>(ptr) << "]";
         break;
+    }
     case VALUE_TYPE_VARBINARY:
-        ptr = reinterpret_cast<const char*>(getObjectValue_withoutNull());
-        addr = reinterpret_cast<int64_t>(ptr);
-        out_val = std::string(ptr, getObjectLength_withoutNull());
-        buffer << "[" << getObjectLength_withoutNull() << "]";
-        buffer << "-bin[@" << addr << "]";
+    {
+        int32_t length;
+        ptr = getObject_withoutNull(&length);
+        out_val = std::string(ptr, length);
+        buffer << "[" << length << "]";
+        buffer << "-bin[@" << static_cast<const void*>(ptr) << "]";
         break;
+    }
     case VALUE_TYPE_DECIMAL:
         buffer << createStringFromDecimal();
+        break;
+    case VALUE_TYPE_TIMESTAMP: {
+        try {
+            std::stringstream ss;
+            streamTimestamp(ss);
+            buffer << ss.str();
+        }
+        catch (const SQLException &) {
+            buffer << "<out of range timestamp:" << getBigInt() << ">";
+        }
+        catch (...) {
+            buffer << "<exception when converting timestamp:" << getBigInt() << ">";
+        }
+        break;
+    }
+    case VALUE_TYPE_POINT:
+        buffer << getGeographyPointValue().toString();
+        break;
+    case VALUE_TYPE_GEOGRAPHY:
+        buffer << getGeographyValue().toString();
         break;
     default:
         buffer << "(no details)";
@@ -179,6 +197,23 @@ std::string NValue::debug() const {
     return (ret);
 }
 
+int32_t NValue::serializedSize() const {
+    switch (m_valueType) {
+    case VALUE_TYPE_VARCHAR:
+    case VALUE_TYPE_VARBINARY:
+    case VALUE_TYPE_GEOGRAPHY: {
+            int32_t length = sizeof(int32_t);
+            if (! isNull()) {
+                int32_t valueLength;
+                getObject_withoutNull(&valueLength);
+                length += valueLength;
+            }
+            return length;
+        }
+    default:
+        return getTupleStorageSize(m_valueType);
+    }
+}
 
 /**
  * Serialize sign and value using radix point (no exponent).
@@ -259,27 +294,65 @@ void NValue::createDecimalFromString(const std::string &txt) {
                            "Too many decimal points");
     }
 
-    const std::string wholeString = txt.substr( setSign ? 1 : 0, separatorPos - (setSign ? 1 : 0));
-    const std::size_t wholeStringSize = wholeString.size();
-    if (wholeStringSize > 26) {
-        throw SQLException(SQLException::volt_decimal_serialization_error,
-                           "Maximum precision exceeded. Maximum of 26 digits to the left of the decimal point");
-    }
-    TTInt whole(wholeString);
+    // This is set to 1 if we carry in the scale.
+    int carryScale = 0;
+    // This is set to 1 if we carry from the scale to the whole.
+    int carryWhole = 0;
+
+    // Start with the fractional part.  We need to
+    // see if we need to carry from it first.
     std::string fractionalString = txt.substr( separatorPos + 1, txt.size() - (separatorPos + 1));
     // remove trailing zeros
     while (fractionalString.size() > 0 && fractionalString[fractionalString.size() - 1] == '0')
         fractionalString.erase(fractionalString.size() - 1, 1);
-    // check if too many decimal places
-    if (fractionalString.size() > 12) {
-        throw SQLException(SQLException::volt_decimal_serialization_error,
-                           "Maximum scale exceeded. Maximum of 12 digits to the right of the decimal point");
-    }
-    while(fractionalString.size() < NValue::kMaxDecScale) {
-        fractionalString.push_back('0');
+    //
+    // If the scale is too large, then we will round
+    // the number to the nearest 10**-12, and to the
+    // furthest from zero if the number is equidistant
+    // from the next highest and lowest.  This is the
+    // definition of the Java rounding mode HALF_UP.
+    //
+    // At some point we will read a rounding mode from the
+    // Java side at Engine configuration time, or something
+    // like that, and have a whole flurry of rounding modes
+    // here.  However, for now we have just the one.
+    //
+    if (fractionalString.size() > kMaxDecScale) {
+        carryScale = ('5' <= fractionalString[kMaxDecScale]) ? 1 : 0;
+        fractionalString = fractionalString.substr(0, kMaxDecScale);
+    } else {
+        while(fractionalString.size() < NValue::kMaxDecScale) {
+            fractionalString.push_back('0');
+        }
     }
     TTInt fractional(fractionalString);
 
+    // If we decided to carry above, then do it here.
+    // The fractional string is set up so that it represents
+    // 1.0e-12 * units.
+    fractional += carryScale;
+    if (TTInt((uint64_t)kMaxScaleFactor) <= fractional) {
+        // We know fractional was < kMaxScaleFactor before
+        // we rounded, since fractional is 12 digits and
+        // kMaxScaleFactor is 13.  So, if carrying makes
+        // the fractional number too big, it must be eactly
+        // too big.  That is to say, the rounded fractional
+        // number number has become zero, and we need to
+        // carry to the whole number.
+        fractional = 0;
+        carryWhole = 1;
+    }
+
+    // Process the whole number string.
+    const std::string wholeString = txt.substr( setSign ? 1 : 0, separatorPos - (setSign ? 1 : 0));
+    // We will check for oversize numbers below, so don't waste time
+    // doing it now.
+    TTInt whole(wholeString);
+    whole += carryWhole;
+    if (oversizeWholeDecimal(whole)) {
+        throw SQLException(SQLException::volt_decimal_serialization_error,
+                           "Maximum precision exceeded. Maximum of 26 digits to the left of the decimal point");
+    }
     whole *= kMaxScaleFactor;
     whole += fractional;
 
@@ -346,7 +419,7 @@ bool NValue::inList(const NValue& rhs) const
     if (rhsType != VALUE_TYPE_ARRAY) {
         throwDynamicSQLException("rhs of IN expression is of a non-list type %s", rhs.getValueTypeString().c_str());
     }
-    const NValueList* listOfNValues = (NValueList*)rhs.getObjectValue_withoutNull();
+    const NValueList* listOfNValues = reinterpret_cast<const NValueList*>(rhs.getObjectValue_withoutNull());
     const StlFriendlyNValue& value = *static_cast<const StlFriendlyNValue*>(this);
     //TODO: An O(ln(length)) implementation vs. the current O(length) implementation
     // such as binary search would likely require some kind of sorting/re-org of values
@@ -379,7 +452,8 @@ void NValue::allocateANewNValueList(size_t length, ValueType elementType)
 void NValue::setArrayElements(std::vector<NValue> &args) const
 {
     assert(m_valueType == VALUE_TYPE_ARRAY);
-    NValueList* listOfNValues = (NValueList*)getObjectValue();
+    NValueList* listOfNValues = const_cast<NValueList*>(
+        reinterpret_cast<const NValueList*>(getObjectValue_withoutNull()));
     // Assign each of the elements.
     int ii = (int)args.size();
     assert(ii == listOfNValues->m_length);
@@ -393,14 +467,14 @@ void NValue::setArrayElements(std::vector<NValue> &args) const
 int NValue::arrayLength() const
 {
     assert(m_valueType == VALUE_TYPE_ARRAY);
-    NValueList* listOfNValues = (NValueList*)getObjectValue();
+    const NValueList* listOfNValues = reinterpret_cast<const NValueList*>(getObjectValue_withoutNull());
     return static_cast<int>(listOfNValues->m_length);
 }
 
-NValue NValue::itemAtIndex(int index) const
+const NValue& NValue::itemAtIndex(int index) const
 {
     assert(m_valueType == VALUE_TYPE_ARRAY);
-    NValueList* listOfNValues = (NValueList*)getObjectValue();
+    const NValueList* listOfNValues = reinterpret_cast<const NValueList*>(getObjectValue_withoutNull());
     assert(index >= 0);
     assert(index < listOfNValues->m_length);
     return listOfNValues->m_values[index];
@@ -417,13 +491,12 @@ void NValue::castAndSortAndDedupArrayForInList(const ValueType outputType, std::
     // values that don't overflow or violate unique constaints
     // (n.b. sorted set means dups are removed)
     for (int i = 0; i < size; i++) {
-        NValue value = itemAtIndex(i);
+        const NValue& value = itemAtIndex(i);
         // cast the value to the right type and catch overflow/cast problems
         try {
             StlFriendlyNValue stlValue;
             stlValue = value.castAs(outputType);
-            std::pair<std::set<StlFriendlyNValue>::iterator, bool> ret;
-            ret = uniques.insert(stlValue);
+            uniques.insert(stlValue);
         }
         // cast exceptions mean the in-list test is redundant
         // don't include these values in the materialized table
@@ -441,6 +514,10 @@ void NValue::castAndSortAndDedupArrayForInList(const ValueType outputType, std::
 void NValue::streamTimestamp(std::stringstream& value) const
 {
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("CAST");
+    }
+
     boost::gregorian::date as_date;
     boost::posix_time::time_duration as_time;
     micros_to_date_and_time(epoch_micros, as_date, as_time);
@@ -452,7 +529,9 @@ void NValue::streamTimestamp(std::stringstream& value) const
         // and converting it to 1000000 micros
         micro += 1000000;
     }
-    char mbstr[27];    // Format: "YYYY-MM-DD HH:MM:SS."- 20 characters + terminator
+    char mbstr[64];    // Format: "YYYY-MM-DD HH:MM:SS."- 27 characters + terminator
+                       //         But GCC-7 thinks it may be longer.  So we need
+                       //         extra space.
     snprintf(mbstr, sizeof(mbstr), "%04d-%02d-%02d %02d:%02d:%02d.%06d",
              (int)as_date.year(), (int)as_date.month(), (int)as_date.day(),
              (int)as_time.hours(), (int)as_time.minutes(), (int)as_time.seconds(), (int)micro);
@@ -568,6 +647,7 @@ int64_t NValue::parseTimestampString(const std::string &str)
         if (micro >= 2000000 || micro < 1000000) {
             throwTimestampFormatError(str);
         }
+        /* fall through */ // gcc-7 needs this comment.
     case 10:
         if (date_str.at(4) != '-' || date_str.at(7) != '-') {
             throwTimestampFormatError(str);

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -25,19 +25,21 @@ package org.voltdb.regressionsuites;
 import java.io.IOException;
 import java.nio.channels.SocketChannel;
 
-import junit.framework.Test;
-
 import org.voltdb.BackendTarget;
+import org.voltdb.ProcedurePartitionData;
 import org.voltdb.VoltTable;
 import org.voltdb.VoltType;
 import org.voltdb.client.Client;
 import org.voltdb.client.ClientConfig;
 import org.voltdb.client.ClientFactory;
+import org.voltdb.client.ClientImpl;
 import org.voltdb.client.ClientResponse;
 import org.voltdb.client.ConnectionUtil;
 import org.voltdb.client.ProcCallException;
 import org.voltdb.client.ProcedureCallback;
 import org.voltdb.compiler.VoltProjectBuilder;
+
+import junit.framework.Test;
 
 public class TestAdminMode extends RegressionSuite
 {
@@ -49,7 +51,8 @@ public class TestAdminMode extends RegressionSuite
         VoltProjectBuilder builder = new VoltProjectBuilder();
         builder.addLiteralSchema("CREATE TABLE T(A1 INTEGER NOT NULL, A2 INTEGER, PRIMARY KEY(A1));");
         builder.addPartitionInfo("T", "A1");
-        builder.addStmtProcedure("InsertA", "INSERT INTO T VALUES(?,?);", "T.A1: 0");
+        builder.addStmtProcedure("InsertA", "INSERT INTO T VALUES(?,?);",
+                new ProcedurePartitionData("T", "A1"));
         builder.addStmtProcedure("CountA", "SELECT COUNT(*) FROM T");
         builder.addStmtProcedure("SelectA", "SELECT * FROM T");
         return builder;
@@ -199,6 +202,10 @@ public class TestAdminMode extends RegressionSuite
         ClientConfig config = new ClientConfig();
         config.setProcedureCallTimeout(600000);
         final Client adminclient = ClientFactory.createClient(config);
+        if (((ClientImpl)adminclient).getSSLContext() != null) {
+            return;
+        }
+
         SocketChannel channel = getClientChannel();
 
         try {
@@ -354,7 +361,7 @@ public class TestAdminMode extends RegressionSuite
         assertTrue(success);
 
         // add this config to the set of tests to run
-        builder.addServerConfig(config);
+        builder.addServerConfig(config, false);
 
         return builder;
     }

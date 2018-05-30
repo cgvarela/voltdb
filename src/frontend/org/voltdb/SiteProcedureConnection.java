@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -22,11 +22,17 @@ import java.util.Map;
 import java.util.concurrent.Future;
 
 import org.voltcore.utils.Pair;
+import org.voltdb.DRConsumerDrIdTracker.DRSiteDrIdTracker;
 import org.voltdb.VoltProcedure.VoltAbortException;
+import org.voltdb.catalog.Column;
+import org.voltdb.catalog.Table;
 import org.voltdb.dtxn.TransactionState;
 import org.voltdb.dtxn.UndoAction;
 import org.voltdb.exceptions.EEException;
+import org.voltdb.iv2.DeterminismHash;
 import org.voltdb.iv2.JoinProducerBase;
+import org.voltdb.messaging.FastDeserializer;
+import org.voltdb.sysprocs.LowImpactDelete.ComparisonOperation;
 
 /**
  * VoltProcedures invoke SiteProcedureConnection methods to
@@ -37,10 +43,11 @@ public interface SiteProcedureConnection {
     public long getLatestUndoToken();
 
     /**
-     * Get the HSQL backend, if any.  Returns null if we're not configured
-     * to use it
+     * Get the non-VoltDB backend, if any, such as an HSQL or PostgreSQL
+     * backend used for comparison testing. Returns null if we're not
+     * configured to use it.
      */
-    public HsqlBackend getHsqlBackendIfExists();
+    public NonVoltDBBackend getNonVoltDBBackendIfExists();
 
     /**
      * Get the catalog site id for the corresponding SiteProcedureConnection
@@ -56,6 +63,16 @@ public interface SiteProcedureConnection {
      * Get the catalog host id for the corresponding SiteProcedureConnection
      */
     public int getCorrespondingHostId();
+
+    /**
+     * Get the catalog cluster id for the corresponding SiteProcedureConnection
+     */
+    public int getCorrespondingClusterId();
+
+    /**
+     * Get the DR gateway
+     */
+    public PartitionDRGateway getDRGateway();
 
     /**
      * Log settings changed. Signal EE to update log level.
@@ -96,16 +113,26 @@ public interface SiteProcedureConnection {
      * Note: it's ok to pass null for inputDepIds if the fragments
      * have no dependencies.
      */
-    public VoltTable[] executePlanFragments(
+    public FastDeserializer executePlanFragments(
             int numFragmentIds,
             long[] planFragmentIds,
             long[] inputDepIds,
             Object[] parameterSets,
+            DeterminismHash determinismHash,
             String[] sqlTexts,
+            boolean[] isWriteFrags,
+            int[] sqlCRCs,
             long txnId,
             long spHandle,
             long uniqueId,
-            boolean readOnly) throws EEException;
+            boolean readOnly,
+            boolean traceOn) throws EEException;
+
+    /**
+     * Allows caller to determine that a 50MB temporary (deallocated on next call) buffer
+     * was used to generate the EE result table.
+     */
+    public boolean usingFallbackBuffer();
 
     /**
      * Let the EE know which batch of sql is running so it can include this
@@ -119,6 +146,9 @@ public interface SiteProcedureConnection {
      */
     public void setProcedureName(String procedureName);
 
+    public void setBatchTimeout(int batchTimeout);
+    public int getBatchTimeout();
+
     /**
      * Legacy recursable execution interface for MP transaction states.
      */
@@ -131,7 +161,7 @@ public interface SiteProcedureConnection {
     public void setSpHandleForSnapshotDigest(long spHandle);
 
     /**
-     * IV2 commit / rollback interface to the EE
+     * IV2 commit / rollback interface to the EE and java level roll back if needed
      */
     public void truncateUndoLog(boolean rollback, long token, long spHandle, List<UndoAction> undoActions);
 
@@ -153,6 +183,16 @@ public interface SiteProcedureConnection {
      */
     public ProcedureRunner getProcedureRunner(String procedureName);
 
+    public ProcedureRunner getNibbleDeleteProcRunner(String procedureName,
+                                                     Table table,
+                                                     Column column,
+                                                     ComparisonOperation op);
+
+    /**
+     * @return SystemProcedureExecutionContext
+     */
+    public SystemProcedureExecutionContext getSystemProcedureExecutionContext();
+
     /*
      * This isn't just a simple setter, it has behavior side effects
      * as well because it causes the Site to start replaying log data
@@ -162,7 +202,9 @@ public interface SiteProcedureConnection {
             JoinProducerBase.JoinCompletionAction action,
             Map<String, Map<Integer, Pair<Long, Long>>> exportSequenceNumbers,
             Map<Integer, Long> drSequenceNumbers,
-            boolean requireExistingSequenceNumbers);
+            Map<Integer, Map<Integer, Map<Integer, DRSiteDrIdTracker>>> allConsumerSiteTrackers,
+            boolean requireExistingSequenceNumbers,
+            long clusterCreateTime);
 
     public long[] getUSOForExportTable(String signature);
 
@@ -177,7 +219,7 @@ public interface SiteProcedureConnection {
     public void quiesce();
 
     public void exportAction(boolean syncAction,
-                             long ackOffset,
+                             long uso,
                              Long sequenceNumber,
                              Integer partitionId,
                              String tableSignature);
@@ -191,7 +233,18 @@ public interface SiteProcedureConnection {
 
     public TheHashinator getCurrentHashinator();
     public void updateHashinator(TheHashinator hashinator);
-    public long[] validatePartitioning(long tableIds[], int hashinatorType, byte hashinatorConfig[]);
-    public void notifyOfSnapshotNonce(String nonce, long snapshotSpHandle);
-    public void applyBinaryLog(long txnId, long spHandle, long uniqueId, byte logData[]);
+    public long[] validatePartitioning(long tableIds[], byte hashinatorConfig[]);
+    public long applyBinaryLog(long txnId, long spHandle, long uniqueId, int remoteClusterId, int remotePartitionId, byte logData[]);
+    public void setDRProtocolVersion(int drVersion);
+    /*
+     * Starting in DR version 7.0, we also generate a special event indicating the beginning of
+     * binary log stream when we set protocol version.
+     */
+    public void setDRProtocolVersion(int drVersion, long txnId, long spHandle, long uniqueId);
+
+    public void setDRStreamEnd(long txnId, long spHandle, long uniqueId);
+
+    public void generateElasticChangeEvents(int oldPartitionCnt, int newPartitionCnt, long txnId, long spHandle, long uniqueId);
+
+    public void generateElasticRebalanceEvents(int srcPartition, int destPartition, long txnId, long spHandle, long uniqueId);
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,10 +24,15 @@ import java.io.IOException;
  * command both for files on a disk or "here documents" entered
  * interactively.
  */
-interface SQLCommandLineReader {
+public interface SQLCommandLineReader {
     /**
      * Read the next line of input from some underlying input stream.
      * If the underlying stream is interactive, print out the prompt.
      * */
     public String readBatchLine() throws IOException;
+
+    /**
+     * Return the line number of the most recently read line.
+     */
+    public int getLineNumber();
 }

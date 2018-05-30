@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -54,6 +54,7 @@
 #include "common/tabletuple.h"
 #include "expressions/abstractexpression.h"
 #include "execution/ProgressMonitorProxy.h"
+#include "executors/executorutil.h"
 
 namespace voltdb {
 
@@ -68,7 +69,7 @@ public:
     void operator delete(void*, Pool& memoryPool) { /* NOOP -- on alloc error unroll nothing */ }
     void operator delete(void*) { /* NOOP -- deallocate wholesale with pool */ }
 
-    Agg() : m_haveAdvanced(false), m_inlineCopiedToOutline(false)
+    Agg() : m_haveAdvanced(false), m_inlineCopiedToNonInline(false)
     {
         m_value.setNull();
     }
@@ -87,7 +88,7 @@ public:
     {
         m_haveAdvanced = false;
         m_value.setNull();
-        m_inlineCopiedToOutline = false;
+        m_inlineCopiedToNonInline = false;
     }
 
 protected:
@@ -96,7 +97,7 @@ protected:
      * Potentially, putting these two bool member variables will save memory.
      */
     bool m_haveAdvanced;
-    bool m_inlineCopiedToOutline;
+    bool m_inlineCopiedToNonInline;
 };
 
 /**
@@ -157,8 +158,13 @@ class AggregateExecutorBase : public AbstractExecutor
 {
 public:
     AggregateExecutorBase(VoltDBEngine* engine, AbstractPlanNode* abstract_node) :
-        AbstractExecutor(engine, abstract_node), m_groupByKeySchema(NULL),
-        m_prePredicate(NULL), m_postPredicate(NULL)
+        AbstractExecutor(engine, abstract_node),
+        m_groupByKeySchema(NULL),
+        m_prePredicate(NULL),
+        m_postPredicate(NULL),
+        m_pmp(NULL),
+        m_inputSchema(NULL),
+        m_groupByKeyPartialHashSchema(NULL)
     { }
     ~AggregateExecutorBase()
     {
@@ -173,13 +179,12 @@ public:
      * but will use other's output table instead.
      */
     virtual TableTuple p_execute_init(const NValueArray& params, ProgressMonitorProxy* pmp,
-            const TupleSchema * schema, TempTable* newTempTable = NULL);
+            const TupleSchema * schema, AbstractTempTable* newTempTable = NULL, CountingPostfilter* parentPredicate = NULL);
 
     /**
-     * Return true when LIMIT has been met, the caller may stop executing.
-     * By default, return false.
+     * Evaluate a tuple. As a side effect, signals when LIMIT has been met, the caller may stop executing.
      */
-    virtual bool p_execute_tuple(const TableTuple& nextTuple) = 0;
+    virtual void p_execute_tuple(const TableTuple& nextTuple) = 0;
 
     /**
      * Last method to insert the results to output table and clean up memory or variables.
@@ -191,9 +196,9 @@ public:
     }
 
 protected:
-    virtual bool p_init(AbstractPlanNode*, TempTableLimits*);
+    virtual bool p_init(AbstractPlanNode*, const ExecutorVector& executorVector);
 
-    void executeAggBase(const NValueArray& params);
+    void initCountingPredicate(const NValueArray& params, CountingPostfilter* parentPredicate);
 
     /// Helper method responsible for inserting the results of the
     /// aggregation into a new tuple in the output table as well as passing
@@ -211,7 +216,7 @@ protected:
 
     void initGroupByKeyTuple(const TableTuple& nextTuple);
 
-    /*
+    /**
      * Swap the current group by key tuple with the in-progress group by key tuple.
      * Return the new group by key tuple associated with in-progress tuple address.
      * This function is only used in serial or partial aggregation.
@@ -247,10 +252,7 @@ protected:
     TupleSchema* m_groupByKeyPartialHashSchema;
 
     // used for inline limit for serial/partial aggregate
-    int m_limit;
-    int m_offset;
-    int m_tupleSkipped;
-    bool m_earlyReturn;
+    CountingPostfilter m_postfilter;
 
 private:
     TupleSchema* constructGroupBySchema(bool partial);
@@ -277,8 +279,9 @@ public:
     ~AggregateHashExecutor();
 
     TableTuple p_execute_init(const NValueArray& params, ProgressMonitorProxy* pmp,
-                              const TupleSchema * schema, TempTable* newTempTable  = NULL);
-    bool p_execute_tuple(const TableTuple& nextTuple);
+                              const TupleSchema * schema, AbstractTempTable* newTempTable  = NULL,
+                              CountingPostfilter* parentPredicate = NULL);
+    void p_execute_tuple(const TableTuple& nextTuple);
     void p_execute_finish();
 
 private:
@@ -301,8 +304,9 @@ public:
     ~AggregateSerialExecutor();
 
     TableTuple p_execute_init(const NValueArray& params, ProgressMonitorProxy* pmp,
-                              const TupleSchema * schema, TempTable* newTempTable  = NULL);
-    bool p_execute_tuple(const TableTuple& nextTuple);
+                              const TupleSchema * schema, AbstractTempTable* newTempTable  = NULL,
+                              CountingPostfilter* parentPredicate = NULL);
+    void p_execute_tuple(const TableTuple& nextTuple);
     void p_execute_finish();
 
 protected:
@@ -326,8 +330,9 @@ public:
     ~AggregatePartialExecutor();
 
     TableTuple p_execute_init(const NValueArray& params, ProgressMonitorProxy* pmp,
-                              const TupleSchema * schema, TempTable* newTempTable  = NULL);
-    bool p_execute_tuple(const TableTuple& nextTuple);
+                              const TupleSchema * schema, AbstractTempTable* newTempTable  = NULL,
+                              CountingPostfilter* parentPredicate = NULL);
+    void p_execute_tuple(const TableTuple& nextTuple);
     void p_execute_finish();
 
 private:

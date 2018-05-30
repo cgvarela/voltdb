@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -386,8 +386,10 @@ public class JDBC4Connection implements java.sql.Connection, IVoltDBConnection
     @Override
     public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency) throws SQLException
     {
-        if (resultSetType == ResultSet.TYPE_SCROLL_INSENSITIVE && resultSetConcurrency == ResultSet.CONCUR_READ_ONLY)
+        if ((resultSetType == ResultSet.TYPE_SCROLL_INSENSITIVE || resultSetType == ResultSet.TYPE_FORWARD_ONLY) &&
+                resultSetConcurrency == ResultSet.CONCUR_READ_ONLY) {
             return prepareStatement(sql);
+        }
         checkClosed();
         throw SQLError.noSupport();
     }
@@ -483,7 +485,9 @@ public class JDBC4Connection implements java.sql.Connection, IVoltDBConnection
     public void setReadOnly(boolean readOnly) throws SQLException
     {
         checkClosed();
-        throw SQLError.noSupport();
+        if (!Boolean.parseBoolean(props.getProperty("enableSetReadOnly","false"))){
+            throw SQLError.noSupport();
+        }
     }
 
     // Creates an unnamed savepoint in the current transaction and returns the new Savepoint object that represents it.

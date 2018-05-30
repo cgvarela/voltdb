@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -48,12 +48,14 @@
 
 #include "common/tabletuple.h"
 #include "executors/abstractexecutor.h"
+#include "executors/OptimizedProjector.hpp"
+#include "indexes/tableindex.h"
 
 #include "boost/shared_array.hpp"
 
 namespace voltdb {
 
-class TempTable;
+class AbstractTempTable;
 class PersistentTable;
 
 class AbstractExpression;
@@ -66,43 +68,73 @@ class ProjectionPlanNode;
 class LimitPlanNode;
 
 class AggregateExecutorBase;
+class InsertExecutor;
+
+struct CountingPostfilter;
 
 class IndexScanExecutor : public AbstractExecutor
 {
 public:
     IndexScanExecutor(VoltDBEngine* engine, AbstractPlanNode* abstractNode)
         : AbstractExecutor(engine, abstractNode)
-        , m_projectionExpressions(NULL)
+        , m_projector()
         , m_searchKeyBackingStore(NULL)
         , m_aggExec(NULL)
+        , m_insertExec(NULL)
     {}
     ~IndexScanExecutor();
 
+    /** This is a helper function to get the "next tuple" during an
+     *   index scan, called by p_execute of both this class and
+     *   NestLoopIndexExecutor. */
+    static inline bool getNextTuple(IndexLookupType lookupType,
+                                    TableTuple* tuple,
+                                    TableIndex* index,
+                                    IndexCursor* cursor,
+                                    int activeNumOfSearchKeys) {
+        if (lookupType == INDEX_LOOKUP_TYPE_EQ
+            || lookupType == INDEX_LOOKUP_TYPE_GEO_CONTAINS) {
+            *tuple = index->nextValueAtKey(*cursor);
+            if (! tuple->isNullTuple()) {
+                return true;
+            }
+        }
+
+        if ((lookupType != INDEX_LOOKUP_TYPE_EQ
+             && lookupType != INDEX_LOOKUP_TYPE_GEO_CONTAINS)
+            || activeNumOfSearchKeys == 0) {
+            *tuple = index->nextValue(*cursor);
+        }
+
+        return ! tuple->isNullTuple();
+    }
+
 private:
     bool p_init(AbstractPlanNode*,
-                TempTableLimits* limits);
+                const ExecutorVector& executorVector);
     bool p_execute(const NValueArray &params);
+    void outputTuple(CountingPostfilter& postfilter, TableTuple& tuple);
+
 
     // Data in this class is arranged roughly in the order it is read for
     // p_execute(). Please don't reshuffle it only in the name of beauty.
 
     IndexScanPlanNode *m_node;
-    int m_numOfColumns;
     int m_numOfSearchkeys;
 
     // Inline Projection
     ProjectionPlanNode* m_projectionNode;
-    int* m_projectionAllTupleArray; // projection_all_tuple_array_ptr[]
-    AbstractExpression** m_projectionExpressions;
+    OptimizedProjector m_projector;
 
     // Search key
     AbstractExpression** m_searchKeyArray;
 
     IndexLookupType m_lookupType;
     SortDirectionType m_sortDirection;
+    bool m_hasOffsetRankOptimization;
 
     // IndexScan Information
-    TempTable* m_outputTable;
+    AbstractTempTable* m_outputTable;
 
     // arrange the memory mgmt aids at the bottom to try to maximize
     // cache hits (by keeping them out of the way of useful runtime data)
@@ -112,6 +144,7 @@ private:
     char* m_searchKeyBackingStore;
 
     AggregateExecutorBase* m_aggExec;
+    InsertExecutor *m_insertExec;
 };
 
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,22 +23,20 @@
 
 package txnIdSelfCheck;
 
-import java.io.InterruptedIOException;
-
-import java.util.Random;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-
 import org.voltdb.ClientResponseImpl;
+import org.voltdb.VoltProcedure.VoltAbortException;
 import org.voltdb.VoltTable;
 import org.voltdb.client.Client;
 import org.voltdb.client.ClientResponse;
 import org.voltdb.client.NoConnectionsException;
 import org.voltdb.client.ProcCallException;
-import org.voltdb.VoltProcedure.VoltAbortException;
-
 import txnIdSelfCheck.procedures.UpdateBaseProc;
+
+import java.io.InterruptedIOException;
+import java.util.Random;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ClientThread extends BenchmarkThread {
 
@@ -98,7 +96,7 @@ public class ClientThread extends BenchmarkThread {
                   break;
             }
             catch (Exception e) {
-                log.warn("ClientThread threw exception in initialization, will retry", e);
+                log.warn("ClientThread threw exception '" + e.getClass().getSimpleName() + " " + e.getMessage() + "' in initialization, will retry");
                 try { Thread.sleep(3000); } catch (Exception e2) {}
             }
         }
@@ -120,29 +118,36 @@ public class ClientThread extends BenchmarkThread {
     void runOne() throws Exception {
         // 1/10th of txns roll back
         byte shouldRollback = (byte) (m_random.nextInt(10) == 0 ? 1 : 0);
+        // if we need to disable rollbacks use this:
+        // byte shouldRollback = (byte) 0;
 
         try {
             String procName = null;
-            int expectedTables = 4;
+            int expectedTables = 5;
+            int nt = 0;
             switch (m_type) {
             case PARTITIONED_SP:
                 procName = "UpdatePartitionedSP";
                 break;
             case PARTITIONED_MP:
                 procName = "UpdatePartitionedMP";
-                expectedTables = 5;
+                expectedTables = 6;
+                nt = 1;
                 break;
             case REPLICATED:
                 procName = "UpdateReplicatedMP";
-                expectedTables = 5;
+                expectedTables = 6;
+                nt = 1;
                 break;
             case HYBRID:
                 procName = "UpdateBothMP";
-                expectedTables = 5;
+                expectedTables = 6;
+                nt = 1;
                 break;
             case ADHOC_MP:
                 procName = "UpdateReplicatedMPInProcAdHoc";
-                expectedTables = 5;
+                expectedTables = 6;
+                nt = 1;
                 break;
             }
 
@@ -157,7 +162,7 @@ public class ClientThread extends BenchmarkThread {
                         shouldRollback);
             } catch (Exception e) {
                 if (shouldRollback == 0) {
-                    log.warn("ClientThread threw after " + m_txnsRun.get() +
+                    log.warn("ClientThread threw '" + e.getClass().getSimpleName() + ": " + e.getMessage() + "' after " + m_txnsRun.get() +
                             " calls while calling procedure: " + procName +
                             " with args: cid: " + m_cid + ", nextRid: " + m_nextRid +
                             ", payload: " + payload +
@@ -175,14 +180,10 @@ public class ClientThread extends BenchmarkThread {
 
             m_txnsRun.incrementAndGet();
 
-            if (results.length != expectedTables) {
-                hardStop(String.format(
-                        "Client cid %d procedure %s returned %d results instead of %d",
-                        m_cid, procName, results.length, expectedTables), response);
-            }
-            VoltTable data = results[3];
+            VoltTable data = results[results.length-(nt+2)];
+            VoltTable view = results[results.length-(nt+1)];
             try {
-                UpdateBaseProc.validateCIDData(data, "ClientThread:" + m_cid);
+                UpdateBaseProc.validateCIDData(data, view, "ClientThread:" + m_cid);
             }
             catch (VoltAbortException vae) {
                 log.error("validateCIDData failed on: " + procName + ", shouldRollback: " +

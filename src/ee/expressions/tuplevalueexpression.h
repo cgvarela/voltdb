@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -66,8 +66,7 @@ class TupleValueExpression : public AbstractExpression {
         if (tuple_idx == 0) {
             assert(tuple1);
             if ( ! tuple1 ) {
-                throw SerializableEEException(VOLT_EE_EXCEPTION_TYPE_SQL,
-                                              "TupleValueExpression::"
+                throw SerializableEEException("TupleValueExpression::"
                                               "eval:"
                                               " Couldn't find tuple 1 (possible index scan planning error)");
             }
@@ -76,8 +75,7 @@ class TupleValueExpression : public AbstractExpression {
         else {
             assert(tuple2);
             if ( ! tuple2 ) {
-                throw SerializableEEException(VOLT_EE_EXCEPTION_TYPE_SQL,
-                                              "TupleValueExpression::"
+                throw SerializableEEException("TupleValueExpression::"
                                               "eval:"
                                               " Couldn't find tuple 2 (possible index scan planning error)");
             }

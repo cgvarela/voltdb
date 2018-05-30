@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,8 +26,6 @@ package org.voltdb.regressionsuites;
 import java.io.IOException;
 import java.util.UUID;
 
-import junit.framework.Test;
-
 import org.voltdb.BackendTarget;
 import org.voltdb.VoltTable;
 import org.voltdb.VoltType;
@@ -37,12 +35,16 @@ import org.voltdb.client.NoConnectionsException;
 import org.voltdb.client.ProcCallException;
 import org.voltdb.compiler.VoltProjectBuilder;
 import org.voltdb_testprocs.regressionsuites.sqlfeatureprocs.BatchedMultiPartitionTest;
+import org.voltdb_testprocs.regressionsuites.sqlfeatureprocs.PopulateTruncateTable;
 import org.voltdb_testprocs.regressionsuites.sqlfeatureprocs.TruncateTable;
+
+import junit.framework.Test;
 
 public class TestSQLFeaturesNewSuite extends RegressionSuite {
     // procedures used by these tests
-    static final Class<?>[] PROCEDURES = {
-        TruncateTable.class
+    static final Class<?>[] MP_PROCEDURES = {
+        TruncateTable.class,
+        PopulateTruncateTable.class
     };
 
     /**
@@ -71,36 +73,43 @@ public class TestSQLFeaturesNewSuite extends RegressionSuite {
 
         String[] procs = {"RTABLE.insert", "PTABLE.insert"};
         String[] tbs = {"RTABLE", "PTABLE"};
-        // Insert data
-        loadTableForTruncateTest(client, procs);
+
+        // Populate table with large # of rows (using SP) to exercise swap path for truncate also.
+        // Perform row insertion in chunks as there is upper limit on # on calls that be queued
+        // and executed in single SP call.
+        int rowsToInsert = 50000;
+        final int rowsInsertionEachChunk = 10000;
+        for (int rowsInserted = 0; rowsInserted < rowsToInsert; rowsInserted += rowsInsertionEachChunk) {
+            // Insert data
+            client.callProcedure("PopulateTruncateTable", rowsInserted + 1, rowsInsertionEachChunk);
+        }
 
         for (String tb: tbs) {
             vt = client.callProcedure("@AdHoc", "select count(*) from " + tb).getResults()[0];
-            validateTableOfScalarLongs(vt, new long[] {6});
+            validateTableOfScalarLongs(vt, new long[] {rowsToInsert});
         }
 
         if (isHSQL()) {
             return;
         }
 
-        Exception e = null;
         try {
             client.callProcedure("TruncateTable");
+            fail("Stored proc failed to throw the expected CONSTRAINT VIOLATION");
         } catch (ProcCallException ex) {
-            System.out.println(ex.getMessage());
-            e = ex;
+            //*enable to debug*/ System.out.println(ex.getMessage());
             assertTrue(ex.getMessage().contains("CONSTRAINT VIOLATION"));
-        } finally {
-            assertNotNull(e);
         }
         for (String tb: tbs) {
             vt = client.callProcedure("@AdHoc", "select count(*) from " + tb).getResults()[0];
-            validateTableOfScalarLongs(vt, new long[] {6});
+            validateTableOfScalarLongs(vt, new long[] {rowsToInsert});
 
-            client.callProcedure("@AdHoc", "INSERT INTO "+ tb +" VALUES (7,  30,  1.1, 'Jedi','Winchester');");
+            int nextId = rowsToInsert + 1;
+            client.callProcedure("@AdHoc", "INSERT INTO "+ tb +" VALUES (" +
+                                            nextId + ", 30,  1.1, 'Jedi','Winchester');");
 
             vt = client.callProcedure("@AdHoc", "select count(ID) from " + tb).getResults()[0];
-            validateTableOfScalarLongs(vt, new long[] {7});
+            validateTableOfScalarLongs(vt, new long[] {nextId});
 
 
             vt = client.callProcedure("@AdHoc", "Truncate table " + tb).getResults()[0];
@@ -144,12 +153,13 @@ public class TestSQLFeaturesNewSuite extends RegressionSuite {
 
     public void testTableLimitAndPercentage() throws Exception {
         System.out.println("STARTING TABLE LIMIT AND PERCENTAGE FULL TEST......");
-        Client client = getClient();
-        VoltTable vt = null;
+
         if(isHSQL()) {
             return;
         }
 
+        Client client = getClient();
+        VoltTable vt = null;
         // When table limit feature is fully supported, there needs to be more test cases.
         // generalize this test within a loop, maybe.
         // Test max row 0
@@ -337,7 +347,7 @@ public class TestSQLFeaturesNewSuite extends RegressionSuite {
         //   priority SMALLINT,
         //   CONSTRAINT tblimit3_exec_complex LIMIT PARTITION ROWS 3
         //     EXECUTE (DELETE FROM capped3_limit_exec_complex
-        //              WHERE may_be_purged = 0
+        //              WHERE may_be_purged = 1
         //              AND relevance IN ('irrelevant', 'worthless', 'moot')
         //              AND priority < 16384)
         //   );
@@ -465,6 +475,14 @@ public class TestSQLFeaturesNewSuite extends RegressionSuite {
 
         vt = client.callProcedure("@AdHoc", "select dept from capped3_limit_exec_complex order by dept asc").getResults()[0];
         validateTableOfScalarLongs(vt, new long[] {5, 6, 8});
+
+        // Restore the constraint's delete statement to default
+        // so that it won't affect the other tests in the suite.
+        cr = client.callProcedure("@AdHoc",
+                "ALTER TABLE CAPPED3_LIMIT_EXEC_COMPLEX "
+                + "ADD LIMIT PARTITION ROWS 3 "
+                + "EXECUTE (DELETE FROM capped3_limit_exec_complex WHERE may_be_purged = 1 AND relevance IN ('irrelevant', 'worthless', 'moot') AND priority < 16384)");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
     }
 
 
@@ -824,7 +842,7 @@ public class TestSQLFeaturesNewSuite extends RegressionSuite {
 
         // Fails determinism check
         String stmt = "INSERT INTO CAPPED3_LIMIT_ROWS_EXEC "
-                + "SELECT purge_me, wage + 1, dept from CAPPED3_LIMIT_ROWS_EXEC WHERE WAGE = 20";
+                + "SELECT purge_me, wage + 1, dept from CAPPED3_LIMIT_ROWS_EXEC WHERE WAGE > 20";
         verifyStmtFails(client, stmt,
                         "Since the table being inserted into has a row limit "
                         + "trigger, the SELECT output must be ordered.");
@@ -838,24 +856,24 @@ public class TestSQLFeaturesNewSuite extends RegressionSuite {
         // the existing rows.
         String selectAll = "SELECT * FROM CAPPED3_LIMIT_ROWS_EXEC ORDER BY WAGE";
         VoltTable vt = client.callProcedure("@AdHoc", selectAll).getResults()[0];
-        validateTableOfLongs(vt, new long[][] {{1, 21, 40}});
+        validateTableOfLongs(vt, new long[][] {{1, 31, 60}});
 
         // Now let's try to do an upsert where the outcome relies both
         // on doing an update, doing an insert and also triggering a delete.
 
         client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert", 1, 41, 81);
         client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert", 1, 61, 121);
-        // Table now contains rows 21, 41, 61.
+        // Table now contains rows 31, 41, 61.
 
         // Upsert with select producing
-        //   0, 21, 42  -- update, and make the row un-purge-able
+        //   0, 31, 62  -- update, and make the row un-purge-able
         //   1, 42, 82  -- insert, will delete all rows except the first
         //   1, 62, 122 -- insert
         validateTableOfScalarLongs(client,
                         "UPSERT INTO CAPPED3_LIMIT_ROWS_EXEC "
                         + "SELECT "
-                        + "  case when wage = 21 then 0 else 1 end, "
-                        + "  case wage when 21 then wage else wage + 1 end, "
+                        + "  case when wage = 31 then 0 else 1 end, "
+                        + "  case wage when 31 then wage else wage + 1 end, "
                         + "  wage * 2 "
                         + "from CAPPED3_LIMIT_ROWS_EXEC "
                         + "ORDER BY 1, 2, 3",
@@ -863,7 +881,7 @@ public class TestSQLFeaturesNewSuite extends RegressionSuite {
 
         vt = client.callProcedure("@AdHoc", selectAll).getResults()[0];
         validateTableOfLongs(vt, new long[][] {
-                {0, 21, 42},
+                {0, 31, 62},
                 {1, 42, 82},
                 {1, 62, 122}
         });
@@ -886,7 +904,7 @@ public class TestSQLFeaturesNewSuite extends RegressionSuite {
         // build up a project builder for the workload
         VoltProjectBuilder project = new VoltProjectBuilder();
         project.addSchema(BatchedMultiPartitionTest.class.getResource("sqlfeatures-new-ddl.sql"));
-        project.addProcedures(PROCEDURES);
+        project.addMultiPartitionProcedures(MP_PROCEDURES);
         project.setUseDDLSchema(true);
 
         boolean success;

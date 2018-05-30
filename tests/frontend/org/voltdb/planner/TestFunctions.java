@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -116,9 +116,49 @@ public class TestFunctions extends PlannerTestCase {
         failToCompile("select bin(9223372036854775809) from bit;", errorMsg);
 
         // invalid syntax
-        errorMsg = "user lacks privilege or object not found";
+        errorMsg = "object not found";
         failToCompile("select BIT_SHIFT_LEFT(BIGINT_TYPE)from bit", errorMsg);
         failToCompile("select BIT_SHIFT_RIGHT(BIGINT_TYPE)from bit", errorMsg);
 
+    }
+
+    public void testUnsupportedFuncs() {
+
+        failToCompile("SELECT  ACOS(FLOAT_TYPE) FROM NUMERICFUN",
+                "Function 'acos' is not supported in VoltDB: Custom Function");
+        failToCompile("SELECT  ASIN(FLOAT_TYPE) FROM NUMERICFUN",
+                "Function 'asin' is not supported in VoltDB: Custom Function");
+        failToCompile("SELECT  ATAN(FLOAT_TYPE) FROM NUMERICFUN",
+                "Function 'atan' is not supported in VoltDB: Custom Function");
+        failToCompile("SELECT  SIGN(FLOAT_TYPE) FROM NUMERICFUN",
+                "Function 'sign' is not supported in VoltDB: Custom Function");
+        failToCompile("SELECT  ROUNDMAGIC(FLOAT_TYPE) FROM NUMERICFUN",
+                "Function 'roundmagic' is not supported in VoltDB: Custom Function");
+        failToCompile("SELECT  SOUNDEX(VARCHAR_TYPE) FROM NUMERICFUN",
+                "Function 'soundex' is not supported in VoltDB: Custom Function");
+        failToCompile("SELECT  ASCII(VARCHAR_TYPE) FROM NUMERICFUN",
+                "Function 'ascii' is not supported in VoltDB: Custom Function");
+        failToCompile("SELECT  RAWTOHEX(VARBINARY_TYPE) FROM NUMERICFUN",
+                "Function 'rawtohex' is not supported in VoltDB: Custom Function");
+        failToCompile("SELECT  HEXTORAW(VARCHAR_TYPE) FROM NUMERICFUN",
+                "Function 'hextoraw' is not supported in VoltDB: Custom Function");
+        failToCompile("SELECT  ATAN2(FLOAT_TYPE,FLOAT_TYPE) FROM NUMERICFUN",
+                "object not found: ATAN2");
+
+    }
+
+    public void testLikeNoopt() {
+        compile("select case when varchar_type like 'M%' then 1 end as m_state from bit;");
+        compile("select case when varchar_type like '_%' then 1 end as m_state from bit;");
+    }
+
+    public void testSerializeFunctionTimestampArgumentInPlan() {
+        // This test comes from ENG-10749 and ENG-10750
+        compile("SELECT SINCE_EPOCH(MICROSECOND, '1812-10-28 07:30:43') FROM ENG10749 WHERE '2080-05-24 11:18:38' <> TIME OR '4253-02-25 00:20:34' IS NULL;");
+    }
+
+    public void testLongConstants() {
+        failToCompile("SELECT  LN(MOD(17004989843871566923468, MOD(10, -73))) FROM ENG12089",
+                      "Numeric conversion error to type BIGINT for input string: \"17004989843871566923468\"");
     }
 }

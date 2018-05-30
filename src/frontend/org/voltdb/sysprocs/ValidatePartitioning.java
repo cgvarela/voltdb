@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,9 +24,7 @@ import java.util.Map;
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.utils.CoreUtils;
 import org.voltdb.DependencyPair;
-import org.voltdb.LegacyHashinator;
 import org.voltdb.ParameterSet;
-import org.voltdb.ProcInfo;
 import org.voltdb.SystemProcedureExecutionContext;
 import org.voltdb.TheHashinator;
 import org.voltdb.VoltSystemProcedure;
@@ -47,7 +45,6 @@ import com.google_voltpatches.common.primitives.Longs;
  * that it is actually doing the right thing.
  *
  */
-@ProcInfo(singlePartition = false)
 public class ValidatePartitioning extends VoltSystemProcedure {
     private static final VoltLogger HOST_LOG = new VoltLogger("HOST");
 
@@ -64,11 +61,13 @@ public class ValidatePartitioning extends VoltSystemProcedure {
             SysProcFragmentId.PF_matchesHashinatorResults;
 
     @Override
-    public void init() {
-        registerPlanFragment(SysProcFragmentId.PF_validatePartitioningResults);
-        registerPlanFragment(SysProcFragmentId.PF_validatePartitioning);
-        registerPlanFragment(SysProcFragmentId.PF_matchesHashinatorResults);
-        registerPlanFragment(SysProcFragmentId.PF_matchesHashinator);
+    public long[] getPlanFragmentIds() {
+        return new long[] {
+            SysProcFragmentId.PF_validatePartitioningResults,
+            SysProcFragmentId.PF_validatePartitioning,
+            SysProcFragmentId.PF_matchesHashinatorResults,
+            SysProcFragmentId.PF_matchesHashinator
+        };
     }
 
     @Override
@@ -86,28 +85,24 @@ public class ValidatePartitioning extends VoltSystemProcedure {
                 tableNames.add(t.getTypeName());
             }
             long mispartitionedCounts[] = context.getSiteProcedureConnection().validatePartitioning(
-                    Longs.toArray(tableIds), (Integer)params.toArray()[0], (byte[])params.toArray()[1]);
+                    Longs.toArray(tableIds), (byte[])params.toArray()[0]);
 
             for (int ii = 0; ii < tableNames.size(); ii++) {
                 results.addRow(context.getHostId(), CoreUtils.getSiteIdFromHSId(context.getSiteId()), context.getPartitionId(), tableNames.get(ii), mispartitionedCounts[ii]);
             }
-            return new DependencyPair( DEP_validatePartitioning, results);
+            return new DependencyPair.TableDependencyPair( DEP_validatePartitioning, results);
 
         } else if (fragmentId == SysProcFragmentId.PF_validatePartitioningResults) {
 
             assert (dependencies.size() > 0);
             final VoltTable results = VoltTableUtil.unionTables(dependencies.get(DEP_validatePartitioning));
-            return new DependencyPair( DEP_validatePartitioningResults, results);
+            return new DependencyPair.TableDependencyPair( DEP_validatePartitioningResults, results);
 
         } else if (fragmentId == SysProcFragmentId.PF_matchesHashinator) {
 
             final VoltTable matchesHashinator = constructHashinatorMatchesTable();
 
-            byte [] configBytes = (byte[])params.toArray()[1];
-            if (configBytes == null) {
-                configBytes = LegacyHashinator.getConfigureBytes(0);
-            }
-
+            byte [] configBytes = (byte[])params.toArray()[0];
             final long givenConfigurationSignature =
                     TheHashinator.computeConfigurationSignature(configBytes);
 
@@ -117,13 +112,13 @@ public class ValidatePartitioning extends VoltSystemProcedure {
                     context.getPartitionId(),
                     givenConfigurationSignature == TheHashinator.getConfigurationSignature() ? (byte)1 : (byte)0);
 
-            return new DependencyPair(DEP_matchesHashinator, matchesHashinator);
+            return new DependencyPair.TableDependencyPair(DEP_matchesHashinator, matchesHashinator);
 
         } else if (fragmentId == SysProcFragmentId.PF_matchesHashinatorResults) {
 
             assert (dependencies.size() > 0);
             final VoltTable results = VoltTableUtil.unionTables(dependencies.get(DEP_matchesHashinator));
-            return new DependencyPair( DEP_matchesHashinatorResults, results);
+            return new DependencyPair.TableDependencyPair( DEP_matchesHashinatorResults, results);
 
         }
         assert (false);
@@ -151,15 +146,14 @@ public class ValidatePartitioning extends VoltSystemProcedure {
         return new VoltTable(columns);
     }
 
-    public VoltTable[] run(SystemProcedureExecutionContext ctx, int type, byte config[]) throws VoltAbortException
+    public VoltTable[] run(SystemProcedureExecutionContext ctx, byte config[]) throws VoltAbortException
     {
         final long startTime = System.currentTimeMillis();
         VoltTable retval[];
         if (config != null) {
-            retval = performValidatePartitioningWork( type, config );
+            retval = performValidatePartitioningWork(config );
         } else {
             retval = performValidatePartitioningWork(
-                    TheHashinator.getCurrentConfig().type.typeId(),
                     TheHashinator.getCurrentConfig().configBytes);
         }
         final long endTime = System.currentTimeMillis();
@@ -168,7 +162,7 @@ public class ValidatePartitioning extends VoltSystemProcedure {
         return retval;
     }
 
-    private final VoltTable[] performValidatePartitioningWork(int hashinatorType, byte[] config)
+    private final VoltTable[] performValidatePartitioningWork(byte[] config)
     {
         SynthesizedPlanFragment[] pfs = new SynthesizedPlanFragment[2];
 
@@ -176,7 +170,7 @@ public class ValidatePartitioning extends VoltSystemProcedure {
         pfs[0].fragmentId = SysProcFragmentId.PF_validatePartitioning;
         pfs[0].outputDepId = DEP_validatePartitioning;
         pfs[0].multipartition = true;
-        pfs[0].parameters = ParameterSet.fromArrayNoCopy( hashinatorType, config);
+        pfs[0].parameters = ParameterSet.fromArrayNoCopy(config);
 
         pfs[1] = new SynthesizedPlanFragment();
         pfs[1].fragmentId = SysProcFragmentId.PF_validatePartitioningResults;
@@ -194,7 +188,7 @@ public class ValidatePartitioning extends VoltSystemProcedure {
         pfs[0].fragmentId = SysProcFragmentId.PF_matchesHashinator;
         pfs[0].outputDepId = DEP_matchesHashinator;
         pfs[0].multipartition = true;
-        pfs[0].parameters = ParameterSet.fromArrayNoCopy( hashinatorType, config);
+        pfs[0].parameters = ParameterSet.fromArrayNoCopy(config);
 
         pfs[1] = new SynthesizedPlanFragment();
         pfs[1].fragmentId = SysProcFragmentId.PF_matchesHashinatorResults;

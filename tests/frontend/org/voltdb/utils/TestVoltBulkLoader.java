@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -29,14 +29,14 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Random;
 
-import junit.framework.TestCase;
-
 import org.voltcore.logging.VoltLogger;
 import org.voltdb.ServerThread;
+import org.voltdb.TheHashinator;
 import org.voltdb.VoltDB;
 import org.voltdb.VoltDB.Configuration;
 import org.voltdb.VoltTable;
 import org.voltdb.client.Client;
+import org.voltdb.client.ClientConfig;
 import org.voltdb.client.ClientFactory;
 import org.voltdb.client.ClientResponse;
 import org.voltdb.client.VoltBulkLoader.BulkLoaderFailureCallBack;
@@ -45,8 +45,10 @@ import org.voltdb.common.Constants;
 import org.voltdb.compiler.VoltProjectBuilder;
 import org.voltdb.types.TimestampType;
 
+import junit.framework.TestCase;
+
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -83,6 +85,8 @@ public class TestVoltBulkLoader extends TestCase {
     protected String reportDir = String.format("/tmp/%s_vbl", userName);
     protected String dbName = String.format("mydb_%s", userName);
     Random rnd = new Random(28);
+    protected static String geo = "polygon((0 0, 1 0, 1 1, 0 1, 0 0))";
+    protected static String geopt = "point(0 0)";
 
     public class TestFailureCallback implements BulkLoaderFailureCallBack {
         ArrayList<Integer> failureRows = new ArrayList<Integer>(20);
@@ -153,19 +157,21 @@ public class TestVoltBulkLoader extends TestCase {
                 "clm_decimal decimal default null, " +
                 "clm_float float default null, "+
                 //"clm_varinary varbinary(20) default null," +
-                "clm_timestamp timestamp default null " +
+                "clm_timestamp timestamp default null, " +
+                "clm_geo geography default null," +
+                "clm_geopt geography_point default null" +
                 "); ";
         int myBatchSize = 200;
         TimestampType currentTime = new TimestampType();
         Object [][]myData = {
-            {1 ,1,1,11111111,"first",1.10,1.11,currentTime},
-            {2,2,2,222222,"second",3.30,"NULL",currentTime},
-            {3,3,3,333333," third ",null,3.33,currentTime},
-            {4,4,4,444444," NULL ",4.40 ,4.44,currentTime},
-            {5,5,5,5555555,"  \"abcde\"g",5.50,5.55,currentTime},
-            {6,6,"NULL",666666," sixth", 6.60, 6.66,currentTime},
-            {7,null,7,7777777," seventh", 7.70, 7.77,currentTime},
-            {11,1,1,"\"1,000\"","first",1.10,1.11,currentTime},
+            {1 ,1,1,11111111,"first",1.10,1.11,currentTime, geo, geopt},
+            {2,2,2,222222,"second",3.30,"NULL",currentTime, geo, geopt},
+            {3,3,3,333333," third ",null,3.33,currentTime, geo, geopt},
+            {4,4,4,444444," NULL ",4.40 ,4.44,currentTime, geo, geopt},
+            {5,5,5,5555555,"  \"abcde\"g",5.50,5.55,currentTime, geo, geopt},
+            {6,6,"NULL",666666," sixth", 6.60, 6.66,currentTime, geo, geopt},
+            {7,null,7,7777777," seventh", 7.70, 7.77,currentTime, geo, geopt},
+            {11,1,1,"\"1,000\"","first",1.10,1.11,currentTime, geo, geopt},
             //empty line
             {},
             //invalid lines below
@@ -191,27 +197,29 @@ public class TestVoltBulkLoader extends TestCase {
                 + "clm_string varchar(20) default null, "
                 + "clm_decimal decimal default null, "
                 + "clm_float float default null, "
-                + //"clm_varinary varbinary(20) default null," +
-                "clm_timestamp timestamp default null "
+                // + "clm_varinary varbinary(20) default null," +
+                + "clm_timestamp timestamp default null, "
+                + "clm_geo geography default null,"
+                + "clm_geopt geography_point default null"
                 + "); ";
         int myBatchSize = 2;
         TimestampType currentTime = new TimestampType();
         Object [][] myData = {
-            {1,1,1,11111111,"first",1.10,1.11,currentTime},
-            {2,2,2,222222,"second",3.30,null,currentTime},
-            {3,3,3,333333," third ",null,3.33,currentTime},
-            {4,4,4,444444," NULL ",4.40 ,4.44,currentTime},
-            {5,5,5,5555555,"abcdeg",5.50,5.55,currentTime},
-            {6,6,null,666666,"sixth",6.60,6.66,currentTime},
-            {7,7,7,7777777," seventh",7.70,7.77,currentTime},
-            {11, 1,1,1000,"first",1.10,1.11,currentTime},
+            {1,1,1,11111111,"first",1.10,1.11,currentTime, geo, geopt},
+            {2,2,2,222222,"second",3.30,null,currentTime, geo, geopt},
+            {3,3,3,333333," third ",null,3.33,currentTime, geo, geopt},
+            {4,4,4,444444," NULL ",4.40 ,4.44,currentTime, geo, geopt},
+            {5,5,5,5555555,"abcdeg",5.50,5.55,currentTime, geo, geopt},
+            {6,6,null,666666,"sixth",6.60,6.66,currentTime, geo, geopt},
+            {7,7,7,7777777," seventh",7.70,7.77,currentTime, geo, geopt},
+            {11, 1,1,1000,"first",1.10,1.11,currentTime, geo, geopt},
             //empty line
             {},
             //invalid lines below
             {8,8},
-            {9,9,9,900,"nine",1.10,1.11,currentTime},
-            {10,10,10,10,"second",2.20,2.22,currentTime},
-            {12,null,12,12121212,"twelveth",12.12,12.12,currentTime}
+            {9,9,9,900,"nine",1.10,1.11,currentTime, geo, geopt},
+            {10,10,10,10,"second",2.20,2.22,currentTime, geo, geopt},
+            {12,null,12,12121212,"twelveth",12.12,12.12,currentTime, geo, geopt}
         };
         Integer[] failures = {9,10};
         ArrayList<Integer> expectedFailures = new ArrayList<Integer>(Arrays.asList(failures));
@@ -230,8 +238,8 @@ public class TestVoltBulkLoader extends TestCase {
                 + "clm_string varchar(20) default null, "
                 + "clm_decimal decimal default null, "
                 + "clm_float float default null, "
-                + //"clm_varinary varbinary(20) default null," +
-                "clm_timestamp timestamp default null "
+                //+ "clm_varinary varbinary(20) default null," +
+                + "clm_timestamp timestamp default null "
                 + "); ";
         //Make batch size large
         int myBatchSize = 200;
@@ -314,28 +322,30 @@ public class TestVoltBulkLoader extends TestCase {
                 + "clm_decimal decimal default null, "
                 + "clm_float float default null, "
                 + "clm_timestamp timestamp default null, "
+                + "clm_geo geography default null,"
+                + "clm_geopt geography_point default null, "
                 + "PRIMARY KEY(clm_integer) "
                 + "); ";
         int myBatchSize = 200;
         TimestampType currentTime = new TimestampType();
         Object[][] myData = {
-            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {3, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {4, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime}, //Whole batch fails
-            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime}, //Whole batch fails
-            {5, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {6, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime}, //Whole batch fails
-            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime}, //Whole batch fails
-            {7, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {8, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {11, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime}, //Whole batch fails
-            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime}, //Whole batch fails
-            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime}, //Whole batch fails
-            {12, 1, 1, 11111111, "first", 1.10, 1.11, currentTime}
+            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {3, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {4, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt}, //Whole batch fails
+            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt}, //Whole batch fails
+            {5, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {6, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt}, //Whole batch fails
+            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt}, //Whole batch fails
+            {7, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {8, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {11, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt}, //Whole batch fails
+            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt}, //Whole batch fails
+            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt}, //Whole batch fails
+            {12, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt}
         };
         Integer[] failures = {5, 6, 9, 10, 14, 15, 16};
         ArrayList<Integer> expectedFailures = new ArrayList<Integer>(Arrays.asList(failures));
@@ -355,15 +365,17 @@ public class TestVoltBulkLoader extends TestCase {
                 + "clm_decimal decimal default null, "
                 + "clm_float float default null, "
                 + "clm_timestamp timestamp default null, "
+                + "clm_geo geography default null,"
+                + "clm_geopt geography_point default null, "
                 + "PRIMARY KEY(clm_integer) "
                 + "); ";
         int myBatchSize = 2;
         TimestampType currentTime = new TimestampType();
         Object [][] myData = {
-            {1,1,1,11111111,"first",1.10,1.11,currentTime},
-            {2,1,1,11111111,"first",1.10,1.11,currentTime},
-            {2,1,1,11111111,"first",1.10,1.11,currentTime},
-            {1,1,1,11111111,"first",1.10,1.11,currentTime}
+            {1,1,1,11111111,"first",1.10,1.11,currentTime, geo, geopt},
+            {2,1,1,11111111,"first",1.10,1.11,currentTime, geo, geopt},
+            {2,1,1,11111111,"first",1.10,1.11,currentTime, geo, geopt},
+            {1,1,1,11111111,"first",1.10,1.11,currentTime, geo, geopt}
         };
         Integer[] failures = {3,4};
         ArrayList<Integer> expectedFailures = new ArrayList<Integer>(Arrays.asList(failures));
@@ -383,14 +395,16 @@ public class TestVoltBulkLoader extends TestCase {
                 + "clm_decimal decimal default null, "
                 + "clm_float float default null, "
                 + "clm_timestamp timestamp default null, "
+                + "clm_geo geography default null,"
+                + "clm_geopt geography_point default null, "
                 + "PRIMARY KEY(clm_integer) "
                 + "); ";
         int myBatchSize = 2;
         TimestampType currentTime = new TimestampType();
         Object[][] myData = {
-            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
+            {1, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
         };
         Integer[] failures = {3};
         ArrayList<Integer> expectedFailures = new ArrayList<Integer>(Arrays.asList(failures));
@@ -410,13 +424,15 @@ public class TestVoltBulkLoader extends TestCase {
                 + "clm_decimal decimal default null, "
                 + "clm_float float default null, "
                 + "clm_timestamp timestamp default null, "
+                + "clm_geo geography default null,"
+                + "clm_geopt geography_point default null, "
                 + "PRIMARY KEY(clm_integer) "
                 + "); ";
         int myBatchSize = 2;
         TimestampType currentTime = new TimestampType();
         Object[][] myData = {
-            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},
-            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime},};
+            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},
+            {2, 1, 1, 11111111, "first", 1.10, 1.11, currentTime, geo, geopt},};
         Integer[] failures = {2};
         ArrayList<Integer> expectedFailures = new ArrayList<Integer>(Arrays.asList(failures));
         test_Interface(mySchema, myData, myBatchSize, expectedFailures, 2);
@@ -432,12 +448,14 @@ public class TestVoltBulkLoader extends TestCase {
                 "clm_bigint bigint default 0, " +
 
                 "clm_string varchar(200) default null, " +
-                "clm_timestamp timestamp default null " +
+                "clm_timestamp timestamp default null, " +
+                "clm_geo geography default null," +
+                "clm_geopt geography_point default null " +
                 "); ";
         int myBatchSize = 200;
         TimestampType timeParam = new TimestampType("7777-12-25 14:35:26");
         Object [][]myData = {
-            {1,1,1,"\"Jesus\\\"\"loves"+ "\n" +"you\"",timeParam},
+            {1,1,1,"\"Jesus\\\"\"loves"+ "\n" +"you\"",timeParam, geo, geopt},
         };
         Integer[] failures = {};
         ArrayList<Integer> expectedFailures = new ArrayList<Integer>(Arrays.asList(failures));
@@ -456,20 +474,22 @@ public class TestVoltBulkLoader extends TestCase {
 
                 "clm_string varchar(20) default null, " +
                 "clm_decimal decimal default null, " +
-                "clm_float float default null "+
+                "clm_float float default null, " +
+                "clm_geo geography default null," +
+                "clm_geopt geography_point default null "+
                 //"clm_timestamp timestamp default null, " +
                 //"clm_varinary varbinary(20) default null" +
                 "); ";
         int myBatchSize = 200;
         //Both \N and \\N as csv input are treated as NULL
         Object [][]myData = {
-            {1,Constants.CSV_NULL,1,11111111,null,1.10,1.11},
-            {2,Constants.QUOTED_CSV_NULL,1,11111111,null,1.10,1.11},
-            {3,Constants.CSV_NULL,1,11111111,"  \\" + Constants.CSV_NULL + "  ",1.10,1.11},
-            {4,Constants.CSV_NULL,1,11111111,"  " + Constants.QUOTED_CSV_NULL + "  ",1.10,1.11},
-            {5,null,1,11111111," \"  \\" + Constants.CSV_NULL   + "  \"",1.10,1.11},
-            {6,Constants.CSV_NULL,1,11111111," \"  \\" + Constants.CSV_NULL  + " L \"",1.10,1.11},
-            {7,Constants.CSV_NULL,1,11111111,"  \"abc\\" + Constants.CSV_NULL + "\"  ",1.10,1.11}
+            {1,Constants.CSV_NULL,1,11111111,null,1.10,1.11, geo, geopt},
+            {2,Constants.QUOTED_CSV_NULL,1,11111111,null,1.10,1.11, geo, geopt},
+            {3,Constants.CSV_NULL,1,11111111,"  \\" + Constants.CSV_NULL + "  ",1.10,1.11, geo, geopt},
+            {4,Constants.CSV_NULL,1,11111111,"  " + Constants.QUOTED_CSV_NULL + "  ",1.10,1.11, geo, geopt},
+            {5,null,1,11111111," \"  \\" + Constants.CSV_NULL   + "  \"",1.10,1.11, geo, geopt},
+            {6,Constants.CSV_NULL,1,11111111," \"  \\" + Constants.CSV_NULL  + " L \"",1.10,1.11, geo, geopt},
+            {7,Constants.CSV_NULL,1,11111111,"  \"abc\\" + Constants.CSV_NULL + "\"  ",1.10,1.11, geo, geopt}
         };
         Integer[] failures = {2};
         ArrayList<Integer> expectedFailures = new ArrayList<Integer>(Arrays.asList(failures));
@@ -488,12 +508,14 @@ public class TestVoltBulkLoader extends TestCase {
                         "clm_decimal decimal default null, " +
                         "clm_float float default null, "+
                         "clm_timestamp timestamp default null, " +
-                        "clm_varinary varbinary(20) default null" +
+                        "clm_varinary varbinary(20) default null, " +
+                        "clm_geo geography default null, " +
+                        "clm_geo_point geography_point default null " +
                         "); ";
         int myBatchSize = 200;
 
         Object [][]myData = {
-            {1,null,null,null,null,null,null,null,null}
+            {1,null,null,null,null,null,null,null,null,null,null}
         };
         Integer[] failures = {};
         ArrayList<Integer> expectedFailures = new ArrayList<Integer>(Arrays.asList(failures));
@@ -522,6 +544,31 @@ public class TestVoltBulkLoader extends TestCase {
         Integer[] failures = {};
         ArrayList<Integer> expectedFailures = new ArrayList<Integer>(Arrays.asList(failures));
         test_Interface(mySchema, myData, myBatchSize, expectedFailures, 0);
+    }
+
+    public void testUpsertWithNoPrimaryKey() throws Exception
+    {
+        String mySchema =
+                "create table BLAH (" +
+                        "clm_integer integer default 0 not null, " + // column that is partitioned on
+                        "clm_tinyint tinyint default 0, " +
+                        "clm_smallint smallint default 0, " +
+                        "); ";
+        int myBatchSize = 200;
+
+        Object [][]myData = {
+            {1,1,1},
+            {2,2,2},
+            {3,3,3},
+            {4,4,4},
+        };
+        Integer[] failures = {};
+        ArrayList<Integer> expectedFailures = new ArrayList<Integer>(Arrays.asList(failures));
+        boolean upsert = true;
+        try {
+            test_Interface(mySchema, myData, myBatchSize, expectedFailures, 0, upsert);
+            fail();
+        }catch (IllegalArgumentException e){};
     }
 
     public void testStrictQuote() throws Exception
@@ -1001,6 +1048,12 @@ public class TestVoltBulkLoader extends TestCase {
 
     public void test_Interface(String my_schema, Object[][] my_data,
             int my_batchSize, ArrayList<Integer> expectedFailList, int flushInterval) throws Exception {
+        test_Interface(my_schema, my_data,
+                my_batchSize, expectedFailList, flushInterval, false);
+    }
+
+    public void test_Interface(String my_schema, Object[][] my_data,
+            int my_batchSize, ArrayList<Integer> expectedFailList, int flushInterval, boolean upsert) throws Exception {
         try{
             pathToCatalog = Configuration.getPathToCatalogForTest("vbl.jar");
             pathToDeployment = Configuration.getPathToCatalogForTest("vbl.xml");
@@ -1025,7 +1078,7 @@ public class TestVoltBulkLoader extends TestCase {
 
             prepare();
             TestFailureCallback testCallback = new TestFailureCallback();
-            VoltBulkLoader bulkLoader = client1.getNewBulkLoader("BLAH", my_batchSize, testCallback);
+            VoltBulkLoader bulkLoader = client1.getNewBulkLoader("BLAH", my_batchSize, upsert, testCallback);
             if (flushInterval > 0) {
                 bulkLoader.setFlushInterval(0, flushInterval);
             }
@@ -1037,7 +1090,7 @@ public class TestVoltBulkLoader extends TestCase {
 
             // Call validate partitioning to check if we are good.
             VoltTable valTable;
-            valTable = client1.callProcedure("@ValidatePartitioning", null, null).getResults()[0];
+            valTable = client1.callProcedure("@ValidatePartitioning", (Object)null).getResults()[0];
             System.out.println("Validate for BLAH:\n" + valTable);
             while (valTable.advanceRow()) {
                 long miscnt = valTable.getLong("MISPARTITIONED_ROWS");
@@ -1095,41 +1148,27 @@ public class TestVoltBulkLoader extends TestCase {
         }
     }
 
-
     public void test_multiplexing( String my_schema, boolean multipleClients, boolean multipleLoaders, boolean multiPartTable,
             String my_tableName1, Object[][] my_data1, int my_batchSize1, ArrayList<Integer> expectedFailList1, boolean abort1,
             String my_tableName2, Object[][] my_data2, int my_batchSize2, ArrayList<Integer> expectedFailList2, boolean abort2) throws Exception {
-        try{
-            pathToCatalog = Configuration.getPathToCatalogForTest("vbl.jar");
-            pathToDeployment = Configuration.getPathToCatalogForTest("vbl.xml");
-            builder = new VoltProjectBuilder();
+            test_multiplexing(my_schema, multipleClients, multipleLoaders, multiPartTable,
+                    my_tableName1, my_data1, my_batchSize1, expectedFailList1, abort1, false,
+                    my_tableName2, my_data2, my_batchSize2, expectedFailList2, abort2, false);
+    }
 
-            builder.addLiteralSchema(my_schema);
-            boolean sameTable = my_tableName1.equals(my_tableName2);
+    public void test_multiplexing( String my_schema, boolean multipleClients, boolean multipleLoaders, boolean multiPartTable,
+            String my_tableName1, Object[][] my_data1, int my_batchSize1, ArrayList<Integer> expectedFailList1, boolean abort1, boolean upsert1,
+            String my_tableName2, Object[][] my_data2, int my_batchSize2, ArrayList<Integer> expectedFailList2, boolean abort2, boolean upsert2) throws Exception {
+        try{
             assert(!(abort1 && abort2));
             if (abort1 || abort2)
                 // No point in testing abort with a single loader
                 assert(multipleLoaders);
 
-            if (!multiPartTable) {
-                builder.addPartitionInfo(my_tableName1, "clm_integer");
-                if (!sameTable)
-                    builder.addPartitionInfo(my_tableName2, "clm_integer");
-            }
-            boolean success = builder.compile(pathToCatalog, 2, 1, 0);
-            assertTrue(success);
-            MiscUtils.copyFile(builder.getPathToDeployment(), pathToDeployment);
-            config = new VoltDB.Configuration();
-            config.m_pathToCatalog = pathToCatalog;
-            config.m_pathToDeployment = pathToDeployment;
-            localServer = new ServerThread(config);
+            boolean sameTable = startServer(my_schema, multiPartTable, my_tableName1, my_tableName2);
+
             client1 = null;
             client2 = null;
-
-            localServer.start();
-            localServer.waitForInitialization();
-
-
             client1 = ClientFactory.createClient();
             client1.createConnection("localhost");
             if (multipleClients) {
@@ -1145,10 +1184,10 @@ public class TestVoltBulkLoader extends TestCase {
             TestFailureCallback testCallback1 = new TestFailureCallback();
             TestFailureCallback testCallback2 = new TestFailureCallback();
 
-            VoltBulkLoader bulkLoader1 = client1.getNewBulkLoader(my_tableName1, my_batchSize1, testCallback1);
+            VoltBulkLoader bulkLoader1 = client1.getNewBulkLoader(my_tableName1, my_batchSize1, upsert1, testCallback1);
             VoltBulkLoader bulkLoader2;
             if (multipleLoaders) {
-                bulkLoader2 = client2.getNewBulkLoader(my_tableName2, my_batchSize2, testCallback2);
+                bulkLoader2 = client2.getNewBulkLoader(my_tableName2, my_batchSize2, upsert2, testCallback2);
                 if (!multipleClients && sameTable) {
                     assert(bulkLoader1.getMaxBatchSize() == Math.min(my_batchSize1, my_batchSize2));
                     assert(bulkLoader1.getMaxBatchSize() == bulkLoader2.getMaxBatchSize());
@@ -1165,7 +1204,7 @@ public class TestVoltBulkLoader extends TestCase {
 
             // Call validate partitioning to check if we are good.
             VoltTable valTable1;
-            valTable1 = client1.callProcedure("@ValidatePartitioning", null, null).getResults()[0];
+            valTable1 = client1.callProcedure("@ValidatePartitioning", (Object)null).getResults()[0];
             System.out.println("Validate for " + my_tableName1 + ":\n" + valTable1);
             while (valTable1.advanceRow()) {
                 long miscnt = valTable1.getLong("MISPARTITIONED_ROWS");
@@ -1179,7 +1218,7 @@ public class TestVoltBulkLoader extends TestCase {
 
                 // Call validate partitioning to check if we are good.
                 VoltTable valTable2;
-                valTable2 = client2.callProcedure("@ValidatePartitioning", null, null).getResults()[0];
+                valTable2 = client2.callProcedure("@ValidatePartitioning", (Object)null).getResults()[0];
                 System.out.println("Validate for " + my_tableName1 + ":\n" + valTable2);
                 while (valTable2.advanceRow()) {
                     long miscnt = valTable2.getLong("MISPARTITIONED_ROWS");
@@ -1251,6 +1290,106 @@ public class TestVoltBulkLoader extends TestCase {
 
             // no clue how helpful this is
             System.gc();
+        }
+    }
+
+    private boolean startServer(String my_schema, boolean multiPartTable, String my_tableName1, String my_tableName2) throws Exception
+    {
+        pathToCatalog = Configuration.getPathToCatalogForTest("vbl.jar");
+        pathToDeployment = Configuration.getPathToCatalogForTest("vbl.xml");
+        builder = new VoltProjectBuilder();
+
+        builder.addLiteralSchema(my_schema);
+        boolean sameTable = my_tableName1.equals(my_tableName2);
+
+        if (!multiPartTable) {
+            builder.addPartitionInfo(my_tableName1, "clm_integer");
+            if (!sameTable)
+                builder.addPartitionInfo(my_tableName2, "clm_integer");
+        }
+        boolean success = builder.compile(pathToCatalog, 2, 1, 0);
+        assertTrue(success);
+        MiscUtils.copyFile(builder.getPathToDeployment(), pathToDeployment);
+        config = new Configuration();
+        config.m_pathToCatalog = pathToCatalog;
+        config.m_pathToDeployment = pathToDeployment;
+        localServer = new ServerThread(config);
+
+        localServer.start();
+        localServer.waitForInitialization();
+        return sameTable;
+    }
+
+    // ENG-11823
+    public void testConcurrentLoaders() throws Exception {
+        startServer("create table test1 (c1 int);", true, "test1", "test1");
+
+        int threadNum = 2;
+        ClientConfig config = new ClientConfig();
+        Client client = ClientFactory.createClient(config);
+        VoltBulkLoader[] bulkLoaders = new VoltBulkLoader[threadNum];
+        try {
+            client.createConnection("localhost");
+
+            Thread[] threads = new Thread[threadNum];
+            for (int i = 0; i < threadNum; i++) {
+                bulkLoaders[i] = client.getNewBulkLoader("test1", 50, new BulkLoaderFailureCallBack() {
+
+                    @Override
+                    public void failureCallback(Object arg0, Object[] arg1, ClientResponse arg2)
+                    {
+                        System.out.println("Insert failed: " + arg0);
+                    }
+
+                });
+                Runnable runnable = new MyRunnable(bulkLoaders[i]);
+                threads[i] = new Thread(runnable, "loaderThread-" + i);
+                threads[i].start();
+            }
+
+            for (int i = 0; i < threadNum; i++) {
+                threads[i].join();
+            }
+
+        } finally {
+            for (int i = 0; i < threadNum; i++) {
+                bulkLoaders[i].close();
+            }
+            client.close();
+
+            if (localServer != null) {
+                localServer.shutdown();
+                localServer.join();
+            }
+            localServer = null;
+        }
+    }
+
+    static class MyRunnable implements Runnable {
+        private VoltBulkLoader loader;
+        private Random random;
+
+        public MyRunnable(VoltBulkLoader loader) {
+            this.loader = loader;
+            this.random = new Random();
+        }
+
+        @Override
+        public void run() {
+            try {
+                for (int i = 0; i < 1000; i++) {
+                    for (int j = 0; j < 50; j++) {
+                        int obj = random.nextInt();
+                        loader.insertRow(obj, obj);
+                    }
+                    loader.drain();
+                    Thread.sleep(5 + Math.abs(random.nextInt()) % 5);
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            System.out.println(Thread.currentThread().getName() + " finish.");
         }
     }
 }

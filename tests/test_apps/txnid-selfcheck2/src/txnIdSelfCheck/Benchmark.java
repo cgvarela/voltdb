@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,40 +23,23 @@
 
 package txnIdSelfCheck;
 
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.lang.Thread.UncaughtExceptionHandler;
-
 import org.voltcore.logging.VoltLogger;
 import org.voltdb.CLIConfig;
 import org.voltdb.ClientResponseImpl;
 import org.voltdb.VoltTable;
-import org.voltdb.client.Client;
-import org.voltdb.client.ClientConfig;
-import org.voltdb.client.ClientFactory;
-import org.voltdb.client.ClientImpl;
-import org.voltdb.client.ClientResponse;
-import org.voltdb.client.ClientStatusListenerExt;
-import org.voltdb.client.ProcCallException;
-import org.voltdb.client.ProcedureCallback;
+import org.voltdb.client.*;
 import org.voltdb.utils.MiscUtils;
+
+import java.io.FileWriter;
+import java.io.IOException;
+import java.lang.Thread.UncaughtExceptionHandler;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Benchmark {
 
@@ -75,6 +58,8 @@ public class Benchmark {
     Timer timer;
     // Benchmark start time
     long benchmarkStartTS;
+    // Timer to time the run
+    Timer runTimer;
     // Timer for writing the checkpoint count for apprunner
     Timer checkpointTimer;
     // Timer for refreshing ratelimit permits
@@ -158,10 +143,32 @@ public class Benchmark {
         String statsfile = "";
 
         @Option(desc = "Allow experimental in-procedure adhoc statments.")
-        boolean allowinprocadhoc = true;
+        boolean allowinprocadhoc = false;
 
         @Option(desc = "Allow set ratio of mp to sp workload.")
         float mpratio = (float)0.20;
+
+        @Option(desc = "Allow set ratio of swap to truncate table workload.")
+        float swapratio = (float)0.50;
+
+        @Option(desc = "Allow set ratio of upsert to insert workload.")
+        float upsertratio = (float)0.50;
+
+        @Option(desc = "Allow set ratio of upsert against exist column.")
+        float upserthitratio = (float)0.20;
+
+        @Option(desc = "Allow disabling different threads for testing specific functionality. ")
+        String disabledthreads = "none";
+        //threads: "clients,partBiglt,replBiglt,partTrunclt,replTrunclt,partCappedlt,replCappedlt,partLoadlt,replLoadlt,readThread,adHocMayhemThread,idpt,updateclasses"
+        // Biglt,Trunclt,Cappedlt,Loadlt are also recognized and apply to BOTH part and repl threads
+        ArrayList<String> disabledThreads = null;
+
+        @Option(desc = "Enable topology awareness")
+        boolean topologyaware = false;
+
+        @Option(desc = "File with SSL properties")
+        String sslfile = "";
+
 
         @Override
         public void validate() {
@@ -177,7 +184,10 @@ public class Benchmark {
             if (maxvaluesize <= 0) exitWithMessageAndUsage("maxvaluesize must be > 0");
             if (entropy <= 0) exitWithMessageAndUsage("entropy must be > 0");
             if (entropy > 127) exitWithMessageAndUsage("entropy must be <= 127");
-            if (mpratio < 0.0 || mpratio > 1.0) exitWithMessageAndUsage("mpRatio must be between 0.0 and 1.0");
+            if (mpratio < 0.0 || mpratio > 1.0) exitWithMessageAndUsage("mpratio must be between 0.0 and 1.0");
+            if (swapratio < 0.0 || swapratio > 1.0) exitWithMessageAndUsage("swapratio must be between 0.0 and 1.0");
+            if (upsertratio < 0.0 || upsertratio > 1.0) exitWithMessageAndUsage("upsertratio must be between 0.0 and 1.0");
+            if (upserthitratio < 0.0 || upserthitratio > 1.0) exitWithMessageAndUsage("upserthitratio must be between 0.0 and 1.0");
         }
 
         @Override
@@ -186,6 +196,7 @@ public class Benchmark {
 
             // parse servers
             parsedServers = servers.split(",");
+            disabledThreads = new ArrayList<String>(Arrays.asList(disabledthreads.split(",")));
         }
     }
 
@@ -333,8 +344,15 @@ public class Benchmark {
         log.info(HORIZONTAL_RULE);
         log.info(config.getConfigDumpString());
 
-        StatusListener statusListener = new StatusListener();
-        ClientConfig clientConfig = new ClientConfig("", "", statusListener);
+        ClientConfig clientConfig = new ClientConfig("", "", new StatusListener());
+        if (config.sslfile.trim().length() > 0) {
+            clientConfig.setTrustStoreConfigFromPropertyFile(config.sslfile);
+            clientConfig.enableSSL();
+        }
+
+        if (config.topologyaware) {
+            clientConfig.setTopologyChangeAware(true);
+        }
         client = ClientFactory.createClient(clientConfig);
     }
 
@@ -371,20 +389,24 @@ public class Benchmark {
     private void connect() throws InterruptedException {
         log.info("Connecting to VoltDB...");
 
-        final CountDownLatch connections = new CountDownLatch(1);
+        if (config.topologyaware) {
+            connectToOneServerWithRetry(config.parsedServers[0]);
+        } else {
+            final CountDownLatch connections = new CountDownLatch(1);
 
-        // use a new thread to connect to each server
-        for (final String server : config.parsedServers) {
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    connectToOneServerWithRetry(server);
-                    connections.countDown();
-                }
-            }).start();
+            // use a new thread to connect to each server
+            for (final String server : config.parsedServers) {
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        connectToOneServerWithRetry(server);
+                        connections.countDown();
+                    }
+                }).start();
+            }
+            // block until at least one connection is established
+            connections.await();
         }
-        // block until at least one connection is established
-        connections.await();
     }
 
     /**
@@ -460,9 +482,7 @@ public class Benchmark {
                         (new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.S")).format(new Date(lastProgressTimestamp)) + ")"));
 
         if (diffInSeconds > config.progresstimeout) {
-            log.error("No progress was made in over " + diffInSeconds + " seconds while connected to a cluster. Exiting.");
-            printJStack();
-            System.exit(-1);
+            hardStop("No progress was made in over " + diffInSeconds + " seconds while connected to a cluster. Exiting.");
         }
     }
 
@@ -498,12 +518,30 @@ public class Benchmark {
     }
 
     public static Thread.UncaughtExceptionHandler h = new UncaughtExceptionHandler() {
+        @Override
         public void uncaughtException(Thread th, Throwable ex) {
         log.error("Uncaught exception: " + ex.getMessage(), ex);
         printJStack();
         System.exit(-1);
         }
     };
+
+    BigTableLoader partBiglt = null;
+    BigTableLoader replBiglt = null;
+    TruncateTableLoader partTrunclt = null;
+    TruncateTableLoader replTrunclt = null;
+    CappedTableLoader partCappedlt = null;
+    CappedTableLoader replCappedlt = null;
+    LoadTableLoader partLoadlt = null;
+    WLoadTableLoader partLoadltW = null;
+    LoadTableLoader replLoadlt = null;
+    ReadThread readThread = null;
+    AdHocMayhemThread adHocMayhemThread = null;
+    InvokeDroppedProcedureThread idpt = null;
+    DdlThread ddlt = null;
+    List<ClientThread> clientThreads = null;
+    UpdateClassesThread updcls = null;
+
 
     /**
      * Core benchmark code.
@@ -536,13 +574,14 @@ public class Benchmark {
             try {
                 partitionCount = getUniquePartitionCount();
                 break;
-            } catch (Exception e) { }
+            } catch (Exception e) {
+            }
             Thread.sleep(10000);
         }
 
         // get stats
         try {
-            ClientResponse cr = client.callProcedure("Summarize");
+            ClientResponse cr = TxnId2Utils.doProcCall(client, "Summarize_Replica", config.threadoffset, config.threads);
             if (cr.getStatus() != ClientResponse.SUCCESS) {
                 log.error("Failed to call Summarize proc at startup. Exiting.");
                 log.error(((ClientResponseImpl) cr).toJSONString());
@@ -558,31 +597,43 @@ public class Benchmark {
 
             log.info("STARTUP TIMESTAMP OF LAST UPDATE (GMT): " + tsStr);
             log.info("UPDATES RUN AGAINST THIS DB TO DATE: " + count);
-        }
-        catch (ProcCallException e) {
+        } catch (ProcCallException e) {
             log.error("Failed to call Summarize proc at startup. Exiting.", e);
             log.error(((ClientResponseImpl) e.getClientResponse()).toJSONString());
             printJStack();
             System.exit(-1);
         }
 
+        clientThreads = new ArrayList<ClientThread>();
+        if (!config.disabledThreads.contains("clients")) {
+            for (byte cid = (byte) config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
+                ClientThread clientThread = new ClientThread(cid, txnCount, client, processor, permits,
+                        config.allowinprocadhoc, config.mpratio);
+                //clientThread.start(); # started after preload is complete
+                clientThreads.add(clientThread);
+            }
+        }
+
         log.info(HORIZONTAL_RULE);
         log.info("Loading Filler Tables...");
         log.info(HORIZONTAL_RULE);
 
-        BigTableLoader partitionedLoader = new BigTableLoader(client, "bigp",
-                         (config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize, config.fillerrowsize, 50, permits, partitionCount);
-        partitionedLoader.start();
-        BigTableLoader replicatedLoader = null;
-        if (config.mpratio > 0.0) {
-            replicatedLoader = new BigTableLoader(client, "bigr",
-                             (config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize, config.fillerrowsize, 3, permits, partitionCount);
-            replicatedLoader.start();
+        // Big Partitioned Loader
+        if (!(config.disabledThreads.contains("partBiglt") || config.disabledThreads.contains("Biglt"))) {
+            partBiglt = new BigTableLoader(client, "bigp",
+                (config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize, config.fillerrowsize, 50, permits, partitionCount);
+            partBiglt.start();
+        }
+        replBiglt = null;
+        if (config.mpratio > 0.0 && !(config.disabledThreads.contains("replBiglt") || config.disabledThreads.contains("Biglt"))) {
+            replBiglt = new BigTableLoader(client, "bigr",
+                    (config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize, config.fillerrowsize, 3, permits, partitionCount);
+            replBiglt.start();
         }
 
         // wait for the filler tables to load up
-        //partitionedLoader.join();
-        //replicatedLoader.join();
+        //partBiglt.join();
+        //replBiglt.join();
 
         log.info(HORIZONTAL_RULE);
         log.info("Starting Benchmark");
@@ -590,6 +641,7 @@ public class Benchmark {
 
         // print periodic statistics to the console
         benchmarkStartTS = System.currentTimeMillis();
+        scheduleRunTimer();
         // reset progress tracker
         lastProgressTimestamp = System.currentTimeMillis();
         schedulePeriodicStats();
@@ -604,138 +656,181 @@ public class Benchmark {
             System.out.println("Wait for hashinator..");
         }
 
+        if (!config.disabledThreads.contains("clients")) {
+            for (ClientThread t : clientThreads) {
+                t.start();
+            }
+        }
+        if (!(config.disabledThreads.contains("partTrunclt") || config.disabledThreads.contains("Trunclt"))) {
+            partTrunclt = new TruncateTableLoader(client, "trup",
+                    (config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize, config.fillerrowsize, 50, permits, config.mpratio, config.swapratio);
+            partTrunclt.start();
+        }
+        replTrunclt = null;
+        if (config.mpratio > 0.0 && !(config.disabledThreads.contains("replTrunclt") || config.disabledThreads.contains("Trunclt"))) {
+            replTrunclt = new TruncateTableLoader(client, "trur",
+                    (config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize, config.fillerrowsize, 3, permits, config.mpratio, config.swapratio);
+            replTrunclt.start();
+        }
 
-        TruncateTableLoader partitionedTruncater = new TruncateTableLoader(client, "trup",
+        if (!(config.disabledThreads.contains("partCappedlt") || config.disabledThreads.contains("Cappedlt"))) {
+            partCappedlt = new CappedTableLoader(client, "capp", // more
                 (config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize, config.fillerrowsize, 50, permits, config.mpratio);
-        partitionedTruncater.start();
-        TruncateTableLoader replicatedTruncater = null;
-        if (config.mpratio > 0.0) {
-            replicatedTruncater = new TruncateTableLoader(client, "trur",
+            partCappedlt.start();
+        }
+        if (config.mpratio > 0.0 && !(config.disabledThreads.contains("replCappedlt") || config.disabledThreads.contains("Cappedlt"))) {
+            replCappedlt = new CappedTableLoader(client, "capr", // more
                     (config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize, config.fillerrowsize, 3, permits, config.mpratio);
-            replicatedTruncater.start();
+            replCappedlt.start();
         }
 
-        LoadTableLoader plt = new LoadTableLoader(client, "loadp",
-                (config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize, 50, permits, false, 0);
-        plt.start();
-        LoadTableLoader rlt = null;
-        if (config.mpratio > 0.0) {
-        rlt = new LoadTableLoader(client, "loadmp",
-                (config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize, 3, permits, true, -1);
-        rlt.start();
+        if (!(config.disabledThreads.contains("partLoadlt") || config.disabledThreads.contains("Loadlt"))) {
+            partLoadltW = new WLoadTableLoader(client, "T_PAYMENT50",
+                    (config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize, 500, permits, false, 1);
+            partLoadltW.start();
+            partLoadlt = new LoadTableLoader(client, "loadp",
+                    (config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize, 500, permits, false, 0);
+            partLoadlt.start();
         }
-
-        ReadThread readThread = new ReadThread(client, config.threads, config.threadoffset,
+        replLoadlt = null;
+        if (config.mpratio > 0.0 && !(config.disabledThreads.contains("replLoadlt") || config.disabledThreads.contains("Loadlt"))) {
+            replLoadlt = new LoadTableLoader(client, "loadmp",
+                    (config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize, 30, permits, true, -1);
+            replLoadlt.start();
+        }
+        if (!config.disabledThreads.contains("readThread")) {
+            readThread = new ReadThread(client, config.threads, config.threadoffset,
                 config.allowinprocadhoc, config.mpratio, permits);
-        readThread.start();
-
-        AdHocMayhemThread adHocMayhemThread = new AdHocMayhemThread(client, config.mpratio, permits);
-        if (!config.disableadhoc) {
-            adHocMayhemThread.start();
+            readThread.start();
         }
 
-        InvokeDroppedProcedureThread idpt = new InvokeDroppedProcedureThread(client);
-        idpt.start();
-        DdlThread ddlt = new DdlThread(client);
-        // XXX/PSR ddlt.start();
-
-        List<ClientThread> clientThreads = new ArrayList<ClientThread>();
-        for (byte cid = (byte) config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
-            ClientThread clientThread = new ClientThread(cid, txnCount, client, processor, permits,
-                    config.allowinprocadhoc, config.mpratio);
-            clientThread.start();
-            clientThreads.add(clientThread);
+        if (!config.disabledThreads.contains("adHocMayhemThread")) {
+            adHocMayhemThread = new AdHocMayhemThread(client, config.mpratio, permits);
+            if (!config.disableadhoc) {
+                adHocMayhemThread.start();
+            }
+        }
+        if (!config.disabledThreads.contains("idpt")) {
+            idpt = new InvokeDroppedProcedureThread(client);
+            idpt.start();
+        } if (!config.disabledThreads.contains("ddlt")) {
+            ddlt = new DdlThread(client);
+            // XXX/PSR ddlt.start();
+        }
+        if (!config.disabledThreads.contains("updateclasses")) {
+            updcls = new UpdateClassesThread(client, config.duration);
+            updcls.start();
         }
         log.info("All threads started...");
 
-        // subtract time spent initializing threads and starting them
-        long rt = (1000l * config.duration) - (System.currentTimeMillis() - benchmarkStartTS);
-        if (rt > 0) {
-            Thread.sleep(rt);
+        while (true) {
+            Thread.sleep(Integer.MAX_VALUE);
         }
-
-        log.info("Duration completed shutting down...");
-
-        // check if loaders are done or still working
-        int lpcc = partitionedLoader.getPercentLoadComplete();
-        if (! partitionedLoader.isAlive() && lpcc < 100) {
-            exitcode = reportDeadThread(partitionedLoader, " yet only " + Integer.toString(lpcc) + "% rows have been loaded");
-        } else
-            log.info(partitionedLoader + " was at " + lpcc + "% of rows loaded");
-        lpcc = replicatedLoader.getPercentLoadComplete();
-        if (! replicatedLoader.isAlive() && lpcc < 100) {
-            exitcode = reportDeadThread(replicatedLoader, " yet only " + Integer.toString(lpcc) + "% rows have been loaded");
-        } else
-            log.info(replicatedLoader + " was at " + lpcc + "% of rows loaded");
-        // check if all threads still alive
-        if (! partitionedTruncater.isAlive())
-            exitcode = reportDeadThread(partitionedTruncater);
-        if (! replicatedTruncater.isAlive())
-            exitcode = reportDeadThread(replicatedTruncater);
-        /* XXX if (! plt.isAlive())
-            exitcode = reportDeadThread(plt);
-        if (! rlt.isAlive())
-            exitcode = reportDeadThread(rlt);
-        */if (! readThread.isAlive())
-            exitcode = reportDeadThread(readThread);
-        if (! config.disableadhoc && ! adHocMayhemThread.isAlive())
-            exitcode = reportDeadThread(adHocMayhemThread);
-        if (! idpt.isAlive())
-            exitcode = reportDeadThread(idpt);
-        /* XXX if (! ddlt.isAlive())
-            exitcode = reportDeadThread(ddlt);*/
-        for (ClientThread ct : clientThreads) {
-            if (! ct.isAlive()) {
-                exitcode = reportDeadThread(ct);
-            }
-        }
-
-        /* XXX/PSR
-        replicatedLoader.shutdown();
-        partitionedLoader.shutdown();
-        replicatedTruncater.shutdown();
-        partitionedTruncater.shutdown();
-        readThread.shutdown();
-        adHocMayhemThread.shutdown();
-        idpt.shutdown();
-        ddlt.shutdown();
-        for (ClientThread clientThread : clientThreads) {
-            clientThread.shutdown();
-        }
-        replicatedLoader.join();
-        partitionedLoader.join();
-        readThread.join();
-        adHocMayhemThread.join();
-        idpt.join();
-        ddlt.join();
-
-        //Shutdown LoadTableLoader
-        rlt.shutdown();
-        plt.shutdown();
-        rlt.join();
-        plt.join();
-
-        for (ClientThread clientThread : clientThreads) {
-            clientThread.join();
-        }
-        */
-        // cancel periodic stats printing
-        timer.cancel();
-        checkpointTimer.cancel();
-        /*
-        shutdown.set(true);
-        es.shutdownNow();
-
-        // block until all outstanding txns return
-        client.drain();
-        client.close();
-        permitsTimer.cancel();
-        */
-
-        log.info(HORIZONTAL_RULE);
-        log.info("Benchmark Complete");
-        System.exit(exitcode);
     }
+
+    /**
+     * Create a Timer task to time the run
+     * at end of run, check if we actually did anything
+     */
+    private void scheduleRunTimer() throws IOException {
+        runTimer = new Timer("Run Timer", true);
+        TimerTask runEndTask = new TimerTask() {
+            @Override
+            public void run() {
+                log.info(HORIZONTAL_RULE);
+                log.info("Benchmark Complete");
+
+                int exitcode = 0;
+
+                // check if loaders are done or still working
+                if (partBiglt != null) {
+                    int lpcc = partBiglt.getPercentLoadComplete();
+                    if (!partBiglt.isAlive() && lpcc < 100) {
+                        exitcode = reportDeadThread(partBiglt, " yet only " + Integer.toString(lpcc) + "% rows have been loaded");
+                    } else
+                        log.info(partBiglt + " was at " + lpcc + "% of rows loaded");
+                } if (replBiglt != null) {
+                    int lpcc = replBiglt.getPercentLoadComplete();
+                    if (!replBiglt.isAlive() && lpcc < 100) {
+                        exitcode = reportDeadThread(replBiglt, " yet only " + Integer.toString(lpcc) + "% rows have been loaded");
+                    } else
+                        log.info(replBiglt + " was at " + lpcc + "% of rows loaded");
+                }
+                // check if all threads still alive
+                if (partTrunclt != null && !partTrunclt.isAlive())
+                    exitcode = reportDeadThread(partTrunclt);
+                if (replTrunclt != null && !replTrunclt.isAlive())
+                    exitcode = reportDeadThread(replTrunclt);
+                /* XXX if (! partLoadlt.isAlive())
+                    exitcode = reportDeadThread(partLoadlt);
+                if (! replLoadlt.isAlive())
+                    exitcode = reportDeadThread(replLoadlt);
+                */
+                if (readThread != null && !readThread.isAlive())
+                    exitcode = reportDeadThread(readThread);
+                if (adHocMayhemThread != null && !config.disableadhoc && !adHocMayhemThread.isAlive())
+                    exitcode = reportDeadThread(adHocMayhemThread);
+                if (idpt != null && !idpt.isAlive())
+                    exitcode = reportDeadThread(idpt);
+                /* XXX if (! ddlt.isAlive())
+                    exitcode = reportDeadThread(ddlt);*/
+                for (ClientThread ct : clientThreads) {
+                    if (!ct.isAlive()) {
+                        exitcode = reportDeadThread(ct);
+                    }
+                }
+                /*
+                replBiglt.shutdown();
+                partBiglt.shutdown();
+                replTrunclt.shutdown();
+                partTrunclt.shutdown();
+                readThread.shutdown();
+                adHocMayhemThread.shutdown();
+                idpt.shutdown();
+                ddlt.shutdown();
+                for (ClientThread clientThread : clientThreads) {
+                    clientThread.shutdown();
+                }
+                replBiglt.join();
+                partBiglt.join();
+                readThread.join();
+                adHocMayhemThread.join();
+                idpt.join();
+                ddlt.join();
+
+                //Shutdown LoadTableLoader
+                replLoadlt.shutdown();
+                partLoadlt.shutdown();
+                replLoadlt.join();
+                partLoadlt.join();
+
+                for (ClientThread clientThread : clientThreads) {
+                    clientThread.join();
+                }
+                */
+                // cancel periodic stats printing
+                timer.cancel();
+                checkpointTimer.cancel();
+                /*
+                shutdown.set(true);
+                es.shutdownNow();
+
+                // block until all outstanding txns return
+                client.drain();
+                client.close();
+                permitsTimer.cancel();
+                */
+                long count = txnCount.get();
+                log.info("Client thread transaction count: " + count + "\n");
+                if (exitcode > 0 && txnCount.get() == 0) {
+                    System.err.println("Shutting down, but found that no work was done.");
+                    exitcode = 2;
+                }
+                System.exit(exitcode);
+            }
+    };
+    runTimer.schedule(runEndTask, config.duration * 1000);
+}
 
     /**
      * Main routine creates a benchmark instance and kicks off the run method.

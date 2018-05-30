@@ -79,6 +79,7 @@ public class ParserDDL extends ParserRoutine {
 
         int     tableType = TableBase.MEMORY_TABLE;
         boolean isTable   = false;
+        boolean isStream   = false;
 
         read();
 
@@ -140,11 +141,24 @@ public class ParserDDL extends ParserRoutine {
                 tableType = database.schemaManager.getDefaultTableType();
                 break;
 
+            // A VoltDB extension to support the STREAM alias
+            case Tokens.STREAM :
+                read();
+
+                isStream   = true;
+                tableType = database.schemaManager.getDefaultTableType();
+                break;
+            // End of VoltDB extension
+
             default :
         }
 
         if (isTable) {
             return compileCreateTable(tableType);
+        }
+
+        if (isStream) {
+            return compileCreateStream(tableType);
         }
 
         // A VoltDB extension to support the assume unique attribute
@@ -457,6 +471,7 @@ public class ParserDDL extends ParserRoutine {
                 useIfExists   = true;
                 break;
 
+            case Tokens.STREAM :
             case Tokens.TABLE :
                 read();
 
@@ -518,7 +533,7 @@ public class ParserDDL extends ParserRoutine {
                     SchemaObject object =
                     // A VoltDB extension to avoid exceptions in
                     // the normal control flow.
-                    // findSchemaObject returns null when 
+                    // findSchemaObject returns null when
                     // getSchemaObject would needlessly
                     // throw into the catch block below.
                     /* disable 3 lines ...
@@ -1055,7 +1070,7 @@ public class ParserDDL extends ParserRoutine {
         readThis(Tokens.OPENBRACKET);
 
         {
-            Constraint c = new Constraint(null, null, Constraint.TEMP);
+            Constraint c = new Constraint(null, true, null, Constraint.TEMP);
 
             tempConstraints.add(c);
         }
@@ -1174,6 +1189,149 @@ public class ParserDDL extends ParserRoutine {
         return new StatementSchema(sql, StatementTypes.CREATE_TABLE, args,
                                    null, null);
     }
+
+    // skip Export to target of statment
+    // skip constraint ?
+    StatementSchema compileCreateStream(int type) {
+
+        HsqlName name = readNewSchemaObjectNameNoCheck(SchemaObject.TABLE);
+        HsqlArrayList tempConstraints = new HsqlArrayList();
+
+        name.setSchemaIfNull(session.getCurrentSchemaHsqlName());
+
+        Table table = TableUtil.newTable(database, type, name);
+
+        if (token.tokenType == Tokens.AS) {
+            return readTableAsSubqueryDefinition(table);
+        }
+
+        int position = getPosition();
+
+        readUntilThis(Tokens.OPENBRACKET);
+
+        readThis(Tokens.OPENBRACKET);
+
+        {
+            Constraint c = new Constraint(null, true, null, Constraint.TEMP);
+
+            tempConstraints.add(c);
+        }
+
+        boolean start     = true;
+        boolean startPart = true;
+        boolean end       = false;
+
+        while (!end) {
+            switch (token.tokenType) {
+
+                case Tokens.LIKE : {
+                    ColumnSchema[] likeColumns = readLikeTable(table);
+
+                    for (int i = 0; i < likeColumns.length; i++) {
+                        table.addColumn(likeColumns[i]);
+                    }
+
+                    start     = false;
+                    startPart = false;
+
+                    break;
+                }
+                case Tokens.CONSTRAINT :
+                case Tokens.PRIMARY :
+                case Tokens.FOREIGN :
+                // A VoltDB extension to support the assume unique attribute
+                case Tokens.ASSUMEUNIQUE :
+                // End of VoltDB extension
+                case Tokens.UNIQUE :
+                case Tokens.CHECK :
+                // A VoltDB extension to support LIMIT PARTITION ROWS
+                case Tokens.LIMIT :
+                // End of VoltDB extension
+                    if (!startPart) {
+                        throw unexpectedToken();
+                    }
+
+                    readConstraint(table, tempConstraints);
+
+                    start     = false;
+                    startPart = false;
+                    break;
+
+                case Tokens.COMMA :
+                    if (startPart) {
+                        throw unexpectedToken();
+                    }
+
+                    read();
+
+                    startPart = true;
+                    break;
+
+                case Tokens.CLOSEBRACKET :
+                    read();
+
+                    end = true;
+                    break;
+
+                default :
+                    if (!startPart) {
+                        throw unexpectedToken();
+                    }
+
+                    checkIsSchemaObjectName();
+
+                    HsqlName hsqlName =
+                        database.nameManager.newColumnHsqlName(name,
+                            token.tokenString, isDelimitedIdentifier());
+
+                    read();
+
+                    ColumnSchema newcolumn = readColumnDefinitionOrNull(table,
+                        hsqlName, tempConstraints);
+
+                    if (newcolumn == null) {
+                        if (start) {
+                            rewind(position);
+
+                            return readTableAsSubqueryDefinition(table);
+                        } else {
+                            throw Error.error(ErrorCode.X_42000);
+                        }
+                    }
+
+                    table.addColumn(newcolumn);
+
+                    start     = false;
+                    startPart = false;
+            }
+        }
+
+        if (token.tokenType == Tokens.ON) {
+            if (!table.isTemp()) {
+                throw unexpectedToken();
+            }
+
+            read();
+            readThis(Tokens.COMMIT);
+
+            if (token.tokenType == Tokens.DELETE) {}
+            else if (token.tokenType == Tokens.PRESERVE) {
+                table.persistenceScope = TableBase.SCOPE_SESSION;
+            }
+
+            read();
+            readThis(Tokens.ROWS);
+        }
+
+        Object[] args = new Object[] {
+            table, tempConstraints, null
+        };
+        String   sql  = getLastPart();
+
+        return new StatementSchema(sql, StatementTypes.CREATE_TABLE, args,
+                                   null, null);
+    }
+
 
     private ColumnSchema[] readLikeTable(Table table) {
 
@@ -1362,7 +1520,7 @@ public class ParserDDL extends ParserRoutine {
         table.createPrimaryKey(indexName, c.core.mainCols, true);
 
         if (c.core.mainCols != null) {
-            Constraint newconstraint = new Constraint(c.getName(), table,
+            Constraint newconstraint = new Constraint(c.getName(), c.getIsAutogeneratedName(), table,
                 table.getPrimaryIndex(), Constraint.PRIMARY_KEY);
 
             table.addConstraint(newconstraint);
@@ -1405,12 +1563,8 @@ public class ParserDDL extends ParserRoutine {
                         index = table.createAndAddIndexStructure(indexName,
                             c.core.mainCols, null, null, true, true, false).setAssumeUnique(c.assumeUnique);
                     }
-                    /* disable 2 lines ...
-                    Index index = table.createAndAddIndexStructure(indexName,
-                        c.core.mainCols, null, null, true, true, false);
-                    ... disabled 2 lines */
-                    // End of VoltDB extension
-                    Constraint newconstraint = new Constraint(c.getName(),
+
+                    Constraint newconstraint = new Constraint(c.getName(), c.getIsAutogeneratedName(),
                         table, index, Constraint.UNIQUE);
                     // A VoltDB extension to support the assume unique attribute
                     newconstraint = newconstraint.setAssumeUnique(c.assumeUnique);
@@ -2626,7 +2780,7 @@ public class ParserDDL extends ParserRoutine {
             HsqlName constName = database.nameManager.newAutoName("PK",
                 table.getSchemaName(), table.getName(),
                 SchemaObject.CONSTRAINT);
-            Constraint c = new Constraint(constName, set,
+            Constraint c = new Constraint(constName, true, set,
                                           Constraint.PRIMARY_KEY);
 
             constraintList.set(0, c);
@@ -2771,6 +2925,7 @@ public class ParserDDL extends ParserRoutine {
                                 HsqlArrayList constraintList) {
 
         HsqlName constName = null;
+        boolean isAutogeneratedName = true;
 
         if (token.tokenType == Tokens.CONSTRAINT) {
             read();
@@ -2778,6 +2933,7 @@ public class ParserDDL extends ParserRoutine {
             constName =
                 readNewDependentSchemaObjectName(schemaObject.getName(),
                                                  SchemaObject.CONSTRAINT);
+            isAutogeneratedName = false;
         }
 
         // A VoltDB extension to support indexed expressions and the assume unique attribute
@@ -2808,7 +2964,7 @@ public class ParserDDL extends ParserRoutine {
                 }
 
                 OrderedHashSet set = readColumnNames(false);
-                Constraint c = new Constraint(constName, set,
+                Constraint c = new Constraint(constName, isAutogeneratedName, set,
                                               Constraint.PRIMARY_KEY);
 
                 constraintList.set(0, c);
@@ -2848,7 +3004,7 @@ public class ParserDDL extends ParserRoutine {
                     set = getBaseColumnNames(indexExprs);
                 }
                 // End of VoltDB extension
-                Constraint c = new Constraint(constName, set,
+                Constraint c = new Constraint(constName, isAutogeneratedName, set,
                                               Constraint.UNIQUE);
                 // A VoltDB extension to support indexed expressions and assume unique attribute.
                 c.setAssumeUnique(assumeUnique);
@@ -2886,7 +3042,7 @@ public class ParserDDL extends ParserRoutine {
                             schemaObject.getName(), SchemaObject.CONSTRAINT);
                 }
 
-                Constraint c = new Constraint(constName, null,
+                Constraint c = new Constraint(constName, isAutogeneratedName, null,
                                               Constraint.CHECK);
 
                 readCheckConstraintCondition(c);
@@ -2911,7 +3067,7 @@ public class ParserDDL extends ParserRoutine {
                             schemaObject.getName(), SchemaObject.CONSTRAINT);
                 }
 
-                Constraint c = new Constraint(constName, null, Constraint.LIMIT);
+                Constraint c = new Constraint(constName, isAutogeneratedName, null, Constraint.LIMIT);
                 readLimitConstraintCondition(c);
                 constraintList.add(c);
 
@@ -2933,6 +3089,7 @@ public class ParserDDL extends ParserRoutine {
                                HsqlArrayList constraintList) {
 
         boolean end = false;
+        boolean isAutogeneratedName = true;
 
         while (true) {
             HsqlName constName = null;
@@ -2942,6 +3099,7 @@ public class ParserDDL extends ParserRoutine {
 
                 constName = readNewDependentSchemaObjectName(table.getName(),
                         SchemaObject.CONSTRAINT);
+                isAutogeneratedName = false;
             }
 
             // A VoltDB extension to support indexed expressions and the assume unique attribute
@@ -2970,7 +3128,7 @@ public class ParserDDL extends ParserRoutine {
                                 SchemaObject.CONSTRAINT);
                     }
 
-                    Constraint c = new Constraint(constName, set,
+                    Constraint c = new Constraint(constName, isAutogeneratedName, set,
                                                   Constraint.PRIMARY_KEY);
 
                     constraintList.set(0, c);
@@ -2996,7 +3154,7 @@ public class ParserDDL extends ParserRoutine {
                                 SchemaObject.CONSTRAINT);
                     }
 
-                    Constraint c = new Constraint(constName, set,
+                    Constraint c = new Constraint(constName, isAutogeneratedName, set,
                                                   Constraint.UNIQUE);
                     // A VoltDB extension to support indexed expressions and the assume unique attribute
                     c.setAssumeUnique(assumeUnique);
@@ -3032,7 +3190,7 @@ public class ParserDDL extends ParserRoutine {
                                 SchemaObject.CONSTRAINT);
                     }
 
-                    Constraint c = new Constraint(constName, null,
+                    Constraint c = new Constraint(constName, isAutogeneratedName, null,
                                                   Constraint.CHECK);
 
                     readCheckConstraintCondition(c);
@@ -3067,7 +3225,7 @@ public class ParserDDL extends ParserRoutine {
                                 SchemaObject.CONSTRAINT);
                     }
 
-                    Constraint c = new Constraint(constName, null,
+                    Constraint c = new Constraint(constName, isAutogeneratedName, null,
                                                   Constraint.CHECK);
 
                     c.check = new ExpressionLogical(column);
@@ -3535,15 +3693,13 @@ public class ParserDDL extends ParserRoutine {
 
     // A VoltDB extension to support indexed expressions and the assume unique attribute
     void processAlterTableAddUniqueConstraint(Table table, HsqlName name, boolean assumeUnique) {
-    /* disable 1 line ...
-    void processAlterTableAddUniqueConstraint(Table table, HsqlName name) {
-    ... disabled 1 line */
-    // End of VoltDB extension
-
+        boolean isAutogeneratedName = false;
         if (name == null) {
             name = database.nameManager.newAutoName("CT",
                     table.getSchemaName(), table.getName(),
                     SchemaObject.CONSTRAINT);
+            isAutogeneratedName = true;
+
         }
 
         // A VoltDB extension to "readColumnList(table, false)" to support indexed expressions.
@@ -3567,10 +3723,10 @@ public class ParserDDL extends ParserRoutine {
             // the set of unique base columns for the indexed expressions.
             set = getBaseColumnNames(indexExprs);
             cols = getColumnList(set, table);
-            tableWorks.addUniqueExprConstraint(cols, indexExprs.toArray(new Expression[indexExprs.size()]), name, assumeUnique);
+            tableWorks.addUniqueExprConstraint(cols, indexExprs.toArray(new Expression[indexExprs.size()]), name, isAutogeneratedName, assumeUnique);
             return;
         }
-        tableWorks.addUniqueConstraint(cols, name, assumeUnique);
+        tableWorks.addUniqueConstraint(cols, name, isAutogeneratedName, assumeUnique);
         /* disable 1 line ...
         tableWorks.addUniqueConstraint(cols, name);
         ... disabled 1 line */
@@ -3675,14 +3831,16 @@ public class ParserDDL extends ParserRoutine {
     void processAlterTableAddCheckConstraint(Table table, HsqlName name) {
 
         Constraint check;
+        boolean isAutogeneratedName = false;
 
         if (name == null) {
             name = database.nameManager.newAutoName("CT",
                     table.getSchemaName(), table.getName(),
                     SchemaObject.CONSTRAINT);
+            isAutogeneratedName = true;
         }
 
-        check = new Constraint(name, null, Constraint.CHECK);
+        check = new Constraint(name, isAutogeneratedName, null, Constraint.CHECK);
 
         readCheckConstraintCondition(check);
         session.commit(false);
@@ -3695,14 +3853,16 @@ public class ParserDDL extends ParserRoutine {
     Statement compileAlterTableAddCheckConstraint(Table table, HsqlName name) {
 
         Constraint check;
+        boolean isAutogeneratedName = false;
 
         if (name == null) {
             name = database.nameManager.newAutoName("CT",
                     table.getSchemaName(), table.getName(),
                     SchemaObject.CONSTRAINT);
+            isAutogeneratedName = true;
         }
 
-        check = new Constraint(name, null, Constraint.CHECK);
+        check = new Constraint(name, isAutogeneratedName, null, Constraint.CHECK);
 
         readCheckConstraintCondition(check);
 
@@ -3717,7 +3877,7 @@ public class ParserDDL extends ParserRoutine {
 
         int           colIndex   = table.getColumnCount();
         HsqlArrayList list       = new HsqlArrayList();
-        Constraint    constraint = new Constraint(null, null, Constraint.TEMP);
+        Constraint    constraint = new Constraint(null, true, null, Constraint.TEMP);
 
         list.add(constraint);
         checkIsSchemaObjectName();
@@ -3755,7 +3915,7 @@ public class ParserDDL extends ParserRoutine {
 
         int           colIndex   = table.getColumnCount();
         HsqlArrayList list       = new HsqlArrayList();
-        Constraint    constraint = new Constraint(null, null, Constraint.TEMP);
+        Constraint    constraint = new Constraint(null, true, null, Constraint.TEMP);
 
         list.add(constraint);
         checkIsSchemaObjectName();
@@ -3791,15 +3951,17 @@ public class ParserDDL extends ParserRoutine {
     }
 
     void processAlterTableAddPrimaryKey(Table table, HsqlName name) {
+        boolean isAutogeneratedName = false;
 
         if (name == null) {
             name = session.database.nameManager.newAutoName("PK",
                     table.getSchemaName(), table.getName(),
                     SchemaObject.CONSTRAINT);
+            isAutogeneratedName = true;
         }
 
         int[] cols = readColumnList(table, false);
-        Constraint constraint = new Constraint(name, null,
+        Constraint constraint = new Constraint(name, isAutogeneratedName, null,
                                                Constraint.PRIMARY_KEY);
 
         constraint.core.mainCols = cols;
@@ -3812,15 +3974,16 @@ public class ParserDDL extends ParserRoutine {
     }
 
     Statement compileAlterTableAddPrimaryKey(Table table, HsqlName name) {
-
+        boolean isAutogeneratedName = false;
         if (name == null) {
             name = session.database.nameManager.newAutoName("PK",
                     table.getSchemaName(), table.getName(),
                     SchemaObject.CONSTRAINT);
+            isAutogeneratedName = true;
         }
 
         int[] cols = readColumnList(table, false);
-        Constraint constraint = new Constraint(name, null,
+        Constraint constraint = new Constraint(name, isAutogeneratedName, null,
                                                Constraint.PRIMARY_KEY);
 
         constraint.core.mainCols = cols;
@@ -4344,7 +4507,7 @@ public class ParserDDL extends ParserRoutine {
             Constraint    c    = table.getPrimaryConstraint();
 
             if (c == null) {
-                c = new Constraint(null, null, Constraint.TEMP);
+                c = new Constraint(null, true, null, Constraint.TEMP);
             }
 
             list.add(c);
@@ -5245,13 +5408,16 @@ public class ParserDDL extends ParserRoutine {
     // A VoltDB extension to support LIMIT PARTITION ROWS syntax
     private Statement compileAlterTableAddLimitConstraint(Table table, HsqlName name)
     {
+        boolean isAutogeneratedName = false;
         if (name == null) {
             name = database.nameManager.newAutoName("LIMIT",
                     table.getSchemaName(), table.getName(),
                     SchemaObject.CONSTRAINT);
+            isAutogeneratedName = true;
+
         }
 
-        Constraint c = new Constraint(name, null, Constraint.LIMIT);
+        Constraint c = new Constraint(name, isAutogeneratedName, null, Constraint.LIMIT);
 
         readLimitConstraintCondition(c);
 
@@ -5265,13 +5431,15 @@ public class ParserDDL extends ParserRoutine {
 
     // A VoltDB extension to support LIMIT PARTITION ROWS syntax
     private void processAlterTableAddLimitConstraint(Table table, HsqlName name) {
+        boolean isAutogeneratedName = false;
         if (name == null) {
             name = database.nameManager.newAutoName("LIMIT",
                     table.getSchemaName(), table.getName(),
                     SchemaObject.CONSTRAINT);
+            isAutogeneratedName = true;
         }
 
-        Constraint c = new Constraint(name, null, Constraint.LIMIT);
+        Constraint c = new Constraint(name, isAutogeneratedName, null, Constraint.LIMIT);
 
         readLimitConstraintCondition(c);
         session.commit(false);

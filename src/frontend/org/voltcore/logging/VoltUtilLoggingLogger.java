@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -94,6 +94,11 @@ public class VoltUtilLoggingLogger implements VoltLogger.CoreVoltLogger {
     public long getLogLevels(VoltLogger[] loggers) {
         System.err.printf("This logger doesn't support getting log levels. You need Log4j.\n");
         return 0;
+    }
+
+    @Override
+    public void setLevel(Level level) {
+        m_logger.setLevel(getPriorityForLevel(level));
     }
 
 }

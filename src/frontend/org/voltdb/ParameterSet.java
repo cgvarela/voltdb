@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
+import org.apache.commons.lang.ArrayUtils;
 import org.json_voltpatches.JSONArray;
 import org.json_voltpatches.JSONException;
 import org.json_voltpatches.JSONObject;
@@ -29,6 +30,8 @@ import org.json_voltpatches.JSONString;
 import org.json_voltpatches.JSONStringer;
 import org.voltcore.utils.DBBPool.BBContainer;
 import org.voltdb.common.Constants;
+import org.voltdb.types.GeographyPointValue;
+import org.voltdb.types.GeographyValue;
 import org.voltdb.types.TimestampType;
 import org.voltdb.types.VoltDecimalHelper;
 import org.voltdb.utils.SerializationHelper;
@@ -93,6 +96,12 @@ public class ParameterSet implements JSONString {
                     continue;
                 }
 
+                if (obj instanceof Byte[]) {
+                    final Byte[] b = (Byte[]) obj;
+                    size += 4 + b.length;
+                    continue;
+                }
+
                 VoltType type;
                 try {
                     type = VoltType.typeFromClass(cls.getComponentType());
@@ -106,16 +115,28 @@ public class ParameterSet implements JSONString {
                 size +=  1 + 2;// component type, array length
                 switch (type) {
                     case SMALLINT:
-                        size += 2 * ((short[])obj).length;
+                        if (obj instanceof Short[])
+                            size += 2 * ((Short[])obj).length;
+                        else
+                            size += 2 * ((short[])obj).length;
                         break;
                     case INTEGER:
-                        size += 4 * ((int[])obj).length;
+                        if (obj instanceof Integer[])
+                            size += 4 * ((Integer[])obj).length;
+                        else
+                            size += 4 * ((int[])obj).length;
                         break;
                     case BIGINT:
-                        size += 8 * ((long[])obj).length;
+                        if (obj instanceof Long[])
+                            size += 8 * ((Long[])obj).length;
+                        else
+                            size += 8 * ((long[])obj).length;
                         break;
                     case FLOAT:
-                        size += 8 * ((double[])obj).length;
+                        if (obj instanceof Double[])
+                            size += 8 * ((Double[])obj).length;
+                        else
+                            size += 8 * ((double[])obj).length;
                         break;
                     case STRING:
                         String strings[] = (String[]) obj;
@@ -142,10 +163,30 @@ public class ParameterSet implements JSONString {
                         }
                         break;
                     case VARBINARY:
-                        for (byte[] buf : (byte[][]) obj) {
+                        if (obj instanceof Byte[][]) {
+                            for (Byte[] buf : (Byte[][]) obj) {
+                                size += 4; // length prefix
+                                if (buf != null) {
+                                    size += buf.length;
+                                }
+                            }
+                        } else {
+                            for (byte[] buf : (byte[][]) obj) {
+                                size += 4; // length prefix
+                                if (buf != null) {
+                                    size += buf.length;
+                                }
+                            }
+                        }
+                        break;
+                    case GEOGRAPHY_POINT:
+                        size += VoltType.GEOGRAPHY_POINT.getLengthInBytesForFixedTypesWithoutCheck() * ((GeographyPointValue[])obj).length;
+                        break;
+                    case GEOGRAPHY:
+                        for (GeographyValue gv : (GeographyValue[])obj) {
                             size += 4; // length prefix
-                            if (buf != null) {
-                                size += buf.length;
+                            if (gv != null) {
+                                size += gv.getLengthInBytes();
                             }
                         }
                         break;
@@ -167,6 +208,14 @@ public class ParameterSet implements JSONString {
             else if (obj == VoltType.NULL_DECIMAL) {
                 size += 16;
                 continue;
+            }
+            else if (obj == VoltType.NULL_POINT) {
+                size += VoltType.GEOGRAPHY_POINT.getLengthInBytesForFixedTypesWithoutCheck();
+                continue;
+            }
+            else if (obj == VoltType.NULL_GEOGRAPHY) {
+                    size += 4;
+                    continue;
             } else if (obj instanceof BBContainer) {
                 size += 4 + ((BBContainer)obj).b().remaining();
                 continue;
@@ -200,6 +249,12 @@ public class ParameterSet implements JSONString {
                 case DECIMAL:
                     size += 16;
                     break;
+                case GEOGRAPHY_POINT:
+                    size += VoltType.GEOGRAPHY_POINT.getLengthInBytesForFixedTypesWithoutCheck();
+                    break;
+                case GEOGRAPHY:
+                    size += 4 + ((GeographyValue) obj).getLengthInBytes();
+                    break;
                 case VOLTTABLE:
                     size += ((VoltTable) obj).getSerializedSize();
                     break;
@@ -228,6 +283,9 @@ public class ParameterSet implements JSONString {
         int startPos = buffer.position();
 
         short count = buffer.getShort();
+        if (count < 0) {
+            throw new IllegalArgumentException("Invalid parameter length " + count + " for ParameterSet." );
+        }
         Object[] params = new Object[count];
         byte[][] encodedStrings = null;
         byte[][][] encodedStringArrays = null;
@@ -272,6 +330,10 @@ public class ParameterSet implements JSONString {
 
     public Object getParam(int index) {
         return m_params[index];
+    }
+
+    public boolean hasParam(int index) {
+        return m_params.length > index;
     }
 
     /**
@@ -342,6 +404,15 @@ public class ParameterSet implements JSONString {
             else if (array[i] instanceof String) strings++;
             else if (array[i] == VoltType.NULL_STRING_OR_VARBINARY) nulls++;
             else if (null == array[i]) nulls++;  // Handle nulls in an Object array.  Note only support nulls in STRING type, later we'll reject all other null usage.
+            else if (array[i] instanceof GeographyPointValue
+                    || array[i] instanceof GeographyValue
+                    || array[i] == VoltType.NULL_POINT
+                    || array[i] == VoltType.NULL_GEOGRAPHY) {
+                // Ticket ENG-9311 exists to make geo types work with Object[] arrays passed as parameters.
+                // Fixing that ticket will require updating the logic below.
+                throw new RuntimeException("GeographyPointValue or GeographyValue instances are not yet supported in "
+                        + "Object arrays passed as parameters.  Try passing GeographyPointValue[] or GeographyValue[] instead.");
+            }
             else {
                 String msg = String.format("Type %s not supported in parameter set arrays.",
                                         array[i].getClass().toString());
@@ -432,7 +503,21 @@ public class ParameterSet implements JSONString {
         try {
             js.array();
             for (Object o : m_params) {
-                js.value(o);
+                if(o instanceof Double) {
+                    Double dval = (Double) o;
+                    if (dval.isNaN()) {
+                        js.value(dval.toString());
+                    }
+                    else if (dval.isInfinite()) {
+                        js.value(dval.toString());
+                    }
+
+                    else
+                        js.value(o);
+                }
+                else {
+                    js.value(o);
+                }
             }
             js.endArray();
         }
@@ -564,6 +649,21 @@ public class ParameterSet implements JSONString {
                     }
                     break;
                 }
+                case GEOGRAPHY_POINT :
+                    value = GeographyPointValue.unflattenFromBuffer(in);
+                    if (value == null) {
+                        value = VoltType.NULL_POINT;
+                    }
+                    break;
+                case GEOGRAPHY :
+                    len = in.getInt();
+                    if (len == VoltType.NULL_STRING_LENGTH) {
+                        value = VoltType.NULL_GEOGRAPHY;
+                    }
+                    else {
+                        value = GeographyValue.unflattenFromBuffer(in);
+                    }
+                    break;
                 case BOOLEAN:
                     value = in.get();
                     break;
@@ -597,8 +697,13 @@ public class ParameterSet implements JSONString {
                 // Since arrays of bytes could be varbinary or strings,
                 // and they are the only kind of array needed by the EE,
                 // special case them as the VARBINARY type.
-                if (obj instanceof byte[]) {
-                    final byte[] b = (byte[]) obj;
+                if (obj instanceof byte[] || obj instanceof Byte[]) {
+                    final byte[] b;
+                    if (obj instanceof Byte[]) {
+                        b = ArrayUtils.toPrimitive((Byte[])obj);
+                    } else {
+                        b = (byte[]) obj;
+                    }
                     // commented out this bit... presumably the EE will do this check upon recipt
                     /*if (b.length > VoltType.MAX_VALUE_LENGTH) {
                         throw new IOException("Value of byte[] larger than allowed max string or varbinary " + VoltType.MAX_VALUE_LENGTH_STR);
@@ -634,16 +739,28 @@ public class ParameterSet implements JSONString {
                 buf.put(type.getValue());
                 switch (type) {
                     case SMALLINT:
-                        SerializationHelper.writeArray((short[]) obj, buf);
+                        if (obj instanceof Short[])
+                            SerializationHelper.writeArray((short[]) ArrayUtils.toPrimitive((Short[])obj), buf);
+                        else
+                            SerializationHelper.writeArray((short[]) obj, buf);
                         break;
                     case INTEGER:
-                        SerializationHelper.writeArray((int[]) obj, buf);
+                        if (obj instanceof Integer[])
+                            SerializationHelper.writeArray((int[]) ArrayUtils.toPrimitive((Integer[])obj), buf);
+                        else
+                            SerializationHelper.writeArray((int[]) obj, buf);
                         break;
                     case BIGINT:
-                        SerializationHelper.writeArray((long[]) obj, buf);
+                        if (obj instanceof Long[])
+                            SerializationHelper.writeArray((long[]) ArrayUtils.toPrimitive((Long[])obj), buf);
+                        else
+                            SerializationHelper.writeArray((long[]) obj, buf);
                         break;
                     case FLOAT:
-                        SerializationHelper.writeArray((double[]) obj, buf);
+                        if (obj instanceof Double[])
+                            SerializationHelper.writeArray((double[]) ArrayUtils.toPrimitive((Double[])obj), buf);
+                        else
+                            SerializationHelper.writeArray((double[]) obj, buf);
                         break;
                     case STRING:
                         if (m_encodedStringArrays[i] == null) {
@@ -671,7 +788,22 @@ public class ParameterSet implements JSONString {
                         SerializationHelper.writeArray((VoltTable[]) obj, buf);
                         break;
                     case VARBINARY:
-                        SerializationHelper.writeArray((byte[][]) obj, buf);
+                        if (obj instanceof Byte[][]) {
+                            Byte[][] boxByteBuf = (Byte[][])obj;
+                            int byteLen = boxByteBuf.length;
+                            byte[][] byteBuf = new byte[byteLen][];
+                            for (int ii = 0; ii < byteLen; ii++) {
+                               byteBuf[ii] = ArrayUtils.toPrimitive(boxByteBuf[ii]);
+                            }
+                            SerializationHelper.writeArray(byteBuf, buf);
+                        } else
+                            SerializationHelper.writeArray((byte[][]) obj, buf);
+                        break;
+                    case GEOGRAPHY_POINT:
+                        SerializationHelper.writeArray((GeographyPointValue[]) obj, buf);
+                        break;
+                    case GEOGRAPHY:
+                        SerializationHelper.writeArray((GeographyValue[]) obj, buf);
                         break;
                     default:
                         throw new RuntimeException("FIXME: Unsupported type " + type);
@@ -694,7 +826,18 @@ public class ParameterSet implements JSONString {
                 buf.put(VoltType.DECIMAL.getValue());
                 VoltDecimalHelper.serializeNull(buf);
                 continue;
-            } else if (obj instanceof BBContainer) {
+            }
+            else if (obj == VoltType.NULL_POINT) {
+                    buf.put(VoltType.GEOGRAPHY_POINT.getValue());
+                    GeographyPointValue.serializeNull(buf);
+                    continue;
+            }
+            else if (obj == VoltType.NULL_GEOGRAPHY) {
+                buf.put(VoltType.GEOGRAPHY.getValue());
+                buf.putInt(VoltType.NULL_STRING_LENGTH);
+                continue;
+            }
+            else if (obj instanceof BBContainer) {
                 final BBContainer cont = (BBContainer) obj;
                 final ByteBuffer paramBuf = cont.b();
                 buf.put(VoltType.VARBINARY.getValue());
@@ -742,6 +885,14 @@ public class ParameterSet implements JSONString {
                     break;
                 case VOLTTABLE:
                     ((VoltTable)obj).flattenToBuffer(buf);
+                    break;
+                case GEOGRAPHY_POINT:
+                    ((GeographyPointValue)obj).flattenToBuffer(buf);
+                    break;
+                case GEOGRAPHY:
+                    GeographyValue gv = (GeographyValue)obj;
+                    buf.putInt(gv.getLengthInBytes());
+                    gv.flattenToBuffer(buf);
                     break;
                 default:
                     throw new RuntimeException("FIXME: Unsupported type " + type);

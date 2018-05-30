@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -86,6 +86,12 @@ public class SerializableException extends VoltProcedure.VoltAbortException impl
                 return new TransactionRestartException(b);
             }
         },
+        TransactionTerminationException() {
+            @Override
+            protected SerializableException deserializeException(ByteBuffer b) {
+                return new TransactionTerminationException(b);
+            }
+        },
         SpecifiedException() {
             @Override
             protected SerializableException deserializeException(ByteBuffer b) {
@@ -96,6 +102,18 @@ public class SerializableException extends VoltProcedure.VoltAbortException impl
             @Override
             protected SerializableException deserializeException(ByteBuffer b) {
                 return new SerializableException(b);
+            }
+        },
+        MispartitionedException() {
+            @Override
+            protected SerializableException deserializeException(ByteBuffer b) {
+                return new MispartitionedException(b);
+            }
+        },
+        ReplicatedTableException() {
+            @Override
+            protected SerializableException deserializeException(ByteBuffer b) {
+                return new ReplicatedTableException(b);
             }
         };
 
@@ -223,10 +241,8 @@ public class SerializableException extends VoltProcedure.VoltAbortException impl
             JSONStringer js = new JSONStringer();
 
             js.object();
-            js.key("type");
-            js.value(getExceptionType().ordinal());
-            js.key("message");
-            js.value(m_message);
+            js.keySymbolValuePair("type", getExceptionType().ordinal());
+            js.keySymbolValuePair("message", m_message);
             js.endObject();
 
             return js.toString();

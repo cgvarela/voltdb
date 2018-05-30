@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,17 +17,15 @@
 
 package org.voltdb.plannodes;
 
-import java.util.Collection;
+import java.util.Set;
 
 import org.json_voltpatches.JSONException;
 import org.json_voltpatches.JSONObject;
 import org.json_voltpatches.JSONStringer;
-import org.voltdb.catalog.Cluster;
 import org.voltdb.catalog.Database;
 import org.voltdb.compiler.DatabaseEstimates;
 import org.voltdb.compiler.ScalarValueHints;
 import org.voltdb.expressions.AbstractExpression;
-import org.voltdb.expressions.ExpressionUtil;
 import org.voltdb.expressions.ParameterValueExpression;
 import org.voltdb.expressions.TupleValueExpression;
 import org.voltdb.expressions.VectorValueExpression;
@@ -63,11 +61,11 @@ public class MaterializedScanPlanNode extends AbstractPlanNode {
     }
 
     public void setRowData(AbstractExpression tableData) {
-        assert(tableData instanceof VectorValueExpression || tableData instanceof ParameterValueExpression);
+        assert(tableData instanceof VectorValueExpression ||
+                tableData instanceof ParameterValueExpression);
         m_tableData = tableData;
 
-        m_outputExpression.setTypeSizeBytes(m_tableData.getValueType(), m_tableData.getValueSize(),
-                m_tableData.getInBytes());
+        m_outputExpression.setTypeSizeAndInBytes(m_tableData);
     }
 
     public void setSortDirection(SortDirectionType direction) {
@@ -95,7 +93,7 @@ public class MaterializedScanPlanNode extends AbstractPlanNode {
     }
 
     @Override
-    public void computeCostEstimates(long childOutputTupleCountEstimate, Cluster cluster, Database db, DatabaseEstimates estimates, ScalarValueHints[] paramHints) {
+    public void computeCostEstimates(long childOutputTupleCountEstimate, DatabaseEstimates estimates, ScalarValueHints[] paramHints) {
         // assume constant cost. Most of the cost of the SQL-IN will be measured by the NLIJ that is always paired with this element
         m_estimatedProcessedTupleCount = 1;
         m_estimatedOutputTupleCount = 1;
@@ -116,11 +114,11 @@ public class MaterializedScanPlanNode extends AbstractPlanNode {
             m_outputSchema = new NodeSchema();
             // must produce a tuple value expression for the one column.
             m_outputSchema.addColumn(
-                new SchemaColumn(m_outputExpression.getTableName(),
-                                 m_outputExpression.getTableAlias(),
-                                 m_outputExpression.getColumnName(),
-                                 m_outputExpression.getColumnAlias(),
-                                 m_outputExpression));
+                m_outputExpression.getTableName(),
+                m_outputExpression.getTableAlias(),
+                m_outputExpression.getColumnName(),
+                m_outputExpression.getColumnAlias(),
+                m_outputExpression);
         }
     }
 
@@ -141,7 +139,7 @@ public class MaterializedScanPlanNode extends AbstractPlanNode {
         stringer.endObject();
 
         if (m_sortDirection == SortDirectionType.DESC) {
-            stringer.key(Members.SORT_DIRECTION.name()).value(m_sortDirection.toString());
+            stringer.keySymbolValuePair(Members.SORT_DIRECTION.name(), m_sortDirection.toString());
         }
     }
 
@@ -158,11 +156,9 @@ public class MaterializedScanPlanNode extends AbstractPlanNode {
     }
 
     @Override
-    public Collection<AbstractExpression> findAllExpressionsOfClass(Class< ? extends AbstractExpression> aeClass) {
-        Collection<AbstractExpression> collected = super.findAllExpressionsOfClass(aeClass);
-
-        collected.addAll(ExpressionUtil.findAllExpressionsOfClass(m_tableData, aeClass));
-        return collected;
+    public void findAllExpressionsOfClass(Class< ? extends AbstractExpression> aeClass, Set<AbstractExpression> collected) {
+        super.findAllExpressionsOfClass(aeClass, collected);
+        collected.addAll(m_tableData.findAllSubexpressionsOfClass(aeClass));
     }
 
 }

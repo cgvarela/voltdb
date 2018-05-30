@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -33,7 +33,9 @@ import org.voltcore.messaging.TransactionInfoBaseMessage;
 import org.voltcore.utils.CoreUtils;
 import org.voltdb.ParameterSet;
 import org.voltdb.VoltDB;
+import org.voltdb.client.BatchTimeoutOverrideType;
 import org.voltdb.common.Constants;
+import org.voltdb.iv2.TxnEgo;
 import org.voltdb.utils.Encoder;
 import org.voltdb.utils.LogKeys;
 
@@ -72,6 +74,7 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         ByteBuffer m_parameterSet = null;
         Integer m_outputDepId = null;
         ArrayList<Integer> m_inputDepIds = null;
+        byte[] m_stmtName = null;
         // For unplanned item
         byte[] m_fragmentPlan = null;
         byte[] m_stmtText = null;
@@ -83,6 +86,10 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         public String toString() {
             StringBuilder sb = new StringBuilder();
             sb.append(String.format("FRAGMENT PLAN HASH: %s\n", Encoder.hexEncode(m_planHash)));
+            if (m_stmtName != null) {
+                sb.append("\n  STATEMENT NAME: ");
+                sb.append(getStmtName());
+            }
             if (m_parameterSet != null) {
                 ParameterSet pset = null;
                 try {
@@ -94,28 +101,33 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
                 sb.append("\n  ").append(pset.toString());
             }
             if (m_outputDepId != null) {
-                sb.append("\n");
-                sb.append("  OUTPUT_DEPENDENCY_ID ");
+                sb.append("\n  OUTPUT_DEPENDENCY_ID ");
                 sb.append(m_outputDepId);
             }
-            if ((m_inputDepIds != null) && (m_inputDepIds.size() > 0)) {
-                sb.append("\n");
-                sb.append("  INPUT_DEPENDENCY_IDS ");
+            if (m_inputDepIds != null && m_inputDepIds.size() > 0) {
+                sb.append("\n  INPUT_DEPENDENCY_IDS ");
                 for (long id : m_inputDepIds)
                     sb.append(id).append(", ");
                 sb.setLength(sb.lastIndexOf(", "));
             }
-            if ((m_fragmentPlan != null) && (m_fragmentPlan.length != 0)) {
-                sb.append("\n");
-                sb.append("  FRAGMENT_PLAN ");
-                sb.append(m_fragmentPlan);
+            if (m_fragmentPlan != null && m_fragmentPlan.length != 0) {
+                sb.append("\n  FRAGMENT_PLAN ");
+                sb.append(new String(m_fragmentPlan, Charsets.UTF_8));
             }
-            if ((m_stmtText != null) && (m_stmtText.length != 0)) {
-                sb.append("\n");
-                sb.append("  STATEMENT_TEXT ");
-                sb.append(m_stmtText);
+            if (m_stmtText != null && m_stmtText.length != 0) {
+                sb.append("\n  STATEMENT_TEXT ");
+                sb.append(new String(m_stmtText, Charsets.UTF_8));
             }
             return sb.toString();
+        }
+
+        public String getStmtName() {
+            if (m_stmtName != null) {
+                return new String(m_stmtName, Charsets.UTF_8);
+            }
+            else {
+                return null;
+            }
         }
     }
 
@@ -131,6 +143,13 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
     // If this flag is set, the message should contain a single fragment with the
     // desired output dep ID, but no real work to do.
     boolean m_emptyForRestart = false;
+
+    // Used to flag an N-Part transaction
+    boolean m_nPartTxn;
+
+    // If this flag = true, it means the current execution is being sampled.
+    boolean m_perFragmentStatsRecording = false;
+    boolean m_coordinatorTask = false;
 
     int m_inputDepCount = 0;
     Iv2InitiateTaskMessage m_initiateTask;
@@ -148,6 +167,33 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
     // context for long running fragment status log messages
     byte[] m_procedureName = null;
     int m_currentBatchIndex = 0;
+
+    int m_batchTimeout = BatchTimeoutOverrideType.NO_TIMEOUT;
+
+    // indicate that the fragment should be handled via original partition leader
+    // before MigratePartitionLeader if the first batch or fragment has been processed in a batched or
+    // multiple fragment transaction. m_currentBatchIndex > 0
+    boolean m_isForOldLeader = false;
+
+    // Use to differentiate fragments and completions from different rounds of restart
+    // (same transaction can be restarted multiple times due to multiple leader promotions)
+    long m_restartTimestamp = -1;
+
+    public void setPerFragmentStatsRecording(boolean value) {
+        m_perFragmentStatsRecording = value;
+    }
+
+    public boolean isPerFragmentStatsRecording() {
+        return m_perFragmentStatsRecording;
+    }
+
+    public void setCoordinatorTask(boolean value) {
+        m_coordinatorTask = value;
+    }
+
+    public boolean isCoordinatorTask() {
+        return m_coordinatorTask;
+    }
 
     public int getCurrentBatchIndex() {
         return m_currentBatchIndex;
@@ -172,10 +218,14 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
                                long uniqueId,
                                boolean isReadOnly,
                                boolean isFinal,
-                               boolean isForReplay) {
+                               boolean isForReplay,
+                               boolean nPartTxn,
+                               long timestamp) {
         super(initiatorHSId, coordinatorHSId, txnId, uniqueId, isReadOnly, isForReplay);
         m_isFinal = isFinal;
         m_subject = Subject.DEFAULT.getId();
+        m_nPartTxn = nPartTxn;
+        m_restartTimestamp = timestamp;
         assert(selfCheck());
     }
 
@@ -195,6 +245,7 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         m_taskType = ftask.m_taskType;
         m_isFinal = ftask.m_isFinal;
         m_subject = ftask.m_subject;
+        m_nPartTxn = ftask.m_nPartTxn;
         m_inputDepCount = ftask.m_inputDepCount;
         m_items = ftask.m_items;
         m_initiateTask = ftask.m_initiateTask;
@@ -203,6 +254,10 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         m_currentBatchIndex = ftask.m_currentBatchIndex;
         m_involvedPartitions = ftask.m_involvedPartitions;
         m_procNameToLoad = ftask.m_procNameToLoad;
+        m_batchTimeout = ftask.m_batchTimeout;
+        m_perFragmentStatsRecording = ftask.m_perFragmentStatsRecording;
+        m_coordinatorTask = ftask.m_coordinatorTask;
+        m_restartTimestamp = ftask.m_restartTimestamp;
         if (ftask.m_initiateTaskBuffer != null) {
             m_initiateTaskBuffer = ftask.m_initiateTaskBuffer.duplicate();
         }
@@ -231,8 +286,15 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
      * @param parameterSet
      */
     public void addFragment(byte[] planHash, int outputDepId, ByteBuffer parameterSet) {
+        addFragment(planHash, null, outputDepId, parameterSet);
+    }
+
+    public void addFragment(byte[] planHash, String stmtName, int outputDepId, ByteBuffer parameterSet) {
         FragmentData item = new FragmentData();
         item.m_planHash = planHash;
+        if (stmtName != null) {
+            item.m_stmtName = stmtName.getBytes(Charsets.UTF_8);
+        }
         item.m_outputDepId = outputDepId;
         item.m_parameterSet = parameterSet;
         m_items.add(item);
@@ -280,7 +342,9 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
                                                             int outputDepId,
                                                             ParameterSet params,
                                                             boolean isFinal,
-                                                            boolean isForReplay) {
+                                                            boolean isForReplay,
+                                                            boolean isNPartTxn,
+                                                            long timestamp) {
         ByteBuffer parambytes = null;
         if (params != null) {
             parambytes = ByteBuffer.allocate(params.getSerializedSize());
@@ -294,7 +358,8 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         }
 
         FragmentTaskMessage ret = new FragmentTaskMessage(initiatorHSId, coordinatorHSId,
-                                                          txnId, uniqueId, isReadOnly, isFinal, isForReplay);
+                                                          txnId, uniqueId, isReadOnly, isFinal,
+                                                          isForReplay, isNPartTxn, timestamp);
         ret.addFragment(planHash, outputDepId, parambytes);
         return ret;
     }
@@ -378,6 +443,14 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         }
     }
 
+    public int getBatchTimeout() {
+        return m_batchTimeout;
+    }
+
+    public void setBatchTimeout(int batchTimeout) {
+        m_batchTimeout = batchTimeout;
+    }
+
     public boolean isFinalTask() {
         return m_isFinal;
     }
@@ -440,7 +513,23 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
                                       Collection<Integer> involvedPartitions) {
         m_initiateTask = initiateTask;
         m_involvedPartitions = ImmutableSet.copyOf(involvedPartitions);
-        m_initiateTaskBuffer = ByteBuffer.allocate(initiateTask.getSerializedSize());
+        assert(!m_nPartTxn || m_involvedPartitions.size() > 0);
+        // this function may be called for the same instance twice, with slightly different
+        // but same size initiateTask. The second call is intended to update the spHandle in
+        // the initiateTask to a new value and update the corresponding buffer, therefore it
+        // only change the spHandle which takes a fixed amount of bytes, the only component
+        // that can change size, which is the StoredProcedureInvocation, isn't changed at all.
+        // Because of these, the serialized size will be the same for the two calls and the
+        // buffer only needs to be allocated once. When this function is called the second
+        // time, just reset the position and limit and reserialize the updated content to the
+        // existing ByteBuffer so we can save an allocation.
+        if (m_initiateTaskBuffer == null) {
+            m_initiateTaskBuffer = ByteBuffer.allocate(initiateTask.getSerializedSize());
+        }
+        else {
+            m_initiateTaskBuffer.position(0);
+            m_initiateTaskBuffer.limit(initiateTask.getSerializedSize());
+        }
         try {
             initiateTask.flattenToBuffer(m_initiateTaskBuffer);
             m_initiateTaskBuffer.flip();
@@ -450,11 +539,17 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         }
     }
 
+    // Can be null for non-first fragment task message or read-only transaction
+    // or in replay
     public Iv2InitiateTaskMessage getInitiateTask() {
         return m_initiateTask;
     }
 
     public Set<Integer> getInvolvedPartitions() { return m_involvedPartitions; }
+
+    public boolean isNPartTxn() {
+        return m_nPartTxn;
+    }
 
     public byte[] getPlanHash(int index) {
         assert(index >= 0 && index < m_items.size());
@@ -503,6 +598,13 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         return item.m_fragmentPlan;
     }
 
+    public String getStmtName(int index) {
+        assert(index >= 0 && index < m_items.size());
+        FragmentData item = m_items.get(index);
+        assert(item != null);
+        return item.getStmtName();
+    }
+
     public String getStmtText(int index) {
         assert(index >= 0 && index < m_items.size());
         FragmentData item = m_items.get(index);
@@ -521,6 +623,12 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
      *     should undo flag: byte: 1
      *     output dependencies flag (outdep): byte: 1
      *     input dependencies flag (indep): byte: 1
+     *     NPart Partition Count: byte : 1
+     *     FragmentRestart Sequence: long : 8
+     *
+     * Procedure name to load string (if any).
+     *
+     * perFragmentStatsRecording and coordinatorTask flag: byte: 2
      *
      * Fragment ID block (1 per item):
      *     fragment ID: long: 8 * nitems
@@ -558,12 +666,17 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         int msgsize = super.getSerializedSize();
 
         // Fixed header
-        msgsize += 2 + 2 + 1 + 1 + 1 + 1 + 1 + 2;
+        msgsize += 2 + 2 + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 8;
 
         // procname to load str if any
         if (m_procNameToLoad != null) {
             msgsize += m_procNameToLoad.length;
         }
+
+        // perFragmentStatsRecording and coordinatorTask.
+        // TODO: We could use only one byte and bitmasks to represent all the
+        // boolean values used in this class, it can save a little bit space.
+        msgsize += 2;
 
         // Fragment ID block (20 bytes per sha1-hash)
         msgsize += 20 * m_items.size();
@@ -576,6 +689,12 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
 
         // int for which batch (4)
         msgsize += 4;
+
+        // 1 byte for the timeout flag
+        msgsize += 1;
+
+        msgsize += 1; //m_handleByOriginalLeader
+        msgsize += m_batchTimeout == BatchTimeoutOverrideType.NO_TIMEOUT ? 0 : 4;
 
         // Involved partitions
         msgsize += 2 + m_involvedPartitions.size() * 4;
@@ -593,6 +712,12 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         for (FragmentData item : m_items) {
             // Account for parameter sets
             msgsize += 4 + item.m_parameterSet.remaining();
+
+            // short + str for stmt name
+            msgsize += 2;
+            if (item.m_stmtName != null) {
+                msgsize += item.m_stmtName.length;
+            }
 
             // Account for the optional output dependency block, if needed.
             if (!foundOutputDepId && item.m_outputDepId != null) {
@@ -673,6 +798,7 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         buf.put(m_isFinal ? (byte) 1 : (byte) 0);
         buf.put(m_taskType);
         buf.put(m_emptyForRestart ? (byte) 1 : (byte) 0);
+        buf.put(m_isForOldLeader ? (byte) 1 : (byte) 0);
         buf.put(nOutputDepIds > 0 ? (byte) 1 : (byte) 0);
         buf.put(nInputDepIds  > 0 ? (byte) 1 : (byte) 0);
         if (m_procNameToLoad != null) {
@@ -682,10 +808,28 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         else {
             buf.putShort((short) -1);
         }
+        buf.put(m_perFragmentStatsRecording ? (byte) 1 : (byte) 0);
+        buf.put(m_coordinatorTask ? (byte) 1 : (byte) 0);
+        // N Partition Transaction PartitionCount
+        buf.put(m_nPartTxn ? (byte) 1 : (byte) 0);
+        // timestamp for restarted transaction
+        buf.putLong(m_restartTimestamp);
 
         // Plan Hash block
         for (FragmentData item : m_items) {
             buf.put(item.m_planHash);
+        }
+
+        for (FragmentData item : m_items) {
+            // write statement name
+            if (item.m_stmtName == null) {
+                buf.putShort((short) -1);
+            }
+            else {
+                assert(item.m_stmtName.length <= Short.MAX_VALUE);
+                buf.putShort((short) item.m_stmtName.length);
+                buf.put(item.m_stmtName);
+            }
         }
 
         // Parameter set block
@@ -727,6 +871,14 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
 
         // ints for batch context
         buf.putInt(m_currentBatchIndex);
+
+        // put byte flag for timeout value and 4 bytes integer value if specified
+        if (m_batchTimeout == BatchTimeoutOverrideType.NO_TIMEOUT) {
+            buf.put(BatchTimeoutOverrideType.NO_OVERRIDE_FOR_BATCH_TIMEOUT.getValue());
+        } else {
+            buf.put(BatchTimeoutOverrideType.HAS_OVERRIDE_FOR_BATCH_TIMEOUT.getValue());
+            buf.putInt(m_batchTimeout);
+        }
 
         buf.putShort((short) m_involvedPartitions.size());
         for (int pid : m_involvedPartitions) {
@@ -786,6 +938,7 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         m_isFinal = buf.get() != 0;
         m_taskType = buf.get();
         m_emptyForRestart = buf.get() != 0;
+        m_isForOldLeader = buf.get() == 1;
         boolean haveOutputDependencies = buf.get() != 0;
         boolean haveInputDependencies = buf.get() != 0;
         short procNameToLoadBytesLen = buf.getShort();
@@ -793,6 +946,12 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
             m_procNameToLoad = new byte[procNameToLoadBytesLen];
             buf.get(m_procNameToLoad);
         }
+        m_perFragmentStatsRecording = buf.get() != 0;
+        m_coordinatorTask = buf.get() != 0;
+        // N Partition Transaction PartitionCount
+        m_nPartTxn = buf.get() != 0;
+        // timestamp for restarted transaction
+        m_restartTimestamp = buf.getLong();
 
         m_items = new ArrayList<FragmentData>(fragCount);
 
@@ -802,6 +961,18 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
             item.m_planHash = new byte[20]; // sha1 is 20b
             buf.get(item.m_planHash);
             m_items.add(item);
+        }
+
+        // Statement names block
+        for (FragmentData item : m_items) {
+            short stmtNameLen = buf.getShort();
+            if (stmtNameLen >= 0) {
+                item.m_stmtName = new byte[stmtNameLen];
+                buf.get(item.m_stmtName);
+            }
+            else {
+                item.m_stmtName = null;
+            }
         }
 
         // Parameter set block
@@ -848,6 +1019,13 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
 
         // ints for batch context
         m_currentBatchIndex = buf.getInt();
+
+        BatchTimeoutOverrideType batchTimeoutType = BatchTimeoutOverrideType.typeFromByte(buf.get());
+        if (batchTimeoutType == BatchTimeoutOverrideType.NO_OVERRIDE_FOR_BATCH_TIMEOUT) {
+            m_batchTimeout = BatchTimeoutOverrideType.NO_TIMEOUT;
+        } else {
+            m_batchTimeout = buf.getInt();
+        }
 
         // Involved partition
         short involvedPartitionCount = buf.getShort();
@@ -911,13 +1089,22 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
 
         sb.append("FRAGMENT_TASK (FROM ");
         sb.append(CoreUtils.hsIdToString(m_coordinatorHSId));
-        sb.append(") FOR TXN ");
-        sb.append(m_txnId);
+        sb.append(") FOR TXN ").append(TxnEgo.txnIdToString(m_txnId)).append("(" + m_txnId + ")");
         sb.append(" FOR REPLAY ").append(isForReplay());
-        sb.append(", SP HANDLE: ").append(getSpHandle());
+        sb.append(", SP HANDLE: ").append(TxnEgo.txnIdToString(getSpHandle()));
+        sb.append(", TRUNCATION HANDLE:" + getTruncationHandle());
         sb.append("\n");
+        sb.append("THIS IS A ");
+        sb.append(m_coordinatorTask ? "COORDINATOR" : "WORKER");
+        sb.append(" TASK.\n");
+        if (m_perFragmentStatsRecording) {
+            sb.append("PER FRAGMENT STATS RECORDING\n");
+        }
         if (m_isReadOnly)
             sb.append("  READ, COORD ");
+        else
+        if (m_nPartTxn)
+            sb.append("  ").append(" N part WRITE, COORD ");
         else
             sb.append("  WRITE, COORD ");
         sb.append(CoreUtils.hsIdToString(m_coordinatorHSId));
@@ -935,7 +1122,12 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
 
         if (m_isFinal)
             sb.append("\n  THIS IS THE FINAL TASK");
+        if (m_isForReplica)
+            sb.append("\n  THIS IS SENT TO REPLICA");
 
+        if (m_isForOldLeader) {
+            sb.append("\n  EXECUTE ON ORIGNAL LEADER");
+        }
         if (m_taskType == USER_PROC)
         {
             sb.append("\n  THIS IS A USER TASK");
@@ -952,14 +1144,35 @@ public class FragmentTaskMessage extends TransactionInfoBaseMessage
         {
             sb.append("\n  UNKNOWN FRAGMENT TASK TYPE");
         }
+        sb.append("\nBatch index:" + m_currentBatchIndex + " Dep count:" + m_inputDepCount);
 
         if (m_emptyForRestart)
             sb.append("\n  THIS IS A NULL FRAGMENT TASK USED FOR RESTART");
 
+        String procName = getProcedureName();
+        if (procName != null) {
+            sb.append("\n  PROC NAME:" + procName);
+        }
         return sb.toString();
     }
 
     public boolean isEmpty() {
         return m_items.isEmpty();
+    }
+
+    public void setForOldLeader(boolean forOldLeader) {
+        m_isForOldLeader = forOldLeader;
+    }
+
+    public boolean isForOldLeader() {
+        return m_isForOldLeader;
+    }
+
+    public void setTimestamp(long timestamp) {
+        m_restartTimestamp = timestamp;
+    }
+
+    public long getTimestamp() {
+        return m_restartTimestamp;
     }
 }

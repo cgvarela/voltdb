@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -21,27 +21,28 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <string>
+#include "harness.h"
+
+#include "common/debuglog.h"
+#include "common/executorcontext.hpp"
+#include "common/NValue.hpp"
+#include "common/tabletuple.h"
+#include "common/TupleSchema.h"
+#include "common/types.h"
+#include "common/ValueFactory.hpp"
+#include "indexes/tableindex.h"
+#include "indexes/tableindexfactory.h"
+#include "storage/BinaryLogSinkWrapper.h"
+#include "storage/DRTupleStream.h"
+#include "storage/persistenttable.h"
+#include "storage/tablefactory.h"
+#include "storage/tableiterator.h"
+#include "storage/temptable.h"
+
 #include <boost/foreach.hpp>
 #include <boost/unordered_map.hpp>
 
-#include "harness.h"
-#include "common/executorcontext.hpp"
-#include "common/TupleSchema.h"
-#include "common/debuglog.h"
-#include "common/types.h"
-#include "common/NValue.hpp"
-#include "common/ValueFactory.hpp"
-#include "common/tabletuple.h"
-#include "storage/BinaryLogSink.h"
-#include "storage/persistenttable.h"
-#include "storage/tableiterator.h"
-#include "storage/table.h"
-#include "storage/temptable.h"
-#include "storage/tablefactory.h"
-#include "storage/tableiterator.h"
-#include "storage/DRTupleStream.h"
-#include "indexes/tableindex.h"
+#include <string>
 
 using namespace voltdb;
 using namespace std;
@@ -50,17 +51,55 @@ static int64_t addPartitionId(int64_t value) {
     return (value << 14) | 44;
 }
 
+class MockHashinator : public TheHashinator {
+public:
+    static MockHashinator* newInstance() {
+        return new MockHashinator();
+    }
+
+    std::string debug() const {
+       return "MockHashinator";
+    }
+
+    ~MockHashinator() {}
+
+protected:
+    int32_t hashinate(int64_t value) const {
+        return 0;
+    }
+
+    int32_t hashinate(const char *string, int32_t length) const {
+        return 0;
+    }
+
+    int32_t partitionForToken(int32_t hashCode) const {
+        // partition of VoltDBEngine super of MockVoltDBEngine is 0
+        return -1;
+    }
+};
+
+class MockVoltDBEngine : public VoltDBEngine {
+public:
+    MockVoltDBEngine() {
+        setHashinator(MockHashinator::newInstance());
+    }
+    bool getIsActiveActiveDREnabled() const { return m_isActiveActiveEnabled; }
+
+private:
+    bool m_isActiveActiveEnabled;
+};
+
 class TableAndIndexTest : public Test {
     public:
-        TableAndIndexTest() {
-            NValueArray* noParams = NULL;
-            VoltDBEngine* noEngine = NULL;
-            engine = new ExecutorContext(0, 0, NULL, &topend, &pool, noParams, noEngine, "", 0, &drStream, &drReplicatedStream);
+        TableAndIndexTest()
+            : drStream(44, 64*1024),
+              drReplicatedStream(16383, 64*1024) {
+            mockEngine = new MockVoltDBEngine();
+            eContext = new ExecutorContext(0, 0, NULL, &topend, &pool, mockEngine, "", 0, &drStream, &drReplicatedStream, 0);
             mem = 0;
             *reinterpret_cast<int64_t*>(signature) = 42;
-            drStream.configure(44);
 
-            engine->setupForPlanFragments( NULL, 44, 44, 44, 44);
+            eContext->setupForPlanFragments(NULL, 44, 44, 44, 44, false);
 
             vector<voltdb::ValueType> districtColumnTypes;
             vector<int32_t> districtColumnLengths;
@@ -88,6 +127,10 @@ class TableAndIndexTest : public Test {
             districtIndex1Scheme = TableIndexScheme("District primary key index", HASH_TABLE_INDEX,
                                                     districtIndex1ColumnIndices, TableIndex::simplyIndexColumns(),
                                                     true, false, districtTupleSchema);
+            districtReplicaIndex1Scheme = TableIndexScheme("District primary key index", HASH_TABLE_INDEX,
+                                                           districtIndex1ColumnIndices, TableIndex::simplyIndexColumns(),
+                                                           true, false, districtReplicaTupleSchema);
+
 
             vector<voltdb::ValueType> warehouseColumnTypes;
             vector<int32_t> warehouseColumnLengths;
@@ -151,6 +194,9 @@ class TableAndIndexTest : public Test {
             customerIndex1Scheme = TableIndexScheme("Customer primary key index", HASH_TABLE_INDEX,
                                                     customerIndex1ColumnIndices, TableIndex::simplyIndexColumns(),
                                                     true, true, customerTupleSchema);
+            customerReplicaIndex1Scheme = TableIndexScheme("Customer primary key index", HASH_TABLE_INDEX,
+                                                           customerIndex1ColumnIndices, TableIndex::simplyIndexColumns(),
+                                                           true, true, customerReplicaTupleSchema);
 
             customerIndex2ColumnIndices.push_back(2);
             customerIndex2ColumnIndices.push_back(1);
@@ -160,7 +206,11 @@ class TableAndIndexTest : public Test {
             customerIndex2Scheme = TableIndexScheme("Customer index 1", HASH_TABLE_INDEX,
                                                     customerIndex2ColumnIndices, TableIndex::simplyIndexColumns(),
                                                     true, true, customerTupleSchema);
+            customerReplicaIndex2Scheme = TableIndexScheme("Customer index 1", HASH_TABLE_INDEX,
+                                                           customerIndex2ColumnIndices, TableIndex::simplyIndexColumns(),
+                                                           true, true, customerReplicaTupleSchema);
             customerIndexes.push_back(customerIndex2Scheme);
+            customerReplicaIndexes.push_back(customerReplicaIndex2Scheme);
 
             customerIndex3ColumnIndices.push_back(2);
             customerIndex3ColumnIndices.push_back(1);
@@ -169,7 +219,11 @@ class TableAndIndexTest : public Test {
             customerIndex3Scheme = TableIndexScheme("Customer index 3", HASH_TABLE_INDEX,
                                                     customerIndex3ColumnIndices, TableIndex::simplyIndexColumns(),
                                                     false, false, customerTupleSchema);
+            customerReplicaIndex3Scheme = TableIndexScheme("Customer index 3", HASH_TABLE_INDEX,
+                                                           customerIndex3ColumnIndices, TableIndex::simplyIndexColumns(),
+                                                           false, false, customerReplicaTupleSchema);
             customerIndexes.push_back(customerIndex3Scheme);
+            customerReplicaIndexes.push_back(customerReplicaIndex3Scheme);
 
             string districtColumnNamesArray[11] = {
                 "D_ID", "D_W_ID", "D_NAME", "D_STREET_1", "D_STREET_2", "D_CITY",
@@ -194,20 +248,23 @@ class TableAndIndexTest : public Test {
             // add other indexes
             BOOST_FOREACH(TableIndexScheme &scheme, districtIndexes) {
                 TableIndex *index = TableIndexFactory::getInstance(scheme);
-                TableIndex *replicaIndex = TableIndexFactory::getInstance(scheme);
                 assert(index);
                 districtTable->addIndex(index);
+            }
+            BOOST_FOREACH(TableIndexScheme &scheme, districtReplicaIndexes) {
+                TableIndex *replicaIndex = TableIndexFactory::getInstance(scheme);
+                assert(replicaIndex);
                 districtTableReplica->addIndex(replicaIndex);
             }
 
-            districtTempTable = dynamic_cast<TempTable*>(
-                TableFactory::getCopiedTempTable(0, "DISTRICT TEMP", districtTable,
-                                                 &limits));
+            districtTempTable = TableFactory::buildCopiedTempTable("DISTRICT TEMP",
+                                                                   districtTable);
 
-            warehouseTable = voltdb::TableFactory::getPersistentTable(0, "WAREHOUSE",
-                                                                      warehouseTupleSchema, warehouseColumnNames,
-                                                                      signature, false,
-                                                                      0, false, false);
+            warehouseTable = static_cast<PersistentTable*>(TableFactory::getPersistentTable(0, "WAREHOUSE",
+                                                                                            warehouseTupleSchema,
+                                                                                            warehouseColumnNames,
+                                                                                            signature, false,
+                                                                                            0, false, false));
 
             // add other indexes
             BOOST_FOREACH(TableIndexScheme &scheme, warehouseIndexes) {
@@ -216,9 +273,8 @@ class TableAndIndexTest : public Test {
                 warehouseTable->addIndex(index);
             }
 
-            warehouseTempTable =  dynamic_cast<TempTable*>(
-                TableFactory::getCopiedTempTable(0, "WAREHOUSE TEMP", warehouseTable,
-                                                 &limits));
+            warehouseTempTable = TableFactory::buildCopiedTempTable("WAREHOUSE TEMP",
+                                                                    warehouseTable);
 
             customerTable = reinterpret_cast<PersistentTable*>(voltdb::TableFactory::getPersistentTable(0, "CUSTOMER",
                                                                customerTupleSchema, customerColumnNames,
@@ -232,19 +288,22 @@ class TableAndIndexTest : public Test {
             // add other indexes
             BOOST_FOREACH(TableIndexScheme &scheme, customerIndexes) {
                 TableIndex *index = TableIndexFactory::getInstance(scheme);
-                TableIndex *replicaIndex = TableIndexFactory::getInstance(scheme);
                 assert(index);
                 customerTable->addIndex(index);
+            }
+            BOOST_FOREACH(TableIndexScheme &scheme, customerReplicaIndexes) {
+                TableIndex *replicaIndex = TableIndexFactory::getInstance(scheme);
+                assert(replicaIndex);
                 customerTableReplica->addIndex(replicaIndex);
             }
 
-            customerTempTable =  dynamic_cast<TempTable*>(
-                TableFactory::getCopiedTempTable(0, "CUSTOMER TEMP", customerTable,
-                                                 &limits));
+            customerTempTable = TableFactory::buildCopiedTempTable("CUSTOMER TEMP",
+                                                                   customerTable);
         }
 
         ~TableAndIndexTest() {
-            delete engine;
+            delete eContext;
+            delete mockEngine;
             delete districtTable;
             delete districtTableReplica;
             delete districtTempTable;
@@ -256,21 +315,21 @@ class TableAndIndexTest : public Test {
         }
 
         void addPrimaryKeys() {
-            TableIndex *pkeyIndex = TableIndexFactory::TableIndexFactory::getInstance(districtIndex1Scheme);
-            TableIndex *pkeyIndexReplica = TableIndexFactory::TableIndexFactory::getInstance(districtIndex1Scheme);
+            TableIndex *pkeyIndex = TableIndexFactory::getInstance(districtIndex1Scheme);
+            TableIndex *pkeyIndexReplica = TableIndexFactory::getInstance(districtReplicaIndex1Scheme);
             assert(pkeyIndex);
             districtTable->addIndex(pkeyIndex);
             districtTable->setPrimaryKeyIndex(pkeyIndex);
             districtTableReplica->addIndex(pkeyIndexReplica);
             districtTableReplica->setPrimaryKeyIndex(pkeyIndexReplica);
 
-            pkeyIndex = TableIndexFactory::TableIndexFactory::getInstance(warehouseIndex1Scheme);
+            pkeyIndex = TableIndexFactory::getInstance(warehouseIndex1Scheme);
             assert(pkeyIndex);
             warehouseTable->addIndex(pkeyIndex);
             warehouseTable->setPrimaryKeyIndex(pkeyIndex);
 
-            pkeyIndex = TableIndexFactory::TableIndexFactory::getInstance(customerIndex1Scheme);
-            pkeyIndexReplica = TableIndexFactory::TableIndexFactory::getInstance(customerIndex1Scheme);
+            pkeyIndex = TableIndexFactory::getInstance(customerIndex1Scheme);
+            pkeyIndexReplica = TableIndexFactory::getInstance(customerReplicaIndex1Scheme);
             assert(pkeyIndex);
             customerTable->addIndex(pkeyIndex);
             customerTable->setPrimaryKeyIndex(pkeyIndex);
@@ -279,26 +338,28 @@ class TableAndIndexTest : public Test {
         }
     protected:
         int mem;
-        TempTableLimits limits;
-        ExecutorContext *engine;
+        ExecutorContext *eContext;
+        VoltDBEngine *mockEngine;
         DRTupleStream drStream;
         DRTupleStream drReplicatedStream;
         DummyTopend topend;
         Pool pool;
-        BinaryLogSink sink;
+        BinaryLogSinkWrapper sinkWrapper;
 
         TupleSchema      *districtTupleSchema;
         TupleSchema      *districtReplicaTupleSchema;
         vector<TableIndexScheme> districtIndexes;
+        vector<TableIndexScheme> districtReplicaIndexes;
         PersistentTable  *districtTable;
         PersistentTable  *districtTableReplica;
         TempTable        *districtTempTable;
         vector<int>       districtIndex1ColumnIndices;
         TableIndexScheme  districtIndex1Scheme;
+        TableIndexScheme  districtReplicaIndex1Scheme;
 
         TupleSchema      *warehouseTupleSchema;
         vector<TableIndexScheme> warehouseIndexes;
-        Table            *warehouseTable;
+        PersistentTable  *warehouseTable;
         TempTable        *warehouseTempTable;
         vector<int>       warehouseIndex1ColumnIndices;
         TableIndexScheme  warehouseIndex1Scheme;
@@ -306,16 +367,20 @@ class TableAndIndexTest : public Test {
         TupleSchema      *customerTupleSchema;
         TupleSchema      *customerReplicaTupleSchema;
         vector<TableIndexScheme> customerIndexes;
+        vector<TableIndexScheme> customerReplicaIndexes;
         PersistentTable  *customerTable;
         PersistentTable  *customerTableReplica;
         TempTable        *customerTempTable;
         vector<int>       customerIndex1ColumnIndices;
         TableIndexScheme  customerIndex1Scheme;
+        TableIndexScheme  customerReplicaIndex1Scheme;
         vector<int>       customerIndex2ColumnIndices;
         vector<ValueType> customerIndex2ColumnTypes;
         TableIndexScheme  customerIndex2Scheme;
+        TableIndexScheme  customerReplicaIndex2Scheme;
         vector<int>       customerIndex3ColumnIndices;
         TableIndexScheme  customerIndex3Scheme;
+        TableIndexScheme  customerReplicaIndex3Scheme;
         char signature[20];
 };
 
@@ -326,9 +391,10 @@ TEST_F(TableAndIndexTest, DrTest) {
     addPrimaryKeys();
 
     drStream.m_enabled = true;
+    drStream.setLastCommittedSequenceNumber(0);
     districtTable->setDR(true);
     //Prepare to insert in a new txn
-    engine->setupForPlanFragments( NULL, addPartitionId(99), addPartitionId(99), addPartitionId(98), addPartitionId(70));
+    eContext->setupForPlanFragments( NULL, addPartitionId(99), addPartitionId(99), addPartitionId(98), addPartitionId(70), false);
 
     vector<NValue> cachedStringValues;//To free at the end of the test
     TableTuple temp_tuple = districtTempTable->tempTuple();
@@ -356,7 +422,7 @@ TEST_F(TableAndIndexTest, DrTest) {
     districtTable->insertTuple(temp_tuple);
 
     //Flush to generate a buffer
-    drStream.endTransaction();
+    drStream.endTransaction(addPartitionId(70));
     drStream.periodicFlush(-1, addPartitionId(99));
     ASSERT_TRUE( topend.receivedDRBuffer );
 
@@ -376,12 +442,12 @@ TEST_F(TableAndIndexTest, DrTest) {
     *reinterpret_cast<int32_t*>(&data.get()[startPos]) = htonl(static_cast<int32_t>(sb->offset()));
     drStream.m_enabled = false;
     districtTable->setDR(false);
-    sink.apply(&data[startPos], tables, &pool, NULL);
+    sinkWrapper.apply(&data[startPos], tables, &pool, mockEngine, 1, addPartitionId(70));
     drStream.m_enabled = true;
     districtTable->setDR(true);
 
     //Should have one row from the insert
-    EXPECT_EQ( 1, districtTableReplica->activeTupleCount());
+    EXPECT_EQ(1, districtTableReplica->activeTupleCount());
 
     TableIterator iterator = districtTableReplica->iterator();
     ASSERT_TRUE(iterator.hasNext());
@@ -390,12 +456,12 @@ TEST_F(TableAndIndexTest, DrTest) {
     EXPECT_EQ(nextTuple.getNValue(7).compare(cachedStringValues.back()), 0);
 
     //Prepare to insert in a new txn
-    engine->setupForPlanFragments( NULL, addPartitionId(100), addPartitionId(100), addPartitionId(99), addPartitionId(72));
+    eContext->setupForPlanFragments( NULL, addPartitionId(100), addPartitionId(100), addPartitionId(99), addPartitionId(72), false);
 
     /*
      * Test that update propagates
      */
-    TableTuple toUpdate = districtTable->lookupTupleByValues(temp_tuple);
+    TableTuple toUpdate = districtTable->lookupTupleForDR(temp_tuple);
     ASSERT_FALSE(toUpdate.isNullTuple());
 
     //Use a different string value for one column
@@ -404,7 +470,7 @@ TEST_F(TableAndIndexTest, DrTest) {
     districtTable->updateTuple( toUpdate, temp_tuple);
 
     //Flush to generate the log buffer
-    drStream.endTransaction();
+    drStream.endTransaction(addPartitionId(72));
     drStream.periodicFlush(-1, addPartitionId(101));
     ASSERT_TRUE( topend.receivedDRBuffer );
 
@@ -419,28 +485,28 @@ TEST_F(TableAndIndexTest, DrTest) {
     *reinterpret_cast<int32_t*>(&data.get()[startPos]) = htonl(static_cast<int32_t>(sb->offset()));
     drStream.m_enabled = false;
     districtTable->setDR(false);
-    sink.apply(&data[startPos], tables, &pool, NULL);
+    sinkWrapper.apply(&data[startPos], tables, &pool, mockEngine, 1, addPartitionId(72));
     drStream.m_enabled = true;
     districtTable->setDR(true);
 
     //Expect one row with the update
-    EXPECT_EQ( 1, districtTableReplica->activeTupleCount());
+    EXPECT_EQ(1, districtTableReplica->activeTupleCount());
 
     //Validate the update took place
-    TableTuple updated = districtTableReplica->lookupTupleByValues(temp_tuple);
+    TableTuple updated = districtTableReplica->lookupTupleForDR(temp_tuple);
     ASSERT_FALSE(updated.isNullTuple());
     EXPECT_EQ(0, updated.getNValue(3).compare(cachedStringValues.back()));
 
-    TableTuple toDelete = districtTable->lookupTupleByValues(temp_tuple);
+    TableTuple toDelete = districtTable->lookupTupleForDR(temp_tuple);
     ASSERT_FALSE(toDelete.isNullTuple());
 
     //Prep another transaction to test propagating a delete
-    engine->setupForPlanFragments( NULL, addPartitionId(102), addPartitionId(102), addPartitionId(101), addPartitionId(89));
+    eContext->setupForPlanFragments( NULL, addPartitionId(102), addPartitionId(102), addPartitionId(101), addPartitionId(89), false);
 
-    districtTable->deleteTuple( toDelete, true);
+    districtTable->deleteTuple(toDelete, true);
 
     //Flush to generate the buffer
-    drStream.endTransaction();
+    drStream.endTransaction(addPartitionId(89));
     drStream.periodicFlush(-1, addPartitionId(102));
     EXPECT_TRUE( topend.receivedDRBuffer );
 
@@ -455,12 +521,12 @@ TEST_F(TableAndIndexTest, DrTest) {
     *reinterpret_cast<int32_t*>(&data.get()[startPos]) = htonl(static_cast<int32_t>(sb->offset()));
     drStream.m_enabled = false;
     districtTable->setDR(false);
-    sink.apply(&data[startPos], tables, &pool, NULL);
+    sinkWrapper.apply(&data[startPos], tables, &pool, mockEngine, 1, addPartitionId(89));
     drStream.m_enabled = true;
     districtTable->setDR(true);
 
     //Expect no rows after the delete propagates
-    EXPECT_EQ( 0, districtTableReplica->activeTupleCount());
+    EXPECT_EQ(0, districtTableReplica->activeTupleCount());
 
     for (vector<NValue>::const_iterator i = cachedStringValues.begin(); i != cachedStringValues.end(); i++) {
         (*i).free();
@@ -469,9 +535,10 @@ TEST_F(TableAndIndexTest, DrTest) {
 
 TEST_F(TableAndIndexTest, DrTestNoPK) {
     drStream.m_enabled = true;
+    drStream.setLastCommittedSequenceNumber(0);
     districtTable->setDR(true);
     //Prepare to insert in a new txn
-    engine->setupForPlanFragments( NULL, addPartitionId(99), addPartitionId(99), addPartitionId(98), addPartitionId(70));
+    eContext->setupForPlanFragments( NULL, addPartitionId(99), addPartitionId(99), addPartitionId(98), addPartitionId(70), false);
 
     vector<NValue> cachedStringValues;//To free at the end of the test
     TableTuple temp_tuple = districtTempTable->tempTuple();
@@ -499,7 +566,7 @@ TEST_F(TableAndIndexTest, DrTestNoPK) {
     districtTable->insertTuple(temp_tuple);
 
     //Flush to generate a buffer
-    drStream.endTransaction();
+    drStream.endTransaction(addPartitionId(70));
     drStream.periodicFlush(-1, addPartitionId(99));
     ASSERT_TRUE( topend.receivedDRBuffer );
 
@@ -519,12 +586,12 @@ TEST_F(TableAndIndexTest, DrTestNoPK) {
     *reinterpret_cast<int32_t*>(&data.get()[startPos]) = htonl(static_cast<int32_t>(sb->offset()));
     drStream.m_enabled = false;
     districtTable->setDR(false);
-    sink.apply(&data[startPos], tables, &pool, NULL);
+    sinkWrapper.apply(&data[startPos], tables, &pool, mockEngine, 1, addPartitionId(70));
     drStream.m_enabled = true;
     districtTable->setDR(true);
 
     //Should have one row from the insert
-    EXPECT_EQ( 1, districtTableReplica->activeTupleCount());
+    EXPECT_EQ(1, districtTableReplica->activeTupleCount());
 
     TableIterator iterator = districtTableReplica->iterator();
     ASSERT_TRUE(iterator.hasNext());
@@ -533,17 +600,17 @@ TEST_F(TableAndIndexTest, DrTestNoPK) {
     EXPECT_EQ(nextTuple.getNValue(7).compare(cachedStringValues.back()), 0);
 
     //Prepare to insert in a new txn
-    engine->setupForPlanFragments( NULL, addPartitionId(100), addPartitionId(100), addPartitionId(99), addPartitionId(72));
+    eContext->setupForPlanFragments( NULL, addPartitionId(100), addPartitionId(100), addPartitionId(99), addPartitionId(72), false);
 
     /*
      * Test that delete propagates
      */
-    TableTuple toDelete = districtTable->lookupTupleByValues(temp_tuple);
+    TableTuple toDelete = districtTable->lookupTupleForDR(temp_tuple);
     ASSERT_FALSE(toDelete.isNullTuple());
     districtTable->deleteTuple(toDelete, true);
 
     //Flush to generate the buffer
-    drStream.endTransaction();
+    drStream.endTransaction(addPartitionId(72));
     drStream.periodicFlush(-1, addPartitionId(101));
     EXPECT_TRUE( topend.receivedDRBuffer );
 
@@ -558,12 +625,12 @@ TEST_F(TableAndIndexTest, DrTestNoPK) {
     *reinterpret_cast<int32_t*>(&data.get()[startPos]) = htonl(static_cast<int32_t>(sb->offset()));
     drStream.m_enabled = false;
     districtTable->setDR(false);
-    sink.apply(&data[startPos], tables, &pool, NULL);
+    sinkWrapper.apply(&data[startPos], tables, &pool, mockEngine, 1, addPartitionId(72));
     drStream.m_enabled = true;
     districtTable->setDR(true);
 
     //Expect no rows after the delete propagates
-    EXPECT_EQ( 0, districtTableReplica->activeTupleCount());
+    EXPECT_EQ(0, districtTableReplica->activeTupleCount());
 
     for (vector<NValue>::const_iterator i = cachedStringValues.begin(); i != cachedStringValues.end(); i++) {
         (*i).free();
@@ -572,9 +639,10 @@ TEST_F(TableAndIndexTest, DrTestNoPK) {
 
 TEST_F(TableAndIndexTest, DrTestNoPKUninlinedColumn) {
     drStream.m_enabled = true;
+    drStream.setLastCommittedSequenceNumber(0);
     customerTable->setDR(true);
     //Prepare to insert in a new txn
-    engine->setupForPlanFragments( NULL, addPartitionId(99), addPartitionId(99), addPartitionId(98), addPartitionId(70));
+    eContext->setupForPlanFragments( NULL, addPartitionId(99), addPartitionId(99), addPartitionId(98), addPartitionId(70), false);
 
     vector<NValue> cachedStringValues;//To free at the end of the test
     TableTuple temp_tuple = customerTempTable->tempTuple();
@@ -617,7 +685,7 @@ TEST_F(TableAndIndexTest, DrTestNoPKUninlinedColumn) {
     customerTable->insertTuple(temp_tuple);
 
     //Flush to generate a buffer
-    drStream.endTransaction();
+    drStream.endTransaction(addPartitionId(70));
     drStream.periodicFlush(-1, addPartitionId(99));
     ASSERT_TRUE( topend.receivedDRBuffer );
 
@@ -637,12 +705,12 @@ TEST_F(TableAndIndexTest, DrTestNoPKUninlinedColumn) {
     *reinterpret_cast<int32_t*>(&data.get()[startPos]) = htonl(static_cast<int32_t>(sb->offset()));
     drStream.m_enabled = false;
     customerTable->setDR(false);
-    sink.apply(&data[startPos], tables, &pool, NULL);
+    sinkWrapper.apply(&data[startPos], tables, &pool, mockEngine, 1, addPartitionId(70));
     drStream.m_enabled = true;
     customerTable->setDR(true);
 
     //Should have one row from the insert
-    EXPECT_EQ( 1, customerTableReplica->activeTupleCount());
+    EXPECT_EQ(1, customerTableReplica->activeTupleCount());
 
     TableIterator iterator = customerTableReplica->iterator();
     ASSERT_TRUE(iterator.hasNext());
@@ -651,17 +719,17 @@ TEST_F(TableAndIndexTest, DrTestNoPKUninlinedColumn) {
     EXPECT_EQ(nextTuple.getNValue(20).compare(cachedStringValues.back()), 0);
 
     //Prepare to insert in a new txn
-    engine->setupForPlanFragments( NULL, addPartitionId(100), addPartitionId(100), addPartitionId(99), addPartitionId(72));
+    eContext->setupForPlanFragments( NULL, addPartitionId(100), addPartitionId(100), addPartitionId(99), addPartitionId(72), false);
 
     /*
      * Test that delete propagates
      */
-    TableTuple toDelete = customerTable->lookupTupleByValues(temp_tuple);
+    TableTuple toDelete = customerTable->lookupTupleForDR(temp_tuple);
     ASSERT_FALSE(toDelete.isNullTuple());
     customerTable->deleteTuple(toDelete, true);
 
     //Flush to generate the buffer
-    drStream.endTransaction();
+    drStream.endTransaction(addPartitionId(72));
     drStream.periodicFlush(-1, addPartitionId(101));
     EXPECT_TRUE( topend.receivedDRBuffer );
 
@@ -676,12 +744,12 @@ TEST_F(TableAndIndexTest, DrTestNoPKUninlinedColumn) {
     *reinterpret_cast<int32_t*>(&data.get()[startPos]) = htonl(static_cast<int32_t>(sb->offset()));
     drStream.m_enabled = false;
     customerTable->setDR(false);
-    sink.apply(&data[startPos], tables, &pool, NULL);
+    sinkWrapper.apply(&data[startPos], tables, &pool, mockEngine, 1, addPartitionId(72));
     drStream.m_enabled = true;
     customerTable->setDR(true);
 
     //Expect no rows after the delete propagates
-    EXPECT_EQ( 0, customerTableReplica->activeTupleCount());
+    EXPECT_EQ(0, customerTableReplica->activeTupleCount());
 
     for (vector<NValue>::const_iterator i = cachedStringValues.begin(); i != cachedStringValues.end(); i++) {
         (*i).free();
@@ -710,7 +778,7 @@ TEST_F(TableAndIndexTest, BigTest) {
     temp_tuple->setNValue(8, ValueFactory::getDoubleValue(static_cast<double>(.0825)));
     temp_tuple->setNValue(9, ValueFactory::getDoubleValue(static_cast<double>(15241.45)));
     temp_tuple->setNValue(10, ValueFactory::getIntegerValue(static_cast<int32_t>(21)));
-    districtTempTable->insertTupleNonVirtual(*temp_tuple);
+    districtTempTable->insertTempTuple(*temp_tuple);
 
     temp_tuple = &warehouseTempTable->tempTuple();
     temp_tuple->setNValue(0, ValueFactory::getTinyIntValue(static_cast<int8_t>(3)));
@@ -728,7 +796,7 @@ TEST_F(TableAndIndexTest, BigTest) {
     temp_tuple->setNValue(6, cachedStringValues.back());
     temp_tuple->setNValue(7, ValueFactory::getDoubleValue(static_cast<double>(.1234)));
     temp_tuple->setNValue(8, ValueFactory::getDoubleValue(static_cast<double>(15241.45)));
-    warehouseTempTable->insertTupleNonVirtual(*temp_tuple);
+    warehouseTempTable->insertTempTuple(*temp_tuple);
 
     temp_tuple = &customerTempTable->tempTuple();
     temp_tuple->setNValue(0, ValueFactory::getIntegerValue(static_cast<int32_t>(42)));
@@ -762,37 +830,29 @@ TEST_F(TableAndIndexTest, BigTest) {
     temp_tuple->setNValue(18, ValueFactory::getIntegerValue(static_cast<int32_t>(0)));
     temp_tuple->setNValue(19, ValueFactory::getIntegerValue(static_cast<int32_t>(15)));
     temp_tuple->setNValue(20, ValueFactory::getStringValue("Some History"));
-    customerTempTable->insertTupleNonVirtual(*temp_tuple);
+    customerTempTable->insertTempTuple(*temp_tuple);
 
     TableTuple districtTuple = TableTuple(districtTempTable->schema());
     TableIterator districtIterator = districtTempTable->iterator();
     while (districtIterator.next(districtTuple)) {
-        if (!districtTable->insertTuple(districtTuple)) {
-            cout << "Failed to insert tuple from input table '"
-                 << districtTempTable->name() << "' into target table '"
-                 << districtTable->name() << "'" << endl;
-        }
+        districtTable->insertTuple(districtTuple);
     }
-    districtTempTable->deleteAllTuplesNonVirtual(true);
+    districtTempTable->deleteAllTempTupleDeepCopies();
 
     TableTuple warehouseTuple = TableTuple(warehouseTempTable->schema());
     TableIterator warehouseIterator = warehouseTempTable->iterator();
     while (warehouseIterator.next(warehouseTuple)) {
-        if (!warehouseTable->insertTuple(warehouseTuple)) {
-            cout << "Failed to insert tuple from input table '" << warehouseTempTable->name() << "' into target table '" << warehouseTable->name() << "'" << endl;
-        }
+        warehouseTable->insertTuple(warehouseTuple);
     }
-    warehouseTempTable->deleteAllTuplesNonVirtual(true);
+    warehouseTempTable->deleteAllTempTupleDeepCopies();
 
     TableTuple customerTuple = TableTuple(customerTempTable->schema());
     TableIterator customerIterator = customerTempTable->iterator();
     while (customerIterator.next(customerTuple)) {
         //cout << "Inserting tuple '" << customerTuple.debug(customerTempTable) << "' into target table '" << customerTable->name() << "', address '" << customerTable << endl;
-        if (!customerTable->insertTuple(customerTuple)) {
-            cout << "Failed to insert tuple from input table '" << warehouseTempTable->name() << "' into target table '" << warehouseTable->name() << "'" << endl;
-        }
+        customerTable->insertTuple(customerTuple);
     }
-    customerTempTable->deleteAllTuplesNonVirtual(true);
+    customerTempTable->deleteAllTempTupleDeepCopies();
 
     temp_tuple->setNValue(0, ValueFactory::getIntegerValue(static_cast<int32_t>(43)));
     temp_tuple->setNValue(1, ValueFactory::getTinyIntValue(static_cast<int8_t>(7)));
@@ -825,16 +885,14 @@ TEST_F(TableAndIndexTest, BigTest) {
     temp_tuple->setNValue(18, ValueFactory::getIntegerValue(static_cast<int32_t>(1)));
     temp_tuple->setNValue(19, ValueFactory::getIntegerValue(static_cast<int32_t>(15)));
     temp_tuple->setNValue(20, ValueFactory::getStringValue("Some History"));
-    customerTempTable->insertTupleNonVirtual(*temp_tuple);
+    customerTempTable->insertTempTuple(*temp_tuple);
 
     customerIterator = customerTempTable->iterator();
     while (customerIterator.next(customerTuple)) {
         //cout << "Inserting tuple '" << customerTuple.debug(customerTempTable) << "' into target table '" << customerTable->name() << "', address '" << customerTable << endl;
-        if (!customerTable->insertTuple(customerTuple)) {
-            cout << "Failed to insert tuple from input table '" << warehouseTempTable->name() << "' into target table '" << warehouseTable->name() << "'" << endl;
-        }
+        customerTable->insertTuple(customerTuple);
     }
-    customerTempTable->deleteAllTuplesNonVirtual(true);
+    customerTempTable->deleteAllTempTupleDeepCopies();
 
     for (vector<NValue>::const_iterator i = cachedStringValues.begin(); i != cachedStringValues.end(); i++) {
         (*i).free();

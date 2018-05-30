@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,18 +23,19 @@
 
 package org.voltdb;
 
-import java.io.IOException;
+import static org.junit.Assert.assertTrue;
 
-import junit.framework.TestCase;
+import java.io.IOException;
 
 import org.voltcore.utils.PortGenerator;
 import org.voltdb.VoltDB.Configuration;
 import org.voltdb.client.NoConnectionsException;
 import org.voltdb.client.ProcCallException;
 import org.voltdb.compiler.VoltProjectBuilder;
+import org.voltdb.regressionsuites.JUnit4LocalClusterTest;
 import org.voltdb.utils.MiscUtils;
 
-public abstract class AdHocQueryTester extends TestCase {
+public abstract class AdHocQueryTester extends JUnit4LocalClusterTest {
 
     // TODO: make an enum
     protected final int NOT_VALIDATING_SP_RESULT = 0;
@@ -84,6 +85,7 @@ public abstract class AdHocQueryTester extends TestCase {
                 "create view V_REPPED1 (REPPEDVAL, num_rows, sum_bigint) as " +
                 "select REPPEDVAL, count(*), sum(NONPART) from REPPED1 group by REPPEDVAL;" +
 
+                "create table long_query_table (id INTEGER NOT NULL, NAME VARCHAR(16));" +
                 "";
 
         builder.addLiteralSchema(schema);
@@ -91,12 +93,13 @@ public abstract class AdHocQueryTester extends TestCase {
         builder.addPartitionInfo("PARTED2", "PARTVAL");
         builder.addPartitionInfo("PARTED3", "PARTVAL");
         builder.addPartitionInfo("PARTED4", "PARTVAL");
-        builder.addProcedures(
-                new Class<?>[] {
-                        org.voltdb_testprocs.adhoc.executeSQLMP.class,
-                        org.voltdb_testprocs.adhoc.executeSQLSP.class,
-                        org.voltdb_testprocs.adhoc.executeSQLMPWRITE.class,
-                        org.voltdb_testprocs.adhoc.executeSQLSPWRITE.class,} );
+
+        builder.addProcedure(org.voltdb_testprocs.adhoc.executeSQLMP.class);
+        builder.addProcedure(org.voltdb_testprocs.adhoc.executeSQLMPWRITE.class);
+
+        ProcedurePartitionData parted1Data = new ProcedurePartitionData("PARTED1", "PARTVAL", "0");
+        builder.addProcedure(org.voltdb_testprocs.adhoc.executeSQLSP.class, parted1Data);
+        builder.addProcedure(org.voltdb_testprocs.adhoc.executeSQLSPWRITE.class, parted1Data);
     }
 
     public static VoltDB.Configuration setUpSPDB() throws IOException, Exception {
@@ -256,13 +259,26 @@ public abstract class AdHocQueryTester extends TestCase {
         try {
             runQueryTest(String.format("SELECT * FROM PARTED1 A LEFT JOIN PARTED2 B ON A.PARTVAL = %d and B.PARTVAL = %d;", hashableA, hashableA), hashableA, 0, 1, NOT_VALIDATING_SP_RESULT);
         } catch (Exception pce) {
-            assertTrue(pce.toString().contains("insufficient join criteria"));
+            String msg = pce.toString();
+            assertTrue(msg.contains("This query is not plannable.  The planner cannot guarantee that all rows would be in a single partition."));
         }
 
         // spPartialCount = runQueryTest(String.format("SELECT * FROM PARTED1 A, PARTED2 B WHERE A.PARTVAL = B.PARTVAL;"), hashableA, 0, 2, NOT_VALIDATING_SP_RESULT);
         // runQueryTest(String.format("SELECT * FROM PARTED1 A, PARTED2 B WHERE A.PARTVAL = B.PARTVAL;"), hashableB, spPartialCount, 2, VALIDATING_TOTAL_SP_RESULT);
 
         // TODO: Three-way join test cases are probably required to cover all code paths through AccessPaths.
+    }
+
+    protected static String getQueryForLongQueryTable(int numberOfPredicates) {
+        StringBuilder string = new StringBuilder("SELECT count(*) FROM long_query_table ");
+        if (numberOfPredicates > 0) {
+            string.append("WHERE ID = 123 ");
+            for (int i = 1; i < numberOfPredicates; i++) {
+                string.append("AND ID > 100 ");
+            }
+        }
+        string.append(";");
+        return string.toString();
     }
 
 }

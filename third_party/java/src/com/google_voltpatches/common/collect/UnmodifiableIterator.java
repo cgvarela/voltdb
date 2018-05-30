@@ -17,14 +17,17 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
 import java.util.Iterator;
 
 /**
  * An iterator that does not support {@link #remove}.
  *
+ * <p>{@code UnmodifiableIterator} is used primarily in conjunction with implementations of
+ * {@link ImmutableCollection}, such as {@link ImmutableList}. You can, however, convert an existing
+ * iterator to an {@code UnmodifiableIterator} using {@link Iterators#unmodifiableIterator}.
+ *
  * @author Jared Levy
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
 public abstract class UnmodifiableIterator<E> implements Iterator<E> {

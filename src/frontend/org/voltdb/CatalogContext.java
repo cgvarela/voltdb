@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,10 +20,17 @@ package org.voltdb;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
+import org.apache.zookeeper_voltpatches.KeeperException;
+import org.json_voltpatches.JSONException;
 import org.voltcore.logging.VoltLogger;
+import org.voltcore.messaging.HostMessenger;
 import org.voltdb.catalog.Catalog;
 import org.voltdb.catalog.CatalogMap;
 import org.voltdb.catalog.Cluster;
@@ -34,9 +41,15 @@ import org.voltdb.catalog.SnapshotSchedule;
 import org.voltdb.catalog.Table;
 import org.voltdb.compiler.PlannerTool;
 import org.voltdb.compiler.deploymentfile.DeploymentType;
+import org.voltdb.settings.ClusterSettings;
+import org.voltdb.settings.DbSettings;
+import org.voltdb.settings.NodeSettings;
 import org.voltdb.utils.CatalogUtil;
+import org.voltdb.utils.Encoder;
 import org.voltdb.utils.InMemoryJarfile;
 import org.voltdb.utils.VoltFile;
+
+import com.google_voltpatches.common.collect.ImmutableMap;
 
 public class CatalogContext {
     private static final VoltLogger hostLog = new VoltLogger("HOST");
@@ -50,9 +63,50 @@ public class CatalogContext {
         }
     }
 
+    public static class CatalogInfo {
+        public InMemoryJarfile m_jarfile;
+        public final long m_catalogCRC;
+        public final byte[] m_catalogBytes;
+        public final byte[] m_catalogHash;
+        public final byte[] m_deploymentBytes;
+        public final byte[] m_deploymentHash;
+        public final UUID m_deploymentHashForConfig;
+        public Catalog m_catalog;
+        public ConcurrentLinkedQueue<ImmutableMap<String, ProcedureRunner>> m_preparedProcRunners;
+
+        public CatalogInfo(byte[] catalogBytes, byte[] catalogBytesHash, byte[] deploymentBytes) {
+            if (deploymentBytes == null) {
+                throw new IllegalArgumentException("Can't create CatalogContext with null deployment bytes.");
+            }
+            if (catalogBytes == null) {
+                throw new IllegalArgumentException("Can't create CatalogContext with null catalog bytes.");
+            }
+
+            try {
+                m_catalogBytes = catalogBytes;
+                m_jarfile = new InMemoryJarfile(catalogBytes);
+                m_catalogCRC = m_jarfile.getCRC();
+            }
+            catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+
+            if (catalogBytesHash == null) {
+                m_catalogHash = m_jarfile.getSha1Hash();
+            } else {
+                // This is expensive to compute so if it was passed in, use it.
+                m_catalogHash = catalogBytesHash;
+            }
+
+            m_deploymentBytes = deploymentBytes;
+            m_deploymentHash = CatalogUtil.makeDeploymentHash(deploymentBytes);
+            m_deploymentHashForConfig = CatalogUtil.makeDeploymentHashForConfig(deploymentBytes);
+        }
+
+    }
 
     // THE CATALOG!
-    public final Catalog catalog;
+    public Catalog catalog;
 
     // PUBLIC IMMUTABLE CACHED INFORMATION
     public final Cluster cluster;
@@ -60,65 +114,60 @@ public class CatalogContext {
     public final CatalogMap<Procedure> procedures;
     public final CatalogMap<Table> tables;
     public final AuthSystem authSystem;
+    // database settings. contains both cluster and path settings
+    private final DbSettings m_dbSettings;
+
     public final int catalogVersion;
-    private final byte[] catalogHash;
-    private final long catalogCRC;
-    private final byte[] deploymentBytes;
-    public final byte[] deploymentHash;
-    public final long m_transactionId;
-    public long m_uniqueId;
-    public final JdbcDatabaseMetaDataGenerator m_jdbc;
+    public final CatalogInfo m_catalogInfo;
+    // prepared catalog information in non-blocking path
+    public CatalogInfo m_preparedCatalogInfo = null;
+
+    public final long m_genId; // export generation id
+
     // Default procs are loaded on the fly
-    // The DPM knows which default procs COULD EXIST
-    //  and also how to get SQL for them.
     public final DefaultProcedureManager m_defaultProcs;
 
-    /*
-     * Planner associated with this catalog version.
-     * Not thread-safe, should only be accessed by AsyncCompilerAgent
-     */
+    // Planner associated with this catalog version, Not thread-safe
     public final PlannerTool m_ptool;
-
-    // PRIVATE
-    private final InMemoryJarfile m_jarfile;
+    public final JdbcDatabaseMetaDataGenerator m_jdbc;
+    public final HostMessenger m_messenger;
 
     // Some people may be interested in the JAXB rather than the raw deployment bytes.
     private DeploymentType m_memoizedDeployment;
 
+    public long m_lastUpdateCoreDuration = -1; // in nano seconds
+
+    /**
+     * Constructor especially used during @CatalogContext update when @param hasSchemaChange is false.
+     * When @param hasSchemaChange is true, @param defaultProcManager and @param plannerTool will be created as new.
+     * Otherwise, it will try to use the ones passed in to save CPU cycles for performance reason.
+     * @param genId
+     * @param catalog
+     * @param settings
+     * @param catalogInfo
+     * @param version
+     * @param messenger
+     * @param hasSchemaChange
+     * @param defaultProcManager
+     * @param plannerTool
+     */
     public CatalogContext(
-            long transactionId,
-            long uniqueId,
             Catalog catalog,
-            byte[] catalogBytes,
-            byte[] deploymentBytes,
-            int version)
+            DbSettings settings,
+            int version,
+            long genId,
+            CatalogInfo catalogInfo,
+            DefaultProcedureManager defaultProcManager,
+            PlannerTool plannerTool,
+            HostMessenger messenger,
+            boolean hasSchemaChange)
     {
-        m_transactionId = transactionId;
-        m_uniqueId = uniqueId;
         // check the heck out of the given params in this immutable class
-        assert(catalog != null);
         if (catalog == null) {
-            throw new RuntimeException("Can't create CatalogContext with null catalog.");
+            throw new IllegalArgumentException("Can't create CatalogContext with null catalog.");
         }
-
-        assert(deploymentBytes != null);
-        if (deploymentBytes == null) {
-            throw new RuntimeException("Can't create CatalogContext with null deployment bytes.");
-        }
-
-        assert(catalogBytes != null);
-        if (catalogBytes != null) {
-            try {
-                m_jarfile = new InMemoryJarfile(catalogBytes);
-                catalogCRC = m_jarfile.getCRC();
-            }
-            catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-            this.catalogHash = m_jarfile.getSha1Hash();
-        }
-        else {
-            throw new RuntimeException("Can't create CatalogContext with null catalog bytes.");
+        if (settings == null) {
+            throw new IllegalArgumentException("Cant't create CatalogContext with null cluster settings");
         }
 
         this.catalog = catalog;
@@ -127,171 +176,275 @@ public class CatalogContext {
         procedures = database.getProcedures();
         tables = database.getTables();
         authSystem = new AuthSystem(database, cluster.getSecurityenabled());
+        m_dbSettings = settings;
 
-        this.deploymentBytes = deploymentBytes;
-        this.deploymentHash = CatalogUtil.makeDeploymentHash(deploymentBytes);
-        m_memoizedDeployment = null;
-
-        m_defaultProcs = new DefaultProcedureManager(database);
-
-        m_jdbc = new JdbcDatabaseMetaDataGenerator(catalog, m_defaultProcs, m_jarfile);
-        m_ptool = new PlannerTool(cluster, database, catalogHash);
         catalogVersion = version;
+        m_genId = genId;
+
+        m_catalogInfo = catalogInfo;
+
+        // If there is no schema change, default procedures will not be changed.
+        // Also, the planner tool can be almost reused except updating the catalog hash string.
+        // When there is schema change, we just reload every default procedure and create new planner tool
+        // by applying the existing schema, which are costly in the UAC MP blocking path.
+        if (hasSchemaChange) {
+            m_defaultProcs = new DefaultProcedureManager(database);
+            m_ptool = new PlannerTool(database, m_catalogInfo.m_catalogHash);
+        } else {
+            m_defaultProcs = defaultProcManager;
+            m_ptool = plannerTool.updateWhenNoSchemaChange(database, m_catalogInfo.m_catalogHash);;
+        }
+
+        m_jdbc = new JdbcDatabaseMetaDataGenerator(catalog, m_defaultProcs, m_catalogInfo.m_jarfile);
+        m_messenger = messenger;
 
         if (procedures != null) {
             for (Procedure proc : procedures) {
                 if (proc.getSinglepartition()) {
-                    ProcedurePartitionInfo ppi = new ProcedurePartitionInfo(VoltType.get((byte)proc.getPartitioncolumn().getType()), proc.getPartitionparameter());
+                    ProcedurePartitionInfo ppi =
+                            new ProcedurePartitionInfo(VoltType.get((byte)proc.getPartitioncolumn().getType()),
+                                                       proc.getPartitionparameter());
                     proc.setAttachment(ppi);
                 }
             }
         }
+
+        m_memoizedDeployment = null;
+    }
+
+    /**
+     * Constructor of @CatalogConext used when creating brand-new instances.
+     * @param catalog
+     * @param settings
+     * @param version
+     * @param genId
+     * @param catalogBytes
+     * @param catalogBytesHash
+     * @param deploymentBytes
+     * @param messenger
+     */
+    public CatalogContext(
+            Catalog catalog,
+            DbSettings settings,
+            int version,
+            long genId,
+            byte[] catalogBytes,
+            byte[] catalogBytesHash,
+            byte[] deploymentBytes,
+            HostMessenger messenger)
+    {
+        this(catalog, settings, version, genId,
+             new CatalogInfo(catalogBytes, catalogBytesHash, deploymentBytes),
+             null, null, messenger, true);
+    }
+
+    public Cluster getCluster() {
+        return cluster;
+    }
+
+    public ClusterSettings getClusterSettings() {
+        return m_dbSettings.getCluster();
+    }
+
+    public NodeSettings getNodeSettings() {
+        return m_dbSettings.getNodeSetting();
+    }
+
+    public Catalog getNewCatalog(String diffCommands) {
+        Catalog newCatalog = catalog.deepCopy();
+        newCatalog.execute(diffCommands);
+        return newCatalog;
     }
 
     public CatalogContext update(
-            long txnId,
-            long uniqueId,
-            byte[] catalogBytes,
+            boolean isForReplay,
             String diffCommands,
-            boolean incrementVersion,
-            byte[] deploymentBytes)
+            long genId,
+            byte[] catalogBytes,
+            byte[] catalogBytesHash,
+            byte[] deploymentBytes,
+            HostMessenger messenger,
+            boolean hasSchemaChange)
     {
-        Catalog newCatalog = catalog.deepCopy();
-        newCatalog.execute(diffCommands);
-        int incValue = incrementVersion ? 1 : 0;
-        // If there's no new catalog bytes, preserve the old one rather than
-        // bashing it
-        byte[] bytes = catalogBytes;
-        if (bytes == null) {
-            try {
-                bytes = this.getCatalogJarBytes();
-            } catch (IOException e) {
-                // Failure is not an option
-                hostLog.fatal(e.getMessage());
+        Catalog newCatalog = null;
+        assert(catalogBytes != null);
+
+        // using the prepared catalog information if prepared
+        CatalogInfo catalogInfo = null;
+        if (isForReplay) {
+            byte[] depbytes = deploymentBytes;
+            if (depbytes == null) {
+                depbytes = m_catalogInfo.m_deploymentBytes;
             }
+            catalogInfo = new CatalogInfo(catalogBytes, catalogBytesHash, depbytes);
+
+            newCatalog = getNewCatalog(diffCommands);
+        } else {
+            catalogInfo = m_preparedCatalogInfo;
+            newCatalog = catalogInfo.m_catalog;
         }
-        // Ditto for the deploymentBytes
-        byte[] depbytes = deploymentBytes;
-        if (depbytes == null) {
-            depbytes = this.deploymentBytes;
-        }
+
         CatalogContext retval =
             new CatalogContext(
-                    txnId,
-                    uniqueId,
                     newCatalog,
-                    bytes,
-                    depbytes,
-                    catalogVersion + incValue);
+                    this.m_dbSettings,
+                    catalogVersion + 1, // version increment
+                    genId,
+                    catalogInfo,
+                    m_defaultProcs,
+                    m_ptool,
+                    messenger,
+                    hasSchemaChange);
         return retval;
     }
 
-    /**
-     * Get a file/entry (as bytes) given a key/path in the source jar.
-     *
-     * @param key In-jar path to file.
-     * @return byte[] or null if the file doesn't exist.
-     */
-    public byte[] getFileInJar(String key) {
-        return m_jarfile.get(key);
+    public ImmutableMap<String, ProcedureRunner> getPreparedUserProcedureRunners(SiteProcedureConnection site) {
+
+        ImmutableMap<String, ProcedureRunner> userProcRunner = m_catalogInfo.m_preparedProcRunners.poll();
+
+        if (userProcRunner == null) {
+            // somehow there is no prepared user procedure runner map left, then prepare it again
+
+            CatalogMap<Procedure> catalogProcedures = database.getProcedures();
+            try {
+                userProcRunner = LoadedProcedureSet.loadUserProcedureRunners(catalogProcedures,
+                                                                        m_catalogInfo.m_jarfile.getLoader(),
+                                                                        null, null);
+            } catch (Exception e) {
+                e.printStackTrace();
+                return null;
+            }
+        }
+
+        for (ProcedureRunner runner: userProcRunner.values()) {
+            // swap site and initiate the statistics
+            runner.initSiteAndStats(site);
+        }
+
+        return userProcRunner;
+    }
+
+    public enum CatalogJarWriteMode {
+        START_OR_RESTART,
+        CATALOG_UPDATE,
+        RECOVER
     }
 
     /**
-     * Write the original JAR file to the specified path/name
+     * Write, replace or update the catalog jar based on different cases. This function
+     * assumes any IOException should lead to fatal crash.
      * @param path
      * @param name
      * @throws IOException
      */
-    public Runnable writeCatalogJarToFile(String path, String name) throws IOException
+    public Runnable writeCatalogJarToFile(String path, String name, CatalogJarWriteMode mode) throws IOException
     {
-        File catalog_file = new VoltFile(path, name);
-        if (catalog_file.exists())
-        {
-            catalog_file.delete();
-        }
-        return m_jarfile.writeToFile(catalog_file);
-    }
+        File catalogFile = new VoltFile(path, name);
+        File catalogTmpFile = new VoltFile(path, name + ".tmp");
 
-    /**
-     * Get the raw bytes of a catalog file for shipping around.
-     */
-    public byte[] getCatalogJarBytes() throws IOException {
-        if (m_jarfile == null) {
+        if (mode == CatalogJarWriteMode.CATALOG_UPDATE) {
+            // This means a @UpdateCore case, the asynchronous writing of
+            // jar file has finished, rename the jar file
+            catalogFile.delete();
+            catalogTmpFile.renameTo(catalogFile);
             return null;
         }
-        return m_jarfile.getFullJarBytes();
-    }
 
-    /**
-     * Get the JAXB XML Deployment object, which is memoized
-     */
-    public DeploymentType getDeployment()
-    {
-        if (m_memoizedDeployment == null) {
-            m_memoizedDeployment = CatalogUtil.getDeployment(new ByteArrayInputStream(deploymentBytes));
-            // This should NEVER happen
-            if (m_memoizedDeployment == null) {
-                VoltDB.crashLocalVoltDB("The internal deployment bytes are invalid.  This should never occur; please contact VoltDB support with your logfiles.");
-            }
+        if (mode == CatalogJarWriteMode.START_OR_RESTART) {
+            // This happens in the beginning of ,
+            // when the catalog jar does not yet exist. Though the contents
+            // written might be a default one and could be overwritten later
+            // by @UAC, @UpdateClasses, etc.
+            return m_catalogInfo.m_jarfile.writeToFile(catalogFile);
         }
-        return m_memoizedDeployment;
-    }
 
-    /**
-     * Get the XML Deployment bytes
-     */
-    public byte[] getDeploymentBytes()
-    {
-        return deploymentBytes;
+        if (mode == CatalogJarWriteMode.RECOVER) {
+            // we must overwrite the file (the file may have been changed)
+            catalogFile.delete();
+            if (catalogTmpFile.exists()) {
+                // If somehow the catalog temp jar is not cleaned up, then delete it
+                catalogTmpFile.delete();
+            }
+
+            return m_catalogInfo.m_jarfile.writeToFile(catalogFile);
+        }
+
+        VoltDB.crashLocalVoltDB("Unsupported mode to write catalog jar", true, null);
+        return null;
     }
 
     /**
      * Given a class name in the catalog jar, loads it from the jar, even if the
-     * jar is served from a url and isn't in the classpath.
+     * jar is served from an URL and isn't in the classpath.
      *
      * @param procedureClassName The name of the class to load.
-     * @return A java Class variable assocated with the class.
+     * @return A java Class variable associated with the class.
      * @throws ClassNotFoundException if the class is not in the jar file.
      */
-    public Class<?> classForProcedure(String procedureClassName) throws ClassNotFoundException {
-        //System.out.println("Loading class " + procedureClassName);
+    public Class<?> classForProcedureOrUDF(String procedureClassName)
+            throws LinkageError, ExceptionInInitializerError, ClassNotFoundException {
+        return classForProcedureOrUDF(procedureClassName, m_catalogInfo.m_jarfile.getLoader());
+    }
 
-        // this is a safety mechanism to prevent catalog classes overriding voltdb stuff
-        if (procedureClassName.startsWith("org.voltdb."))
+    public static Class<?> classForProcedureOrUDF(String procedureClassName, ClassLoader loader)
+            throws LinkageError, ExceptionInInitializerError, ClassNotFoundException {
+        // this is a safety mechanism to prevent catalog classes overriding VoltDB stuff
+        if (procedureClassName.startsWith("org.voltdb.")) {
             return Class.forName(procedureClassName);
+        }
 
         // look in the catalog for the file
-        return m_jarfile.getLoader().loadClass(procedureClassName);
+        return Class.forName(procedureClassName, true, loader);
     }
 
     // Generate helpful status messages based on configuration present in the
     // catalog.  Used to generated these messages at startup and after an
     // @UpdateApplicationCatalog
-    SortedMap<String, String> getDebuggingInfoFromCatalog()
+    SortedMap<String, String> getDebuggingInfoFromCatalog(boolean verbose)
     {
-        SortedMap<String, String> logLines = new TreeMap<String, String>();
+        SortedMap<String, String> logLines = new TreeMap<>();
 
         // topology
         Deployment deployment = cluster.getDeployment().iterator().next();
-        int hostCount = deployment.getHostcount();
-        int sitesPerHost = deployment.getSitesperhost();
-        int kFactor = deployment.getKfactor();
-        logLines.put("deployment1",
-                String.format("Cluster has %d hosts with leader hostname: \"%s\". %d sites per host. K = %d.",
-                hostCount, VoltDB.instance().getConfig().m_leader, sitesPerHost, kFactor));
+        int hostCount = m_dbSettings.getCluster().hostcount();
+        if (verbose) {
+            Map<Integer, Integer> sphMap;
+            try {
+                sphMap = m_messenger.getSitesPerHostMapFromZK();
+            } catch (KeeperException | InterruptedException | JSONException e) {
+                hostLog.warn("Failed to get sitesperhost information from Zookeeper", e);
+                sphMap = null;
+            }
+            int kFactor = deployment.getKfactor();
+            if (sphMap == null) {
+                logLines.put("deployment1",
+                        String.format("Cluster has %d hosts with leader hostname: \"%s\". [unknown] local sites count. K = %d.",
+                                hostCount, VoltDB.instance().getConfig().m_leader, kFactor));
+                logLines.put("deployment2", "Unable to retrieve partition information from the cluster.");
+            } else {
+                int localSitesCount = sphMap.get(m_messenger.getHostId());
+                logLines.put("deployment1",
+                        String.format("Cluster has %d hosts with leader hostname: \"%s\". %d local sites count. K = %d.",
+                                hostCount, VoltDB.instance().getConfig().m_leader, localSitesCount, kFactor));
 
-        int replicas = kFactor + 1;
-        int partitionCount = sitesPerHost * hostCount / replicas;
-        logLines.put("deployment2",
-                String.format("The entire cluster has %d %s of%s %d logical partition%s.",
-                replicas,
-                replicas > 1 ? "copies" : "copy",
-                partitionCount > 1 ? " each of the" : "",
-                partitionCount,
-                partitionCount > 1 ? "s" : ""));
+                int totalSitesCount = 0;
+                for (Map.Entry<Integer, Integer> e : sphMap.entrySet()) {
+                    totalSitesCount += e.getValue();
+                }
+                int replicas = kFactor + 1;
+                int partitionCount = totalSitesCount / replicas;
+                logLines.put("deployment2",
+                        String.format("The entire cluster has %d %s of%s %d logical partition%s.",
+                                replicas,
+                                replicas > 1 ? "copies" : "copy",
+                                        partitionCount > 1 ? " each of the" : "",
+                                                partitionCount,
+                                                partitionCount > 1 ? "s" : ""));
+            }
+        }
 
         // voltdb root
-        logLines.put("voltdbroot", "Using \"" + cluster.getVoltroot() + "\" for voltdbroot directory.");
+        logLines.put("voltdbroot", "Using \"" + VoltDB.instance().getVoltDBRootPath() + "\" for voltdbroot directory.");
 
         // partition detection
         if (cluster.getNetworkpartition()) {
@@ -329,7 +482,7 @@ public class CatalogContext {
                 msg = String.valueOf(ssched.getFrequencyvalue()) + " hours";
                 break;
             }
-            logLines.put("snapshot-schedule1", "Automatic snapshots enabled, saved to " + ssched.getPath() +
+            logLines.put("snapshot-schedule1", "Automatic snapshots enabled, saved to " + VoltDB.instance().getSnapshotPath() +
                          " and named with prefix '" + ssched.getPrefix() + "'.");
             logLines.put("snapshot-schedule2", "Database will retain a history of " + ssched.getRetain() +
                          " snapshots, generated every " + msg + ".");
@@ -338,12 +491,91 @@ public class CatalogContext {
         return logLines;
     }
 
+    public InMemoryJarfile getCatalogJar() {
+        return m_catalogInfo.m_jarfile;
+    }
+
     public long getCatalogCRC() {
-        return catalogCRC;
+        return m_catalogInfo.m_catalogCRC;
     }
 
     public byte[] getCatalogHash()
     {
-        return catalogHash;
+        return m_catalogInfo.m_catalogHash;
+    }
+
+    public byte[] getDeploymentHash() {
+        return m_catalogInfo.m_deploymentHash;
+    }
+
+    /**
+     * @param catalogHash
+     * @param deploymentHash
+     * @return true if the prepared catalog mismatch the catalog update invocation, false otherwise
+     */
+    public boolean checkMismatchedPreparedCatalog(byte[] catalogHash, byte[] deploymentHash) {
+        if (m_preparedCatalogInfo == null) {
+            // this is the replay case that does not prepare the catalog
+            return false;
+        }
+
+        if (!Arrays.equals(m_preparedCatalogInfo.m_catalogHash, catalogHash) ||
+            !Arrays.equals(m_preparedCatalogInfo.m_deploymentHash, deploymentHash)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Get the JAXB XML Deployment object, which is memoized
+     */
+    public DeploymentType getDeployment()
+    {
+        if (m_memoizedDeployment == null) {
+            m_memoizedDeployment = CatalogUtil.getDeployment(
+                    new ByteArrayInputStream(m_catalogInfo.m_deploymentBytes));
+            // This should NEVER happen
+            if (m_memoizedDeployment == null) {
+                VoltDB.crashLocalVoltDB("The internal deployment bytes are invalid.  This should never occur; please contact VoltDB support with your logfiles.");
+            }
+        }
+        return m_memoizedDeployment;
+    }
+
+    /**
+     * Get the XML Deployment bytes
+     */
+    public byte[] getDeploymentBytes()
+    {
+        return m_catalogInfo.m_deploymentBytes;
+    }
+
+    public String getCatalogLogString() {
+        return String.format("Catalog: catalog hash %s, deployment hash %s, version %d",
+                                Encoder.hexEncode(m_catalogInfo.m_catalogHash).substring(0, 10),
+                                Encoder.hexEncode(m_catalogInfo.m_deploymentHash).substring(0, 10),
+                                catalogVersion);
+    }
+
+    /**
+     * Get the raw bytes of a catalog file for shipping around.
+     */
+    public byte[] getCatalogJarBytes() throws IOException {
+        if (m_catalogInfo.m_jarfile == null) {
+            return null;
+        }
+        return m_catalogInfo.m_jarfile.getFullJarBytes();
+    }
+
+
+    /**
+     * Get a file/entry (as bytes) given a key/path in the source jar.
+     *
+     * @param key In-jar path to file.
+     * @return byte[] or null if the file doesn't exist.
+     */
+    public byte[] getFileInJar(String key) {
+        return m_catalogInfo.m_jarfile.get(key);
     }
 }

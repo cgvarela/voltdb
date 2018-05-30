@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,35 +24,42 @@ import java.util.List;
 import java.util.Map;
 
 import org.json_voltpatches.JSONException;
+import org.json_voltpatches.JSONString;
 import org.json_voltpatches.JSONStringer;
 
 /**
  *
  */
-public class PlanNodeList extends PlanNodeTree implements Comparable<PlanNodeList> {
+public class PlanNodeList implements JSONString, Comparable<PlanNodeList> {
+    private static final String EXECUTE_LIST_MEMBER_NAME = "EXECUTE_LIST";
+    private static final String EXECUTE_LISTS_MEMBER_NAME = "EXECUTE_LISTS";
+    private static final String IS_LARGE_QUERY_MEMBER_NAME = "IS_LARGE_QUERY";
 
-    public enum Members {
-        EXECUTE_LIST,
-        EXECUTE_LISTS;
-    }
-
-    protected List<List<AbstractPlanNode>> m_executeLists = new ArrayList<List<AbstractPlanNode>>();
+    protected PlanNodeTree m_tree;
+    protected List<List<AbstractPlanNode>> m_executeLists = new ArrayList<>();
+    protected boolean m_isLargeQuery = false;
 
     public PlanNodeList() {
         super();
     }
 
-    public PlanNodeList(AbstractPlanNode root_node) {
-        super(root_node);
+    public PlanNodeList(PlanNodeTree tree, boolean isLargeQuery) {
+        m_tree = tree;
         try {
             // Construct execute lists for all sub statement
-            for(List<AbstractPlanNode> nodeList : m_planNodesListMap.values()) {
+            for (List<AbstractPlanNode> nodeList : m_tree.m_planNodesListMap.values()) {
                 List<AbstractPlanNode> list = constructList(nodeList);
                 m_executeLists.add(list);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
+
+        m_isLargeQuery = isLargeQuery;
+    }
+
+    public PlanNodeList(AbstractPlanNode root_node, boolean isLargeQuery) {
+        this(new PlanNodeTree(root_node), isLargeQuery);
     }
 
     public List<AbstractPlanNode> getExecutionList() {
@@ -65,10 +72,14 @@ public class PlanNodeList extends PlanNodeTree implements Comparable<PlanNodeLis
         return m_executeLists.get(idx);
     }
 
+    public AbstractPlanNode getRootPlanNode() {
+        return m_tree.getRootPlanNode();
+    }
+
     @Override
     public String toString() {
-        String ret = "EXECUTE LISTS: " + m_planNodesListMap.size() + " lists\n";
-        for (Map.Entry<Integer, List<AbstractPlanNode>> entry : m_planNodesListMap.entrySet()) {
+        String ret = "EXECUTE LISTS: " + m_tree.m_planNodesListMap.size() + " lists\n";
+        for (Map.Entry<Integer, List<AbstractPlanNode>> entry : m_tree.m_planNodesListMap.entrySet()) {
             List<AbstractPlanNode> nodeList = entry.getValue();
             ret = "\tEXECUTE LIST id:" + entry.getKey() + " ," + nodeList.size() + " nodes\n";
             for (int ctr = 0, cnt = nodeList.size(); ctr < cnt; ctr++) {
@@ -85,7 +96,7 @@ public class PlanNodeList extends PlanNodeTree implements Comparable<PlanNodeLis
         // If any node has no children, put it in the execute list
         //
         List<AbstractPlanNode> execute_list = Collections.synchronizedList(new ArrayList<AbstractPlanNode>());
-        Map<AbstractPlanNode, Integer> child_cnts = new HashMap<AbstractPlanNode, Integer>();
+        Map<AbstractPlanNode, Integer> child_cnts = new HashMap<>();
         for (AbstractPlanNode node : planNodes) {
             int num_of_children = node.getChildCount();
             if (num_of_children == 0) {
@@ -98,7 +109,7 @@ public class PlanNodeList extends PlanNodeTree implements Comparable<PlanNodeLis
         // Now run through a simulation
         // Doing it this way maintains the nuances of the parent-child relationships
         //
-        List<AbstractPlanNode> list = new ArrayList<AbstractPlanNode>();
+        List<AbstractPlanNode> list = new ArrayList<>();
         while (!execute_list.isEmpty()) {
             AbstractPlanNode node = execute_list.remove(0);
             //
@@ -150,21 +161,23 @@ public class PlanNodeList extends PlanNodeTree implements Comparable<PlanNodeLis
 
     @Override
     public String toJSONString() {
-        JSONStringer stringer = new JSONStringer();
         try {
+            JSONStringer stringer = new JSONStringer();
             stringer.object();
-            super.toJSONString(stringer);
+            m_tree.toJSONString(stringer);
 
             if (m_executeLists.size() == 1) {
-                stringer.key(Members.EXECUTE_LIST.name()).array();
-                for (AbstractPlanNode node : m_executeLists.get(0)) {
+                stringer.key(EXECUTE_LIST_MEMBER_NAME).array();
+                List<AbstractPlanNode> list = m_executeLists.get(0);
+                for (AbstractPlanNode node : list) {
                     stringer.value(node.getPlanNodeId().intValue());
                 }
                 stringer.endArray(); //end execution list
-            } else {
-                stringer.key(Members.EXECUTE_LISTS.name()).array();
+            }
+            else {
+                stringer.key(EXECUTE_LISTS_MEMBER_NAME).array();
                 for (List<AbstractPlanNode> list : m_executeLists) {
-                    stringer.object().key(Members.EXECUTE_LIST.name()).array();
+                    stringer.object().key(EXECUTE_LIST_MEMBER_NAME).array();
                     for (AbstractPlanNode node : list) {
                         stringer.value(node.getPlanNodeId().intValue());
                     }
@@ -173,8 +186,12 @@ public class PlanNodeList extends PlanNodeTree implements Comparable<PlanNodeLis
                 stringer.endArray(); //end execution list
             }
 
+            stringer.keySymbolValuePair(IS_LARGE_QUERY_MEMBER_NAME, m_isLargeQuery);
+
             stringer.endObject(); //end PlanNodeList
-        } catch (JSONException e) {
+            return stringer.toString();
+        }
+        catch (JSONException e) {
             // HACK ugly ugly to make the JSON handling
             // in QueryPlanner generate a JSONException for a plan we know
             // here that we can't serialize.  Making this method throw
@@ -183,7 +200,6 @@ public class PlanNodeList extends PlanNodeTree implements Comparable<PlanNodeLis
             // Consider this the coward's way out.
             return "This JSON error message is a lie";
         }
-        return stringer.toString();
     }
 
     public String toDOTString(String name) {

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -322,10 +322,42 @@ TEST_F(ExpressionTest, SimpleAddition) {
     e.push(new CV(EXPRESSION_TYPE_VALUE_CONSTANT, VALUE_TYPE_TINYINT, 1, (int64_t)1));
     e.push(new AE(EXPRESSION_TYPE_OPERATOR_PLUS, VALUE_TYPE_TINYINT, 1));
     e.push(new CV(EXPRESSION_TYPE_VALUE_CONSTANT, VALUE_TYPE_TINYINT, 1, (int64_t)4));
-    auto_ptr<AbstractExpression> testexp(convertToExpression(e));
+    boost::scoped_ptr<AbstractExpression> testexp(convertToExpression(e));
 
     NValue result = testexp->eval(&junk,NULL);
     ASSERT_EQ(ValuePeeker::peekAsBigInt(result), 5LL);
+}
+
+/*
+ * Show that unary minus works with the framework
+ */
+TEST_F(ExpressionTest, SimpleUnaryMinus) {
+    queue<AE*> e;
+    TableTuple junk;
+
+    // -5
+    e.push(new CV(EXPRESSION_TYPE_VALUE_CONSTANT, VALUE_TYPE_TINYINT, 1, (int64_t)5));
+    e.push(new AE(EXPRESSION_TYPE_OPERATOR_UNARY_MINUS, VALUE_TYPE_TINYINT, 1));
+    // dummy right expression to prevent segmentation fault
+    // since unary minus is the only arithmetic operator with one operand
+    e.push(NULL);
+
+    boost::scoped_ptr<AbstractExpression> testexp1(convertToExpression(e));
+    NValue r1 = testexp1->eval(&junk,NULL);
+    ASSERT_EQ(ValuePeeker::peekAsBigInt(r1), -5LL);
+
+    // -(-3)
+    e.push(new CV(EXPRESSION_TYPE_VALUE_CONSTANT, VALUE_TYPE_TINYINT, 1, (int64_t)3));
+    e.push(new AE(EXPRESSION_TYPE_OPERATOR_UNARY_MINUS, VALUE_TYPE_TINYINT, 1));
+    // dummy right expression to prevent segmentation fault
+    e.push(NULL);
+    e.push(new AE(EXPRESSION_TYPE_OPERATOR_UNARY_MINUS, VALUE_TYPE_TINYINT, 1));
+    // dummy right expression to prevent segmentation fault
+    e.push(NULL);
+
+    boost::scoped_ptr<AbstractExpression> testexp2(convertToExpression(e));
+    NValue r2 = testexp2->eval(&junk,NULL);
+    ASSERT_EQ(ValuePeeker::peekAsBigInt(r2), 3LL);
 }
 
 /*
@@ -342,7 +374,7 @@ TEST_F(ExpressionTest, SimpleMultiplication) {
     e.push(new AE(EXPRESSION_TYPE_OPERATOR_MULTIPLY, VALUE_TYPE_TINYINT, 1));
     e.push(new CV(EXPRESSION_TYPE_VALUE_CONSTANT, VALUE_TYPE_TINYINT, 1, (int64_t)5));
 
-    auto_ptr<AbstractExpression> e1(convertToExpression(e));
+    boost::scoped_ptr<AbstractExpression> e1(convertToExpression(e));
     NValue r1 = e1->eval(&junk,NULL);
     ASSERT_EQ(ValuePeeker::peekAsBigInt(r1), 25LL);
 
@@ -353,9 +385,23 @@ TEST_F(ExpressionTest, SimpleMultiplication) {
     e.push(new AE(EXPRESSION_TYPE_OPERATOR_PLUS, VALUE_TYPE_TINYINT, 1));
     e.push(new CV(EXPRESSION_TYPE_VALUE_CONSTANT, VALUE_TYPE_TINYINT, 1, (int64_t)3));
 
-    auto_ptr<AbstractExpression> e2(convertToExpression(e));
+    boost::scoped_ptr<AbstractExpression> e2(convertToExpression(e));
     NValue r2 = e2->eval(&junk,NULL);
     ASSERT_EQ(ValuePeeker::peekAsBigInt(r2), 13LL);
+
+    // -(1 + 4) * 5
+    e.push(new CV(EXPRESSION_TYPE_VALUE_CONSTANT, VALUE_TYPE_TINYINT, 1, (int64_t)1));
+    e.push(new AE(EXPRESSION_TYPE_OPERATOR_PLUS, VALUE_TYPE_TINYINT, 1));
+    e.push(new CV(EXPRESSION_TYPE_VALUE_CONSTANT, VALUE_TYPE_TINYINT, 1, (int64_t)4));
+    e.push(new AE(EXPRESSION_TYPE_OPERATOR_UNARY_MINUS, VALUE_TYPE_TINYINT, 1));
+    // dummy right expression to prevent segmentation fault
+    e.push(NULL);
+    e.push(new AE(EXPRESSION_TYPE_OPERATOR_MULTIPLY, VALUE_TYPE_TINYINT, 1));
+    e.push(new CV(EXPRESSION_TYPE_VALUE_CONSTANT, VALUE_TYPE_TINYINT, 1, (int64_t)5));
+
+    boost::scoped_ptr<AbstractExpression> testexp3(convertToExpression(e));
+    NValue r3 = testexp3->eval(&junk,NULL);
+    ASSERT_EQ(ValuePeeker::peekAsBigInt(r3), -25LL);
 }
 
 /*
@@ -377,12 +423,12 @@ TEST_F(ExpressionTest, HashRange) {
             { range3Min, range3Max}
     };
 
-    auto_ptr<AE> ae(new HR(1, ranges, 3));
+    boost::scoped_ptr<AE> ae(new HR(1, ranges, 3));
     Json::Value json = ae->serializeValue();
     Json::FastWriter writer;
     std::string jsonText = writer.write(json);
     PlannerDomRoot domRoot(jsonText.c_str());
-    auto_ptr<AbstractExpression> e1(AbstractExpression::buildExpressionTree(domRoot.rootObject()));
+    boost::scoped_ptr<AbstractExpression> e1(AbstractExpression::buildExpressionTree(domRoot.rootObject()));
 
     vector<std::string> columnNames;
     columnNames.push_back("foo");
@@ -456,4 +502,3 @@ TEST_F(ExpressionTest, Timestamp) {
 int main() {
      return TestSuite::globalInstance()->runAll();
 }
-

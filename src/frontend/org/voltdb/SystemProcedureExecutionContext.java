@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,25 +18,38 @@
 package org.voltdb;
 
 import java.util.List;
+import java.util.Map;
 
 import org.voltcore.utils.DBBPool;
 import org.voltcore.utils.Pair;
+import org.voltdb.DRConsumerDrIdTracker.DRSiteDrIdTracker;
 import org.voltdb.catalog.Cluster;
 import org.voltdb.catalog.Database;
 import org.voltdb.catalog.Procedure;
 import org.voltdb.dtxn.SiteTracker;
+import org.voltdb.iv2.InitiatorMailbox;
+import org.voltdb.settings.ClusterSettings;
+import org.voltdb.settings.NodeSettings;
 
 public interface SystemProcedureExecutionContext {
     public Database getDatabase();
 
     public Cluster getCluster();
 
+    public ClusterSettings getClusterSettings();
+
+    public NodeSettings getPaths();
+
     public long getSpHandleForSnapshotDigest();
 
     public long getSiteId();
 
+    public int getLocalSitesCount();
+
     // does this site have "lowest site id" responsibilities.
     public boolean isLowestSiteId();
+
+    public int getClusterId();
 
     public int getHostId();
 
@@ -66,7 +79,10 @@ public interface SystemProcedureExecutionContext {
     public void updateBackendLogLevels();
 
     public boolean updateCatalog(String catalogDiffCommands, CatalogContext context,
-            CatalogSpecificPlanner csp, boolean requiresSnapshotIsolation);
+            boolean requiresSnapshotIsolation, long txnId, long uniqueId, long spHandle, boolean isReplay,
+            boolean requireCatalogDiffCmdsApplyToEE, boolean requiresNewExportGeneration);
+
+    public boolean updateSettings(CatalogContext context);
 
     public TheHashinator getCurrentHashinator();
 
@@ -81,6 +97,28 @@ public interface SystemProcedureExecutionContext {
 
     public void forceAllDRNodeBuffersToDisk(final boolean nofsync);
 
+    public DRIdempotencyResult isExpectedApplyBinaryLog(int producerClusterId, int producerPartitionId,
+                                                        long logId);
+
+    public void appendApplyBinaryLogTxns(int producerClusterId, int producerPartitionId,
+                                         long localUniqueId, DRConsumerDrIdTracker tracker);
+
+    public void recoverWithDrAppliedTrackers(Map<Integer, Map<Integer, DRSiteDrIdTracker>> trackers);
+
+    public void resetDrAppliedTracker();
+
+    public void resetDrAppliedTracker(byte clusterId);
+
+    public boolean hasRealDrAppliedTracker(byte clusterId);
+
+    public void initDRAppliedTracker(Map<Byte, Integer> clusterIdToPartitionCountMap, boolean hasReplicatedStream);
+
+    public Map<Integer, Map<Integer, DRSiteDrIdTracker>> getDrAppliedTrackers();
+
+    public Pair<Long, Long> getDrLastAppliedUniqueIds();
+
     Pair<Long, int[]> tableStreamSerializeMore(int tableId, TableStreamType type,
                                                List<DBBPool.BBContainer> outputBuffers);
+
+    public InitiatorMailbox getInitiatorMailbox();
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -38,9 +38,11 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.voltdb.BackendTarget;
+import org.voltdb.ProcedurePartitionData;
 import org.voltdb.ServerThread;
 import org.voltdb.VoltDB.Configuration;
 import org.voltdb.client.ArbitraryDurationProc;
+import org.voltdb.client.ClientConfig;
 import org.voltdb.client.TestClientFeatures;
 import org.voltdb.compiler.VoltProjectBuilder;
 import org.voltdb.utils.MiscUtils;
@@ -67,10 +69,11 @@ public class TestJDBCMultiConnection {
         m_projectBuilder = new VoltProjectBuilder();
         m_projectBuilder.addLiteralSchema(ddl);
         m_projectBuilder.addSchema(TestClientFeatures.class.getResource("clientfeatures.sql"));
-        m_projectBuilder.addProcedures(ArbitraryDurationProc.class);
+        m_projectBuilder.addProcedure(ArbitraryDurationProc.class);
         m_projectBuilder.addPartitionInfo("TT", "A1");
         m_projectBuilder.addPartitionInfo("ORDERS", "A1");
-        m_projectBuilder.addStmtProcedure("InsertA", "INSERT INTO TT VALUES(?,?);", "TT.A1: 0");
+        m_projectBuilder.addStmtProcedure("InsertA", "INSERT INTO TT VALUES(?,?);",
+                new ProcedurePartitionData("TT", "A1"));
         m_projectBuilder.addStmtProcedure("SelectB", "SELECT * FROM TT;");
         boolean success = m_projectBuilder.compile(Configuration.getPathToCatalogForTest("jdbcreconnecttest.jar"), 3, 1, 0);
         assert(success);
@@ -101,7 +104,12 @@ public class TestJDBCMultiConnection {
     {
         Class.forName("org.voltdb.jdbc.Driver");
         for (int i = 0; i < m_connections.length; ++i) {
-            m_connections[i] = DriverManager.getConnection("jdbc:voltdb://localhost:21212");
+            if (ClientConfig.ENABLE_SSL_FOR_TEST) {
+                m_connections[i] = DriverManager.getConnection("jdbc:voltdb://localhost:21212?" + JDBCTestCommons.SSL_URL_SUFFIX);
+            }
+            else {
+                m_connections[i] = DriverManager.getConnection("jdbc:voltdb://localhost:21212");
+            }
         }
     }
 

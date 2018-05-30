@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -44,23 +44,18 @@
  */
 
 #include "tuplescanexecutor.h"
-#include "common/debuglog.h"
-#include "common/common.h"
-#include "common/tabletuple.h"
 #include "plannodes/tuplescannode.h"
-#include "storage/table.h"
-#include "storage/temptable.h"
 
 using namespace voltdb;
 
 bool TupleScanExecutor::p_init(AbstractPlanNode* abstract_node,
-                             TempTableLimits* limits)
+                               const ExecutorVector& executorVector)
 {
     VOLT_TRACE("init TupleScan Executor");
     TupleScanPlanNode* node = dynamic_cast<TupleScanPlanNode*>(abstract_node);
     assert(node);
 
-    setTempOutputTable(limits, node->getTargetTableName());
+    setTempOutputTable(executorVector, node->getTargetTableName());
     return true;
 }
 
@@ -69,7 +64,7 @@ bool TupleScanExecutor::p_execute(const NValueArray &params) {
     assert(node == dynamic_cast<TupleScanPlanNode*>(m_abstractNode));
     Table* output_table = node->getOutputTable();
     assert(output_table);
-    TempTable* output_temp_table = dynamic_cast<TempTable*>(output_table);
+    AbstractTempTable* output_temp_table = dynamic_cast<AbstractTempTable*>(output_table);
     assert(output_temp_table);
 
     TableTuple temp_tuple = output_temp_table->tempTuple();
@@ -80,7 +75,7 @@ bool TupleScanExecutor::p_execute(const NValueArray &params) {
         temp_tuple.setNValue(i, params[paramIdxs[i]]);
     }
 
-    output_temp_table->insertTupleNonVirtual(temp_tuple);
+    output_temp_table->insertTempTuple(temp_tuple);
     VOLT_TRACE("\n%s\n", output_table->debug().c_str());
     VOLT_DEBUG("Finished Tuple scanning");
 

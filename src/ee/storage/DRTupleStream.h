@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,126 +18,167 @@
 #ifndef DRTUPLESTREAM_H_
 #define DRTUPLESTREAM_H_
 
-#include "common/ids.h"
-#include "common/tabletuple.h"
-#include "common/FatalException.hpp"
-#include "storage/TupleStreamBase.h"
-#include <deque>
-#include <cassert>
+#include "storage/AbstractDRTupleStream.h"
 
 namespace voltdb {
 class StreamBlock;
 class TableIndex;
 
-// Extra space to write a StoredProcedureInvocation wrapper in Java without copying
-const int MAGIC_DR_TRANSACTION_PADDING = 69;
-const int SECONDARY_BUFFER_SIZE = (45 * 1024 * 1024) + 4096;
-
-class DRTupleStream : public voltdb::TupleStreamBase {
+class DRTupleStream : public voltdb::AbstractDRTupleStream {
 public:
-    //Version(1), type(1), drId(8), uniqueId(8), checksum(4)
-    static const size_t BEGIN_RECORD_SIZE = 1 + 1 + 8 + 8 + 4;
-    //Version(1), type(1), drId(8), checksum(4)
-    static const size_t END_RECORD_SIZE = 1 + 1 + 8 + 4;
-    //Version(1), type(1), table signature(8), checksum(4)
-    static const size_t TXN_RECORD_HEADER_SIZE = 1 + 1 + 4 + 8;
-    static const uint8_t DR_VERSION = 1;
+    //Version(1), type(1), drId(8), uniqueId(8), hashFlag(1), txnLength(4), parHash(4)
+    static const size_t BEGIN_RECORD_SIZE = 1 + 1 + 8 + 8 + 1 + 4 + 4;
+    //Version(1), type(1), drId(8), uniqueId(8)
+    static const size_t BEGIN_RECORD_HEADER_SIZE = 1 + 1 + 8 + 8;
+    //Type(1), drId(8), checksum(4)
+    static const size_t END_RECORD_SIZE = 1 + 8 + 4;
+    //Type(1), table signature(8)
+    static const size_t TXN_RECORD_HEADER_SIZE = 1 + 8;
+    //Type(1), parHash(4)
+    static const size_t HASH_DELIMITER_SIZE = 1 + 4;
 
-    DRTupleStream();
+    // Also update DRProducerProtocol.java if version changes
+    // whenever PROTOCOL_VERSION changes, check if DRBufferParser needs to be updated,
+    // check if unit tests that use MockPartitionQueue and getTestDRBuffer() need to be updated
+    static const uint8_t PROTOCOL_VERSION = 8;
+    static const uint8_t COMPATIBLE_PROTOCOL_VERSION = 7;
 
-    virtual ~DRTupleStream() {
-    }
+    static const uint8_t ELASTICADD_PROTOCOL_VERSION = 8;
+    static const uint8_t NO_REPLICATED_STREAM_PROTOCOL_VERSION = 9;
 
-    void configure(CatalogId partitionId) {
-        m_partitionId = partitionId;
-    }
+    DRTupleStream(int partitionId, size_t defaultBufferSize, uint8_t drProtocolVersion=PROTOCOL_VERSION);
 
-    // for test purpose
-    virtual void setSecondaryCapacity(size_t capacity);
+    virtual ~DRTupleStream() {}
 
-    virtual void rollbackTo(size_t mark);
-
-    virtual void pushExportBuffer(StreamBlock *block, bool sync, bool endOfStream);
-
-    /** write a tuple to the stream */
+    /**
+     * write an insert or delete record to the stream
+     * for active-active conflict detection purpose, write full row image for delete records.
+     * */
     virtual size_t appendTuple(int64_t lastCommittedSpHandle,
                        char *tableHandle,
-                       int64_t txnId,
+                       int partitionColumn,
                        int64_t spHandle,
                        int64_t uniqueId,
                        TableTuple &tuple,
-                       DRRecordType type,
-                       const TableIndex *uniqueIndex = NULL,
-                       uint32_t uniqueIndexCrc = 0);
+                       DRRecordType type);
+
+    /**
+     * write an update record to the stream
+     * for active-active conflict detection purpose, write full before image for update records.
+     * */
+    virtual size_t appendUpdateRecord(int64_t lastCommittedSpHandle,
+                       char *tableHandle,
+                       int partitionColumn,
+                       int64_t spHandle,
+                       int64_t uniqueId,
+                       TableTuple &oldTuple,
+                       TableTuple &newTuple);
 
     virtual size_t truncateTable(int64_t lastCommittedSpHandle,
                        char *tableHandle,
                        std::string tableName,
-                       int64_t txnId,
+                       int partitionColumn,
                        int64_t spHandle,
                        int64_t uniqueId);
 
-    size_t computeOffsets(TableTuple &tuple, size_t &rowHeaderSz, size_t &rowMetadataSz, const std::vector<int>* interestingColumns);
-
-    void beginTransaction(int64_t sequenceNumber, int64_t uniqueId);
+    virtual void beginTransaction(int64_t sequenceNumber, int64_t spHandle, int64_t uniqueId);
     // If a transaction didn't generate any binary log data, calling this
     // would be a no-op because it was never begun.
-    void endTransaction();
+    virtual void endTransaction(int64_t uniqueId);
 
-    bool checkOpenTransaction(StreamBlock *sb, size_t minLength, size_t& blockSize, size_t& uso);
+    virtual bool checkOpenTransaction(StreamBlock *sb, size_t minLength, size_t& blockSize, size_t& uso);
 
-    std::pair<int64_t, int64_t> getLastCommittedSequenceNumberAndUniqueId() { return std::pair<int64_t, int64_t>(m_committedSequenceNumber, m_committedUniqueId); }
-    void setLastCommittedSequenceNumber(int64_t sequenceNumber);
+    virtual DRCommittedInfo getLastCommittedSequenceNumberAndUniqueIds()
+    {
+        return DRCommittedInfo(m_committedSequenceNumber, m_lastCommittedSpUniqueId, m_lastCommittedMpUniqueId);
+    }
 
-    bool m_enabled;
+    virtual void generateDREvent(DREventType type, int64_t lastCommittedSpHandle, int64_t spHandle,
+                                 int64_t uniqueId, ByteArray catalogCommands);
 
-    static int32_t getTestDRBuffer(char *out);
+    static int32_t getTestDRBuffer(uint8_t drProtocolVersion,
+                                   int32_t partitionId,
+                                   std::vector<int32_t> partitionKeyValueList,
+                                   std::vector<int32_t> flagList,
+                                   long startSequenceNumber,
+                                   char *out);
+
+    void setDrProtocolVersion(uint8_t drProtocolVersion) {
+            m_drProtocolVersion = drProtocolVersion;
+            m_hasReplicatedStream = (drProtocolVersion < NO_REPLICATED_STREAM_PROTOCOL_VERSION);
+    }
+
 private:
-    CatalogId m_partitionId;
-    size_t m_secondaryCapacity;
-    bool m_opened;
+    bool transactionChecks(int64_t lastCommittedSpHandle, int64_t spHandle, int64_t uniqueId);
+
+    void writeRowTuple(TableTuple& tuple,
+            size_t rowHeaderSz,
+            size_t rowMetadataSz,
+            ExportSerializeOutput &io);
+
+    size_t computeOffsets(DRRecordType &type,
+            TableTuple &tuple,
+            size_t &rowHeaderSz,
+            size_t &rowMetadataSz);
+
+    /**
+     * calculate hash for the partition key of the given tuple,
+     * partitionColumn should be an non-negative integer
+     */
+    int64_t getParHashForTuple(TableTuple& tuple, int partitionColumn);
+
+    /**
+     * check the paritition key hash of the current record
+     * and return true if it is different from the previous hash seen in the txn
+     * updates m_hashFlag based on the hashes and records the first hash in the txn
+     * first hash will be 0 if it is DR stream for replicated table
+     * or the first record is TRUNCATE_TABLE
+     */
+    bool updateParHash(bool isReplicatedTable, int64_t parHash);
+
+    void writeEventData(DREventType type, ByteArray payloads);
+
+    const DRTxnPartitionHashFlag m_initialHashFlag;
+    DRTxnPartitionHashFlag m_hashFlag;
+    int64_t m_firstParHash;
+    int64_t m_lastParHash;
+    bool m_hasReplicatedStream;
+    bool m_wasFirstChangeReplicatedTable;
+    bool m_wasLastChangeReplicatedTable;
+    size_t m_beginTxnUso;
+
+    int64_t m_lastCommittedSpUniqueId;
+    int64_t m_lastCommittedMpUniqueId;
 };
 
 class MockDRTupleStream : public DRTupleStream {
 public:
-    MockDRTupleStream() : DRTupleStream() {}
+    MockDRTupleStream(int partitionId) : DRTupleStream(partitionId, 1024) {}
     size_t appendTuple(int64_t lastCommittedSpHandle,
                            char *tableHandle,
-                           int64_t txnId,
+                           int partitionColumn,
                            int64_t spHandle,
                            int64_t uniqueId,
                            TableTuple &tuple,
-                           DRRecordType type,
-                           const TableIndex *uniqueIndex = NULL,
-                           uint32_t uniqueIndexCrc = 0) {
+                           DRRecordType type)
+    {
         return 0;
     }
 
-    void pushExportBuffer(StreamBlock *block, bool sync, bool endOfStream) {}
+    void pushExportBuffer(StreamBlock *block, bool sync) {}
+    void pushEndOfStream() {}
 
-    void rollbackTo(size_t mark) {}
+    void rollbackTo(size_t mark, size_t drRowCost) {}
 
     size_t truncateTable(int64_t lastCommittedSpHandle,
                        char *tableHandle,
                        std::string tableName,
-                       int64_t txnId,
+                       int partitionColumn,
                        int64_t spHandle,
-                       int64_t uniqueId) {
+                       int64_t uniqueId)
+    {
         return 0;
     }
-};
-
-class DRTupleStreamDisableGuard {
-public:
-    DRTupleStreamDisableGuard(DRTupleStream *stream) : m_stream(stream), m_oldValue(stream->m_enabled) {
-        stream->m_enabled = false;
-    }
-    ~DRTupleStreamDisableGuard() {
-        m_stream->m_enabled = m_oldValue;
-    }
-private:
-    DRTupleStream *m_stream;
-    const bool m_oldValue;
 };
 
 }

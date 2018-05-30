@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,14 +16,17 @@
  */
 package org.voltdb.utils;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+
 import org.voltcore.utils.DBBPool;
 import org.voltcore.utils.DBBPool.BBContainer;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.*;
-import java.nio.*;
-import java.nio.channels.*;
+import com.google_voltpatches.common.base.Throwables;
 
 /*
  * Extend the File class and override its constructors to allow a property to be specified
@@ -82,7 +85,7 @@ public class VoltFile extends File {
             throw new IOException("\"" + m_root + "\" exists but is not writable");
         }
         if (!m_root.canExecute()) {
-            throw new IOException("\"" + m_root + "\" exists but is not writable");
+            throw new IOException("\"" + m_root + "\" exists but is not executable");
         }
     }
 
@@ -111,6 +114,26 @@ public class VoltFile extends File {
         return tempFile;
     }
 
+    public static File getServerSpecificRoot(String hostId, boolean clearLocalDataDirectories) {
+        try {
+            ensureUserRootExists();
+            //We need this not just number as DR uses 2 clusters and dont have to collide directories.
+            File tempUserDir = new File(m_root, hostId + "-" + String.valueOf(System.nanoTime()));
+            Thread.sleep(0, 1);
+            if (!tempUserDir.isDirectory()) {
+                if (!tempUserDir.mkdir()) {
+                    return null;
+                }
+            }
+            if (clearLocalDataDirectories) {
+                recursivelyDelete(tempUserDir);
+            }
+            return tempUserDir;
+        } catch (Exception ioe) {
+            Throwables.propagate(ioe);
+        }
+        return null;
+    }
     /*
      * Basic kill it with fire. Deletes everything in /tmp/${username} of
      * the actual filesystem (not one of the created subroots)
@@ -130,42 +153,44 @@ public class VoltFile extends File {
         assert(fromSubRoot.exists() && fromSubRoot.isDirectory());
         assert(toSubRoot.exists() && toSubRoot.isDirectory());
 
-        for (File f : fromSubRoot.listFiles()) {
-            File fInOtherSubroot = new File(toSubRoot, f.getName());
+        for (File file : fromSubRoot.listFiles()) {
+            File fInOtherSubroot = new File(toSubRoot, file.getName());
 
-            if (f.isDirectory()) {
+            if (file.isDirectory()) {
                 if (!fInOtherSubroot.exists()) {
                     if (!fInOtherSubroot.mkdir()) {
                         throw new IOException("Can't create directory " + fInOtherSubroot);
                     }
                 }
-                moveSubRootContents( f, fInOtherSubroot);
-            } else {
-                if (!fInOtherSubroot.exists()) {
-                    if (!fInOtherSubroot.createNewFile()) {
-                        throw new IOException();
-                    }
-
-                    FileInputStream fis = new FileInputStream(f);
-                    FileOutputStream fos = new FileOutputStream(fInOtherSubroot);
-                    FileChannel inputChannel = fis.getChannel();
-                    FileChannel outputChannel = fos.getChannel();
-                    BBContainer bufC = DBBPool.allocateDirect(8192);
-                    ByteBuffer buf = bufC.b();
-
-                    try {
-                        while (inputChannel.read(buf) != -1) {
-                            buf.flip();
-                            outputChannel.write(buf);
-                            buf.clear();
-                        }
-                        inputChannel.close();
-                        outputChannel.close();
-                    } finally {
-                        bufC.discard();
-                    }
-                } else {
+                moveSubRootContents(file, fInOtherSubroot);
+            }
+            else {
+                if (fInOtherSubroot.exists()) {
                     throw new IOException(fInOtherSubroot + " already exists");
+                }
+                if (!fInOtherSubroot.createNewFile()) {
+                    throw new IOException();
+                }
+
+                FileInputStream fis = new FileInputStream(file);
+                FileOutputStream fos = new FileOutputStream(fInOtherSubroot);
+                FileChannel inputChannel = fis.getChannel();
+                FileChannel outputChannel = fos.getChannel();
+                BBContainer bufC = DBBPool.allocateDirect(8192);
+                ByteBuffer buf = bufC.b();
+
+                try {
+                    while (inputChannel.read(buf) != -1) {
+                        buf.flip();
+                        outputChannel.write(buf);
+                        buf.clear();
+                    }
+                }
+                finally {
+                    // These calls to close() also close the channels.
+                    fis.close();
+                    fos.close();
+                    bufC.discard();
                 }
             }
         }
@@ -189,10 +214,25 @@ public class VoltFile extends File {
         m_voltFilePrefix = null;
     }
 
+    public static void recursivelyDelete(File file, boolean deleteRoot) throws IOException {
+        if (!file.exists()) {
+            return;
+        }
+
+        if (deleteRoot) {
+            recursivelyDelete(file);
+        }
+        else if (file.isDirectory()) {
+            for (File f : file.listFiles()) {
+                recursivelyDelete(f);
+            }
+        }
+    }
+
     /*
      * One of those why doesn't Java ship with this functions
      */
-    public static void recursivelyDelete(File f) throws IOException  {
+    public static void recursivelyDelete(File f) throws IOException {
         if (!f.exists()) {
             return;
         }
@@ -203,7 +243,8 @@ public class VoltFile extends File {
             if (!f.delete()) {
                 throw new IOException("Unable to delete directory " + f);
             }
-        } else {
+        }
+        else {
             if (!f.delete()) {
                 throw new IOException("Unable to delete file " + f);
             }
@@ -228,9 +269,8 @@ public class VoltFile extends File {
     public static String removeTestPrefix(final String path) {
         if (isTestPath(path)) {
             return path.substring(m_voltFilePrefix.getAbsolutePath().length());
-        } else {
-            return path;
         }
+        return path;
     }
 
     /*
@@ -245,18 +285,22 @@ public class VoltFile extends File {
      * of m_voltFilePrefix
      */
     private static String getFixedPathname(final String pathname) {
-        if (pathname == null) {
+        if (pathname == null || m_voltFilePrefix == null) {
             return pathname;
         }
         if (pathname.contains(m_magic)) {
-            return pathname;
+            if (pathname.contains(m_voltFilePrefix.getAbsolutePath())) {
+                return pathname;
+            }
+
+            int offset = pathname.indexOf(m_magic) + m_magic.length();
+            String relativePath = pathname.substring(offset);
+            // The this is probably a snapshot path and needs to be re-mapped to our snapshot
+            // directory because truncation snapshot requests specify absolute paths
+            return m_voltFilePrefix.getAbsolutePath() + relativePath;
         }
 
-        if (m_voltFilePrefix != null) {
-            return m_voltFilePrefix + File.separator + pathname;
-        } else {
-            return pathname;
-        }
+        return m_voltFilePrefix + File.separator + pathname;
     }
 
     public VoltFile(String parent, String child) {

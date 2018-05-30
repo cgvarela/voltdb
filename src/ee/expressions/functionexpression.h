@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -137,6 +137,8 @@ static const int FUNC_SPACE            = 138;
 static const int FUNC_SUBSTR           = 139;
 static const int FUNC_DATEDIFF         = 140;
 static const int FUNC_SECONDS_MIDNIGHT = 141;
+static const int FUNC_CSC              = 142;
+static const int FUNC_SEC              = 143;
 
 // Function ID offsets for specializations of EXTRACT and TRIM.
 // Individual ID values are based on various Tokens.java constants
@@ -244,6 +246,54 @@ static const int FUNC_VOLT_BIT_SHIFT_RIGHT             = 20028;
 static const int FUNC_VOLT_HEX                         = 20029;
 static const int FUNC_VOLT_BIN                         = 20030;
 
+static const int FUNC_VOLT_DATEADD                     = 20031;
+static const int FUNC_VOLT_DATEADD_YEAR                = 20032;
+static const int FUNC_VOLT_DATEADD_QUARTER             = 20033;
+static const int FUNC_VOLT_DATEADD_MONTH               = 20034;
+static const int FUNC_VOLT_DATEADD_DAY                 = 20035;
+static const int FUNC_VOLT_DATEADD_HOUR                = 20036;
+static const int FUNC_VOLT_DATEADD_MINUTE              = 20037;
+static const int FUNC_VOLT_DATEADD_SECOND              = 20038;
+static const int FUNC_VOLT_DATEADD_MILLISECOND         = 20039;
+static const int FUNC_VOLT_DATEADD_MICROSECOND         = 20040;
+static const int FUNC_VOLT_REGEXP_POSITION             = 20041;
+
+static const int FUNC_VOLT_ROUND                       = 20042;
+static const int FUNC_VOLT_STR                         = 20043;
+
+// our local function
+static const int FUNC_INET_NTOA                        = 20044;
+static const int FUNC_INET_ATON                        = 20045;
+static const int FUNC_INET6_NTOA                       = 20046;
+static const int FUNC_INET6_ATON                       = 20047;
+
+// Geospatial functions
+static const int FUNC_VOLT_POINTFROMTEXT               = 21000;
+static const int FUNC_VOLT_POLYGONFROMTEXT             = 21001;
+static const int FUNC_VOLT_CONTAINS                    = 21002;
+static const int FUNC_VOLT_POLYGON_NUM_INTERIOR_RINGS  = 21003;
+static const int FUNC_VOLT_POLYGON_NUM_POINTS          = 21004;
+static const int FUNC_VOLT_POINT_LATITUDE              = 21005;
+static const int FUNC_VOLT_POINT_LONGITUDE             = 21006;
+static const int FUNC_VOLT_POLYGON_CENTROID            = 21007;
+static const int FUNC_VOLT_POLYGON_AREA                = 21008;
+static const int FUNC_VOLT_DISTANCE                    = 21009;     // wrapper id for distance between all geo types
+static const int FUNC_VOLT_DISTANCE_POINT_POINT        = 21010;     // distance between point and point
+static const int FUNC_VOLT_DISTANCE_POLYGON_POINT      = 21011;     // distance between polygon and point
+static const int FUNC_VOLT_ASTEXT                      = 21012;     // wrapper function id for converting geography types into wkt
+static const int FUNC_VOLT_ASTEXT_GEOGRAPHY_POINT      = 21013;     // asText(<point value>)
+static const int FUNC_VOLT_ASTEXT_GEOGRAPHY            = 21014;     // asText(<geography value>)
+static const int FUNC_VOLT_IS_VALID_POLYGON            = 21015;     // Validate a polygon.
+static const int FUNC_VOLT_POLYGON_INVALID_REASON      = 21016;     // Reason a polygon is invalid.
+static const int FUNC_VOLT_DWITHIN                     = 21017;     // wrapper id for DWithin function
+static const int FUNC_VOLT_DWITHIN_POINT_POINT         = 21018;     // if two points are within certain distance of each other
+static const int FUNC_VOLT_DWITHIN_POLYGON_POINT       = 21019;     // if a polygon and a point are within certain distance of each other
+static const int FUNC_VOLT_VALIDPOLYGONFROMTEXT        = 21020;     // like polygonfromtext, but also validates the result
+static const int FUNC_VOLT_MIN_VALID_TIMESTAMP         = 21021;     // minimum valid timestamp
+static const int FUNC_VOLT_MAX_VALID_TIMESTAMP         = 21022;     // maximum valid timestamp
+static const int FUNC_VOLT_IS_VALID_TIMESTAMP          = 21023;     // is a timestamp valid
+static const int FUNC_VOLT_MAKE_VALID_POLYGON          = 21024;     // Make a polygon valid if necessary.
+
 // From Tokens.java.
 static const int SQL_TRIM_LEADING                     = 149;
 static const int SQL_TRIM_TRAILING                    = 284;
@@ -252,6 +302,9 @@ static const int SQL_TRIM_BOTH                        = 22;
 static const int FUNC_TRIM_LEADING_CHAR               = SQL_TRIM_VOLT_FUNC_OFFSET + SQL_TRIM_LEADING;
 static const int FUNC_TRIM_TRAILING_CHAR              = SQL_TRIM_VOLT_FUNC_OFFSET + SQL_TRIM_TRAILING;
 static const int FUNC_TRIM_BOTH_CHAR                  = SQL_TRIM_VOLT_FUNC_OFFSET + SQL_TRIM_BOTH;
+
+static const int FUNC_VOLT_UDF_ID_START                = 1000000;
+#define IS_USER_DEFINED_ID(id) (FUNC_VOLT_UDF_ID_START <= (id))
 
 }
 

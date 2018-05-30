@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,12 +17,15 @@
 package org.voltdb;
 
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.NoSuchElementException;
 
 import org.cliffc_voltpatches.high_scale_lib.NonBlockingHashMap;
 import org.cliffc_voltpatches.high_scale_lib.NonBlockingHashSet;
 import org.json_voltpatches.JSONObject;
 import org.voltcore.network.Connection;
 import org.voltdb.TheHashinator.HashinatorConfig;
+import org.voltdb.VoltTable.ColumnInfo;
 import org.voltdb.catalog.Procedure;
 import org.voltdb.client.ClientResponse;
 
@@ -35,7 +38,7 @@ import com.google_voltpatches.common.collect.ImmutableMap;
  */
 public class StatsAgent extends OpsAgent
 {
-    private final NonBlockingHashMap<StatsSelector, NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>>> registeredStatsSources =
+    private final NonBlockingHashMap<StatsSelector, NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>>> m_registeredStatsSources =
             new NonBlockingHashMap<StatsSelector, NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>>>();
 
     public StatsAgent()
@@ -43,7 +46,7 @@ public class StatsAgent extends OpsAgent
         super("StatsAgent");
         StatsSelector selectors[] = StatsSelector.values();
         for (int ii = 0; ii < selectors.length; ii++) {
-            registeredStatsSources.put(selectors[ii], new NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>>());
+            m_registeredStatsSources.put(selectors[ii], new NonBlockingHashMap<Long,NonBlockingHashSet<StatsSource>>());
         }
     }
 
@@ -52,6 +55,14 @@ public class StatsAgent extends OpsAgent
     {
         StatsSelector subselector = StatsSelector.valueOf(request.subselector);
         switch (subselector) {
+        case PROCEDUREDETAIL:
+            request.aggregateTables = sortProcedureDetailStats(request.aggregateTables);
+            break;
+        // For PROCEDURE-series tables, they are all based on the procedure detail table.
+        case PROCEDURE:
+            request.aggregateTables =
+            aggregateProcedureStats(request.aggregateTables);
+            break;
         case PROCEDUREPROFILE:
             request.aggregateTables =
             aggregateProcedureProfileStats(request.aggregateTables);
@@ -64,14 +75,24 @@ public class StatsAgent extends OpsAgent
             request.aggregateTables =
             aggregateProcedureOutputStats(request.aggregateTables);
             break;
-
+        case DRROLE:
+            request.aggregateTables = aggregateDRRoleStats(request.aggregateTables);
+            break;
         default:
         }
     }
 
-    private Supplier<Map<String, Boolean>> m_procInfo = getProcInfoSupplier();
+    private VoltTable[] sortProcedureDetailStats(VoltTable[] baseStats) {
+        if (baseStats == null || baseStats.length != 1) {
+            return baseStats;
+        }
+        ProcedureDetailResultTable result = new ProcedureDetailResultTable(baseStats[0]);
+        return result.getSortedResultTable();
+    }
 
-    private Supplier<Map<String, Boolean>> getProcInfoSupplier() {
+    private Supplier<Map<String, Boolean>> m_procedureInfo = getProcedureInformationfoSupplier();
+
+    private Supplier<Map<String, Boolean>> getProcedureInformationfoSupplier() {
         return Suppliers.memoize(new Supplier<Map<String, Boolean>>() {
                 @Override
                 public Map<String, Boolean> get() {
@@ -86,17 +107,77 @@ public class StatsAgent extends OpsAgent
     }
 
     /**
-     * Check if proc is readonly?
+     * Check if procedure is readonly?
      *
      * @param pname
      * @return
      */
     private boolean isReadOnlyProcedure(String pname) {
-        final Boolean b = m_procInfo.get().get(pname);
+        final Boolean b = m_procedureInfo.get().get(pname);
         if (b == null) {
             return false;
         }
         return b;
+    }
+
+    /**
+     * Produce PROCEDURE aggregation of PROCEDURE subselector
+     * Basically it leaves out the rows that were not labeled as "<ALL>".
+     */
+    private VoltTable[] aggregateProcedureStats(VoltTable[] baseStats)
+    {
+        if (baseStats == null || baseStats.length != 1) {
+            return baseStats;
+        }
+
+        VoltTable result = new VoltTable(
+            new ColumnInfo("TIMESTAMP", VoltType.BIGINT),
+            new ColumnInfo(VoltSystemProcedure.CNAME_HOST_ID, VoltSystemProcedure.CTYPE_ID),
+            new ColumnInfo("HOSTNAME", VoltType.STRING),
+            new ColumnInfo(VoltSystemProcedure.CNAME_SITE_ID, VoltSystemProcedure.CTYPE_ID),
+            new ColumnInfo("PARTITION_ID", VoltType.INTEGER),
+            new ColumnInfo("PROCEDURE", VoltType.STRING),
+            new ColumnInfo("INVOCATIONS", VoltType.BIGINT),
+            new ColumnInfo("TIMED_INVOCATIONS", VoltType.BIGINT),
+            new ColumnInfo("MIN_EXECUTION_TIME", VoltType.BIGINT),
+            new ColumnInfo("MAX_EXECUTION_TIME", VoltType.BIGINT),
+            new ColumnInfo("AVG_EXECUTION_TIME", VoltType.BIGINT),
+            new ColumnInfo("MIN_RESULT_SIZE", VoltType.INTEGER),
+            new ColumnInfo("MAX_RESULT_SIZE", VoltType.INTEGER),
+            new ColumnInfo("AVG_RESULT_SIZE", VoltType.INTEGER),
+            new ColumnInfo("MIN_PARAMETER_SET_SIZE", VoltType.INTEGER),
+            new ColumnInfo("MAX_PARAMETER_SET_SIZE", VoltType.INTEGER),
+            new ColumnInfo("AVG_PARAMETER_SET_SIZE", VoltType.INTEGER),
+            new ColumnInfo("ABORTS", VoltType.BIGINT),
+            new ColumnInfo("FAILURES", VoltType.BIGINT),
+            new ColumnInfo("TRANSACTIONAL", VoltType.TINYINT));
+        baseStats[0].resetRowPosition();
+        while (baseStats[0].advanceRow()) {
+            if (baseStats[0].getString("STATEMENT").equalsIgnoreCase("<ALL>")) {
+                result.addRow(
+                    baseStats[0].getLong("TIMESTAMP"),
+                    baseStats[0].getLong(VoltSystemProcedure.CNAME_HOST_ID),
+                    baseStats[0].getString("HOSTNAME"),
+                    baseStats[0].getLong(VoltSystemProcedure.CNAME_SITE_ID),
+                    baseStats[0].getLong("PARTITION_ID"),
+                    baseStats[0].getString("PROCEDURE"),
+                    baseStats[0].getLong("INVOCATIONS"),
+                    baseStats[0].getLong("TIMED_INVOCATIONS"),
+                    baseStats[0].getLong("MIN_EXECUTION_TIME"),
+                    baseStats[0].getLong("MAX_EXECUTION_TIME"),
+                    baseStats[0].getLong("AVG_EXECUTION_TIME"),
+                    baseStats[0].getLong("MIN_RESULT_SIZE"),
+                    baseStats[0].getLong("MAX_RESULT_SIZE"),
+                    baseStats[0].getLong("AVG_RESULT_SIZE"),
+                    baseStats[0].getLong("MIN_PARAMETER_SET_SIZE"),
+                    baseStats[0].getLong("MAX_PARAMETER_SET_SIZE"),
+                    baseStats[0].getLong("AVG_PARAMETER_SET_SIZE"),
+                    baseStats[0].getLong("ABORTS"),
+                    baseStats[0].getLong("FAILURES"),
+                    (byte) baseStats[0].getLong("TRANSACTIONAL"));
+            }
+        }
+        return new VoltTable[] { result };
     }
 
     /**
@@ -111,6 +192,17 @@ public class StatsAgent extends OpsAgent
         StatsProcProfTable timeTable = new StatsProcProfTable();
         baseStats[0].resetRowPosition();
         while (baseStats[0].advanceRow()) {
+            // Skip non-transactional procedures for some of these rollups until
+            // we figure out how to make them less confusing.
+            // NB: They still show up in the raw PROCEDURE stata.
+            boolean transactional = baseStats[0].getLong("TRANSACTIONAL") == 1;
+            if (!transactional) {
+                continue;
+            }
+
+            if ( ! baseStats[0].getString("STATEMENT").equalsIgnoreCase("<ALL>")) {
+                continue;
+            }
             String pname = baseStats[0].getString("PROCEDURE");
 
             timeTable.updateTable(!isReadOnlyProcedure(pname),
@@ -138,6 +230,17 @@ public class StatsAgent extends OpsAgent
         StatsProcInputTable timeTable = new StatsProcInputTable();
         baseStats[0].resetRowPosition();
         while (baseStats[0].advanceRow()) {
+            // Skip non-transactional procedures for some of these rollups until
+            // we figure out how to make them less confusing.
+            // NB: They still show up in the raw PROCEDURE stata.
+            boolean transactional = baseStats[0].getLong("TRANSACTIONAL") == 1;
+            if (!transactional) {
+                continue;
+            }
+
+            if ( ! baseStats[0].getString("STATEMENT").equalsIgnoreCase("<ALL>")) {
+                continue;
+            }
             String pname = baseStats[0].getString("PROCEDURE");
             timeTable.updateTable(!isReadOnlyProcedure(pname),
                     pname,
@@ -165,6 +268,17 @@ public class StatsAgent extends OpsAgent
         StatsProcOutputTable timeTable = new StatsProcOutputTable();
         baseStats[0].resetRowPosition();
         while (baseStats[0].advanceRow()) {
+            // Skip non-transactional procedures for some of these rollups until
+            // we figure out how to make them less confusing.
+            // NB: They still show up in the raw PROCEDURE stata.
+            boolean transactional = baseStats[0].getLong("TRANSACTIONAL") == 1;
+            if (!transactional) {
+                continue;
+            }
+
+            if ( ! baseStats[0].getString("STATEMENT").equalsIgnoreCase("<ALL>")) {
+                continue;
+            }
             String pname = baseStats[0].getString("PROCEDURE");
             timeTable.updateTable(!isReadOnlyProcedure(pname),
                     pname,
@@ -181,19 +295,22 @@ public class StatsAgent extends OpsAgent
 
 
     /**
+     * Please be noted that this function will be called from Site thread, where
+     * most other functions in the class are from StatsAgent thread.
+     *
      * Need to release references to catalog related stats sources
      * to avoid hoarding references to the catalog.
      */
     public void notifyOfCatalogUpdate() {
-        m_procInfo = getProcInfoSupplier();
-        registeredStatsSources.put(StatsSelector.PROCEDURE,
-                                   new NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>>());
+        m_procedureInfo = getProcedureInformationfoSupplier();
+        m_registeredStatsSources.put(StatsSelector.PROCEDURE,
+                new NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>>());
     }
 
     @Override
     protected void collectStatsImpl(Connection c, long clientHandle, OpsSelector selector,
             ParameterSet params) throws Exception
-            {
+    {
         JSONObject obj = new JSONObject();
         obj.put("selector", "STATISTICS");
         // parseParamsForStatistics has a clumsy contract, see definition
@@ -220,7 +337,11 @@ public class StatsAgent extends OpsAgent
                     clientHandle,
                     System.currentTimeMillis(),
                     obj);
-            collectTopoStats(psr);
+            // hacky way to support two format of hashconfig using interval value
+            // return true if interval == true (delta-flag == 1), indicate sent compressed json
+            // otherwise return false, indicate sent original binary format
+            boolean jsonConfig = obj.getBoolean("interval");
+            collectTopoStats(psr,jsonConfig);
             return;
         }
         else if (subselector.equalsIgnoreCase("PARTITIONCOUNT")) {
@@ -244,7 +365,7 @@ public class StatsAgent extends OpsAgent
                         System.currentTimeMillis(),
                         obj);
         distributeOpsWork(psr, obj);
-            }
+    }
 
     // Parse the provided parameter set object and fill in subselector and interval into
     // the provided JSONObject.  If there's an error, return that in the String, otherwise
@@ -302,7 +423,7 @@ public class StatsAgent extends OpsAgent
         }
     }
 
-    private void collectTopoStats(PendingOpsRequest psr)
+    private void collectTopoStats(PendingOpsRequest psr, boolean jsonConfig)
     {
         VoltTable[] tables = null;
         VoltTable topoStats = getStatsAggregate(StatsSelector.TOPO, false, psr.startTime);
@@ -315,7 +436,12 @@ public class StatsAgent extends OpsAgent
                             new VoltTable.ColumnInfo("HASHCONFIG", VoltType.VARBINARY));
             tables[1] = vt;
             HashinatorConfig hashConfig = TheHashinator.getCurrentConfig();
-            vt.addRow(hashConfig.type.toString(), hashConfig.configBytes);
+            if (!jsonConfig) {
+                vt.addRow("ELASTIC", hashConfig.configBytes);
+            } else {
+                vt.addRow("ELASTIC", TheHashinator.getCurrentHashinator().getConfigJSONCompressed());
+            }
+
         }
         psr.aggregateTables = tables;
 
@@ -351,77 +477,94 @@ public class StatsAgent extends OpsAgent
         boolean interval = obj.getBoolean("interval");
         StatsSelector subselector = StatsSelector.valueOf(subselectorString);
         switch (subselector) {
-        case DR:
-            stats = collectDRStats();
+        case DRPRODUCER:
+        case DR: // synonym of DRPRODUCER
+            stats = collectDRProducerStats();
             break;
-        case DRNODE:
-            stats = collectDRNodeStats();
+        case DRPRODUCERNODE:
+            stats = collectStats(StatsSelector.DRPRODUCERNODE, false);
             break;
-        case DRPARTITION:
-            stats = collectDRPartitionStats();
+        case DRPRODUCERPARTITION:
+            stats = collectStats(StatsSelector.DRPRODUCERPARTITION, false);
             break;
         case SNAPSHOTSTATUS:
-            stats = collectSnapshotStatusStats();
+            stats = collectStats(StatsSelector.SNAPSHOTSTATUS, false);
             break;
         case MEMORY:
-            stats = collectMemoryStats(interval);
+            stats = collectStats(StatsSelector.MEMORY, interval);
             break;
         case CPU:
-            stats = collectCpuStats(interval);
+            stats = collectStats(StatsSelector.CPU, interval);
             break;
         case IOSTATS:
-            stats = collectIOStats(interval);
+            stats = collectStats(StatsSelector.IOSTATS, interval);
             break;
         case INITIATOR:
-            stats = collectInitiatorStats(interval);
+            stats = collectStats(StatsSelector.INITIATOR, interval);
             break;
         case TABLE:
-            stats = collectTableStats(interval);
+            stats = collectStats(StatsSelector.TABLE, interval);
             break;
         case INDEX:
-            stats = collectIndexStats(interval);
+            stats = collectStats(StatsSelector.INDEX, interval);
             break;
         case PROCEDURE:
         case PROCEDUREINPUT:
         case PROCEDUREOUTPUT:
         case PROCEDUREPROFILE:
-            stats = collectProcedureStats(interval);
+        case PROCEDUREDETAIL:
+            stats = collectStats(StatsSelector.PROCEDURE, interval);
             break;
         case STARVATION:
-            stats = collectStarvationStats(interval);
+            stats = collectStats(StatsSelector.STARVATION, interval);
+            break;
+        case QUEUE:
+            stats = collectStats(StatsSelector.QUEUE, interval);
             break;
         case PLANNER:
-            stats = collectPlannerStats(interval);
+            stats = collectStats(StatsSelector.PLANNER, interval);
             break;
         case LIVECLIENTS:
-            stats = collectLiveClientsStats(interval);
+            stats = collectStats(StatsSelector.LIVECLIENTS, interval);
             break;
         case LATENCY:
-            stats = collectLatencyStats(interval);
+            stats = collectStats(StatsSelector.LATENCY, false);
+            break;
+        case LATENCY_COMPRESSED:
+            stats = collectStats(StatsSelector.LATENCY_COMPRESSED, interval);
             break;
         case LATENCY_HISTOGRAM:
-            stats = collectLatencyHistogramStats(interval);
+            stats = collectStats(StatsSelector.LATENCY_HISTOGRAM, interval);
             break;
         case MANAGEMENT:
             stats = collectManagementStats(interval);
             break;
         case REBALANCE:
-            stats = collectRebalanceStats(interval);
+            stats = collectStats(StatsSelector.REBALANCE, interval);
             break;
         case KSAFETY:
-            stats = collectKSafetyStats(interval);
+            stats = collectStats(StatsSelector.KSAFETY, interval);
             break;
         case DRCONSUMER:
             stats = collectDRConsumerStats();
             break;
         case DRCONSUMERNODE:
-            stats = collectDRConsumerNodeStats();
+            stats = collectStats(StatsSelector.DRCONSUMERNODE, false);
             break;
         case DRCONSUMERPARTITION:
-            stats = collectDRConsumerPartitionStats();
+            stats = collectStats(StatsSelector.DRCONSUMERPARTITION, false);
             break;
         case COMMANDLOG:
-            stats = collectCommandLogStats();
+            stats = collectStats(StatsSelector.COMMANDLOG, false);
+            break;
+        case IMPORTER:
+            stats = collectStats(StatsSelector.IMPORTER, interval);
+            break;
+        case DRROLE:
+            stats = collectStats(StatsSelector.DRROLE, false);
+            break;
+        case GC:
+            stats = collectStats(StatsSelector.GC, interval);
             break;
         default:
             // Should have been successfully groomed in collectStatsImpl().  Log something
@@ -434,12 +577,12 @@ public class StatsAgent extends OpsAgent
         return stats;
     }
 
-    private VoltTable[] collectDRStats()
+    private VoltTable[] collectDRProducerStats()
     {
         VoltTable[] stats = null;
 
-        VoltTable[] partitionStats = collectDRPartitionStats();
-        VoltTable[] nodeStats = collectDRNodeStats();
+        VoltTable[] partitionStats = collectStats(StatsSelector.DRPRODUCERPARTITION, false);
+        VoltTable[] nodeStats = collectStats(StatsSelector.DRPRODUCERNODE, false);
         if (partitionStats != null && nodeStats != null) {
             stats = new VoltTable[2];
             stats[0] = partitionStats[0];
@@ -448,37 +591,11 @@ public class StatsAgent extends OpsAgent
         return stats;
     }
 
-    private VoltTable[] collectDRNodeStats()
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable nodeStats = getStatsAggregate(StatsSelector.DRNODE, false, now);
-        if (nodeStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = nodeStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectDRPartitionStats()
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable partitionStats = getStatsAggregate(StatsSelector.DRPARTITION, false, now);
-        if (partitionStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = partitionStats;
-        }
-        return stats;
-    }
-
     private VoltTable[] collectDRConsumerStats() {
         VoltTable[] stats = null;
 
-        VoltTable[] statusStats = collectDRConsumerNodeStats();
-        VoltTable[] perfStats = collectDRConsumerPartitionStats();
+        VoltTable[] statusStats = collectStats(StatsSelector.DRCONSUMERNODE, false);
+        VoltTable[] perfStats = collectStats(StatsSelector.DRCONSUMERPARTITION, false);
         if (statusStats != null && perfStats != null) {
             stats = new VoltTable[2];
             stats[0] = statusStats[0];
@@ -487,200 +604,9 @@ public class StatsAgent extends OpsAgent
         return stats;
     }
 
-    private VoltTable[] collectDRConsumerNodeStats() {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable replicaStats = getStatsAggregate(StatsSelector.DRCONSUMERNODE, false, now);
-        if (replicaStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = replicaStats;
-        }
-
-        return stats;
-    }
-
-    private VoltTable[] collectDRConsumerPartitionStats() {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable replicaStats = getStatsAggregate(StatsSelector.DRCONSUMERPARTITION, false, now);
-        if (replicaStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = replicaStats;
-        }
-
-        return stats;
-    }
-
-    private VoltTable[] collectSnapshotStatusStats()
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable ssStats = getStatsAggregate(StatsSelector.SNAPSHOTSTATUS, false, now);
-        if (ssStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = ssStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectMemoryStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable mStats = getStatsAggregate(StatsSelector.MEMORY, interval, now);
-        if (mStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = mStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectCpuStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable cStats = getStatsAggregate(StatsSelector.CPU, interval, now);
-        if (cStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = cStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectIOStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable iStats = getStatsAggregate(StatsSelector.IOSTATS, interval, now);
-        if (iStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = iStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectInitiatorStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable iStats = getStatsAggregate(StatsSelector.INITIATOR, interval, now);
-        if (iStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = iStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectTableStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable tStats = getStatsAggregate(StatsSelector.TABLE, interval, now);
-        if (tStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = tStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectIndexStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable tStats = getStatsAggregate(StatsSelector.INDEX, interval, now);
-        if (tStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = tStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectProcedureStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable pStats = getStatsAggregate(StatsSelector.PROCEDURE, interval, now);
-        if (pStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = pStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectStarvationStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable sStats = getStatsAggregate(StatsSelector.STARVATION, interval, now);
-        if (sStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = sStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectPlannerStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable pStats = getStatsAggregate(StatsSelector.PLANNER, interval, now);
-        if (pStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = pStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectLiveClientsStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable lStats = getStatsAggregate(StatsSelector.LIVECLIENTS, interval, now);
-        if (lStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = lStats;
-        }
-        return stats;
-    }
-
-    // Latency stats have been broken since 3.0.  Putting these hooks
-    // in here so that ALL selectors in SysProcSelector go through
-    // this path and nothing uses the legacy sysproc
-    private VoltTable[] collectLatencyStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable lStats = getStatsAggregate(StatsSelector.LATENCY, interval, now);
-        if (lStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = lStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectLatencyHistogramStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable lStats = getStatsAggregate(StatsSelector.LATENCY_HISTOGRAM, interval, now);
-        if (lStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = lStats;
+    private VoltTable[] aggregateDRRoleStats(VoltTable[] stats) {
+        if (stats != null && stats.length == 1) {
+            stats = new VoltTable[] {DRRoleStats.aggregateStats(stats[0])};
         }
         return stats;
     }
@@ -689,24 +615,25 @@ public class StatsAgent extends OpsAgent
     // STARVATION
     private VoltTable[] collectManagementStats(boolean interval)
     {
-        VoltTable[] mStats = collectMemoryStats(interval);
-        VoltTable[] iStats = collectInitiatorStats(interval);
-        VoltTable[] pStats = collectProcedureStats(interval);
-        VoltTable[] ioStats = collectIOStats(interval);
-        VoltTable[] tStats = collectTableStats(interval);
-        VoltTable[] indStats = collectIndexStats(interval);
-        VoltTable[] sStats = collectStarvationStats(interval);
-        VoltTable[] cStats = collectCpuStats(interval);
+        VoltTable[] mStats = collectStats(StatsSelector.MEMORY, interval);
+        VoltTable[] iStats = collectStats(StatsSelector.INITIATOR, interval);
+        VoltTable[] pStats = collectStats(StatsSelector.PROCEDURE, interval);
+        VoltTable[] ioStats = collectStats(StatsSelector.IOSTATS, interval);
+        VoltTable[] tStats = collectStats(StatsSelector.TABLE, interval);
+        VoltTable[] indStats = collectStats(StatsSelector.INDEX, interval);
+        VoltTable[] sStats = collectStats(StatsSelector.STARVATION, interval);
+        VoltTable[] qStats = collectStats(StatsSelector.QUEUE, interval);
+        VoltTable[] cStats = collectStats(StatsSelector.CPU, interval);
         // Ugh, this is ugly.  Currently need to return null if
         // we're missing any of the tables so that we
         // don't screw up the aggregation in handleStatsResponse (see my rant there)
         if (mStats == null || iStats == null || pStats == null ||
                 ioStats == null || tStats == null || indStats == null ||
-                sStats == null || cStats == null)
+                sStats == null || qStats == null || cStats == null)
         {
             return null;
         }
-        VoltTable[] stats = new VoltTable[8];
+        VoltTable[] stats = new VoltTable[9];
         stats[0] = mStats[0];
         stats[1] = iStats[0];
         stats[2] = pStats[0];
@@ -715,45 +642,20 @@ public class StatsAgent extends OpsAgent
         stats[5] = indStats[0];
         stats[6] = sStats[0];
         stats[7] = cStats[0];
+        stats[8] = qStats[0];
 
         return stats;
     }
 
-    private VoltTable[] collectRebalanceStats(boolean interval)
+    private VoltTable[] collectStats(StatsSelector selector, boolean interval)
     {
         Long now = System.currentTimeMillis();
         VoltTable[] stats = null;
 
-        VoltTable mStats = getStatsAggregate(StatsSelector.REBALANCE, interval, now);
-        if (mStats != null) {
+        VoltTable statsAggr = getStatsAggregate(selector, interval, now);
+        if (statsAggr != null) {
             stats = new VoltTable[1];
-            stats[0] = mStats;
-        }
-        return stats;
-    }
-
-    private VoltTable[] collectKSafetyStats(boolean interval)
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-
-        VoltTable mStats = getStatsAggregate(StatsSelector.KSAFETY, interval, now);
-        if (mStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = mStats;
-        }
-        return stats;
-    }
-
-    // TODO
-    private VoltTable[] collectCommandLogStats()
-    {
-        Long now = System.currentTimeMillis();
-        VoltTable[] stats = null;
-        VoltTable commandLogStats = getStatsAggregate(StatsSelector.COMMANDLOG, false, now);
-        if (commandLogStats != null) {
-            stats = new VoltTable[1];
-            stats[0] = commandLogStats;
+            stats[0] = statsAggr;
         }
         return stats;
     }
@@ -761,24 +663,47 @@ public class StatsAgent extends OpsAgent
     public void registerStatsSource(StatsSelector selector, long siteId, StatsSource source) {
         assert selector != null;
         assert source != null;
-        final NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>> siteIdToStatsSources = registeredStatsSources.get(selector);
+
+        final NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>> siteIdToStatsSources =
+                m_registeredStatsSources.get(selector);
         assert siteIdToStatsSources != null;
 
-        //Racy putIfAbsent idiom, may return existing map value from another thread http://goo.gl/jptTS7
+        //putIfAbsent idiom, may return existing map value from another thread
         NonBlockingHashSet<StatsSource> statsSources = siteIdToStatsSources.get(siteId);
         if (statsSources == null) {
             statsSources = new NonBlockingHashSet<StatsSource>();
-            NonBlockingHashSet<StatsSource> oldval = siteIdToStatsSources.putIfAbsent(siteId, statsSources);
-            if (oldval != null) statsSources = oldval;
+            siteIdToStatsSources.putIfAbsent(siteId, statsSources);
         }
         statsSources.add(source);
+    }
+
+    public void deregisterStatsSource(StatsSelector selector, long siteId, StatsSource source) {
+        assert selector != null;
+        assert source != null;
+        final NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>> siteIdToStatsSources =
+                m_registeredStatsSources.get(selector);
+        assert siteIdToStatsSources != null;
+
+        NonBlockingHashSet<StatsSource> statsSources = siteIdToStatsSources.get(siteId);
+        if (statsSources != null) {
+            statsSources.remove(source);
+        }
+    }
+
+    public void deregisterStatsSourcesFor(StatsSelector selector, long siteId) {
+        assert selector != null;
+        final NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>> siteIdToStatsSources =
+                m_registeredStatsSources.get(selector);
+        if (siteIdToStatsSources != null) {
+            siteIdToStatsSources.remove(siteId);
+        }
     }
 
     /**
      * Get aggregate statistics on this node for the given selector.
      * If you need both site-wise and node-wise stats, register the appropriate StatsSources for that
      * selector with each siteId and then some other value for the node-level stats (PLANNER stats uses -1).
-     * This call will automagically aggregate every StatsSource registered for every 'site'ID for that selector.
+     * This call will automatically aggregate every StatsSource registered for every 'site'ID for that selector.
      *
      * @param selector    @Statistics selector keyword
      * @param interval    true if processing a reporting interval
@@ -789,17 +714,17 @@ public class StatsAgent extends OpsAgent
             final StatsSelector selector,
             final boolean interval,
             final Long now) {
-        return getStatsAggregateInternal(selector, interval, now, null);
+        return getStatsAggregateInternal(selector, interval, now);
     }
 
     private VoltTable getStatsAggregateInternal(
             final StatsSelector selector,
             final boolean interval,
-            final Long now,
-            VoltTable prevResults)
+            final Long now)
     {
         assert selector != null;
-        final NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>> siteIdToStatsSources = registeredStatsSources.get(selector);
+        NonBlockingHashMap<Long, NonBlockingHashSet<StatsSource>> siteIdToStatsSources =
+                m_registeredStatsSources.get(selector);
 
         // There are cases early in rejoin where we can get polled before the server is ready to provide
         // stats.  Just return null for now, which will result in no tables from this node.
@@ -808,11 +733,24 @@ public class StatsAgent extends OpsAgent
         }
 
         // Just need a random site's list to do some things
-        NonBlockingHashSet<StatsSource> sSources = siteIdToStatsSources.entrySet().iterator().next().getValue();
+        NonBlockingHashSet<StatsSource> sSources = null;
+        try {
+            sSources = siteIdToStatsSources.values().iterator().next();
+        } catch (NoSuchElementException e) {
+            // entries of this site id to sources set map may be removed in another thread
+            sSources = null;
+        }
 
         //There is a window registering the first source where the empty set is visible, don't panic it's coming
-        while (sSources.isEmpty()) {
+        while (sSources == null || sSources.isEmpty()) {
             Thread.yield();
+            // retrieve the latest StatsSource set since a new set may be registered in place of an old empty set
+            try {
+                sSources = siteIdToStatsSources.values().iterator().next();
+            } catch (NoSuchElementException e) {
+                // entries of this site id to sources set map may be removed in another thread
+                sSources = null;
+            }
         }
 
         /*
@@ -821,30 +759,36 @@ public class StatsAgent extends OpsAgent
          * case.
          */
         VoltTable.ColumnInfo columns[] = null;
-        final StatsSource firstSource = sSources.iterator().next();
-        if (!firstSource.isEEStats())
+        StatsSource firstSource = null;
+        try {
+            firstSource = sSources.iterator().next();
+        } catch (NoSuchElementException e) {
+            // elements of this sources set may be removed in another thread
+            return null;
+        }
+        if (!firstSource.isEEStats()) {
             columns = firstSource.getColumnSchema().toArray(new VoltTable.ColumnInfo[0]);
-        else {
+        } else {
             final VoltTable table = firstSource.getStatsTable();
-            if (table == null)
+            if (table == null) {
                 return null;
+            }
             columns = new VoltTable.ColumnInfo[table.getColumnCount()];
-            for (int i = 0; i < columns.length; i++)
+            for (int i = 0; i < columns.length; i++) {
                 columns[i] = new VoltTable.ColumnInfo(table.getColumnName(i),
                         table.getColumnType(i));
+            }
         }
 
-        // Append to previous results if provided.
-        final VoltTable resultTable = prevResults != null ? prevResults : new VoltTable(columns);
+        final VoltTable resultTable = new VoltTable(columns);
 
-        for (NonBlockingHashSet<StatsSource> statsSources : siteIdToStatsSources.values()) {
-
-            //The window where it is empty exists here to
-            while (statsSources.isEmpty()) {
+        for (Entry<Long, NonBlockingHashSet<StatsSource>> entry : siteIdToStatsSources.entrySet()) {
+            NonBlockingHashSet<StatsSource> statsSources = entry.getValue();
+            // entries of this site id to sources set map may be removed in another thread
+            while (statsSources == null || statsSources.isEmpty()) {
                 Thread.yield();
+                statsSources = siteIdToStatsSources.get(entry.getKey());
             }
-
-            assert statsSources != null;
             for (final StatsSource ss : statsSources) {
                 assert ss != null;
                 /*

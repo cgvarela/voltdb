@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,6 @@
  */
 #include "storage/ConstraintFailureException.h"
 #include "storage/constraintutil.h"
-#include "storage/persistenttable.h"
 #include "storage/table.h"
 #include <cassert>
 
@@ -24,10 +23,11 @@ using namespace voltdb;
 using std::string;
 
 ConstraintFailureException::ConstraintFailureException(
-        PersistentTable *table,
+        Table *table,
         TableTuple tuple,
         TableTuple otherTuple,
-        ConstraintType type) :
+        ConstraintType type,
+        PersistentTableSurgeon *surgeon) :
     SQLException(
             SQLException::integrity_constraint_violation,
             "Attempted violation of constraint",
@@ -35,24 +35,27 @@ ConstraintFailureException::ConstraintFailureException(
     m_table(table),
     m_tuple(tuple),
     m_otherTuple(otherTuple),
-    m_type(type)
+    m_type(type),
+    m_surgeon(surgeon)
 {
     assert(table);
     assert(!tuple.isNullTuple());
 }
 
 ConstraintFailureException::ConstraintFailureException(
-        PersistentTable *table,
+        Table *table,
         TableTuple tuple,
-        string message) :
-    SQLException(
-            SQLException::integrity_constraint_violation,
-            message,
-            VOLT_EE_EXCEPTION_TYPE_CONSTRAINT_VIOLATION),
+        string message,
+        PersistentTableSurgeon *surgeon) :
+        SQLException(
+                SQLException::integrity_constraint_violation,
+                message,
+                VOLT_EE_EXCEPTION_TYPE_CONSTRAINT_VIOLATION),
     m_table(table),
     m_tuple(tuple),
     m_otherTuple(TableTuple()),
-    m_type(CONSTRAINT_TYPE_PARTITIONING)
+    m_type(CONSTRAINT_TYPE_PARTITIONING),
+    m_surgeon(surgeon)
 {
     assert(table);
     assert(!tuple.isNullTuple());
@@ -73,7 +76,12 @@ void ConstraintFailureException::p_serialize(ReferenceSerializeOutput *output) c
 }
 
 ConstraintFailureException::~ConstraintFailureException() {
-    // TODO Auto-generated destructor stub
+    // if delayed tuple deallocation for serialization (by passing in tableSurgeon),
+    // do cleanup here
+    VOLT_DEBUG("ConstraintFailureException has table surgeon %s", ((m_surgeon!=NULL) ? "true": "false"));
+    if (m_surgeon && !m_tuple.isNullTuple()) {
+        m_surgeon->deleteTupleStorage(m_tuple);
+    }
 }
 
 const string
@@ -86,6 +94,7 @@ ConstraintFailureException::message() const
     msg.append(type_string);
     msg.append("\non table: ");
     msg.append(m_table->name());
+
     msg.append("\nNew tuple:\n\t");
     msg.append(m_tuple.debug(m_table->name()));
     if (!m_otherTuple.isNullTuple()) {

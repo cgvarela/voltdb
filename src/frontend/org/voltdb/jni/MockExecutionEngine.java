@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -33,6 +33,8 @@ import org.voltdb.VoltTable;
 import org.voltdb.VoltType;
 import org.voltdb.exceptions.EEException;
 import org.voltdb.exceptions.SQLException;
+import org.voltdb.iv2.DeterminismHash;
+import org.voltdb.messaging.FastDeserializer;
 
 public class MockExecutionEngine extends ExecutionEngine {
 
@@ -44,16 +46,20 @@ public class MockExecutionEngine extends ExecutionEngine {
     }
 
     @Override
-    protected VoltTable[] coreExecutePlanFragments(
+    public FastDeserializer coreExecutePlanFragments(
+            final int bufferHint,
             final int numFragmentIds,
             final long[] planFragmentIds,
             final long[] inputDepIds,
             final Object[] parameterSets,
+            final DeterminismHash determinismHash,
+            boolean[] isWriteFrags,
+            int[] sqlCRCs,
             final long txnId,
             final long spHandle,
             final long lastCommittedSpHandle,
             final long uniqueId,
-            final long undoToken) throws EEException
+            final long undoToken, boolean traceOn) throws EEException
     {
         if (numFragmentIds != 1) {
             return null;
@@ -116,7 +122,9 @@ public class MockExecutionEngine extends ExecutionEngine {
                   new VoltTable.ColumnInfo("foo", VoltType.INTEGER)
         });
         vt.addRow(Integer.valueOf(1));
-        return new VoltTable[] { vt };
+        ByteBuffer buf = ByteBuffer.allocate(vt.getSerializedSize());
+        vt.flattenToBuffer(buf);
+        return new FastDeserializer(buf);
     }
 
     @Override
@@ -125,11 +133,11 @@ public class MockExecutionEngine extends ExecutionEngine {
     }
 
     @Override
-    public void loadCatalog(final long txnId, final byte[] catalogBytes) throws EEException {
+    public void coreLoadCatalog(final long txnId, final byte[] catalogBytes) throws EEException {
     }
 
     @Override
-    public void updateCatalog(final long txnId, final String catalogDiffs) throws EEException {
+    public void coreUpdateCatalog(final long txnId, final boolean isStreamUpdate, final String catalogDiffs) throws EEException {
     }
 
     @Override
@@ -161,7 +169,6 @@ public class MockExecutionEngine extends ExecutionEngine {
 
     @Override
     public void toggleProfiler(final int toggle) {
-        return;
     }
 
     @Override
@@ -176,7 +183,6 @@ public class MockExecutionEngine extends ExecutionEngine {
 
     @Override
     public void quiesce(long lastCommittedTxnId) {
-
     }
 
     @Override
@@ -192,7 +198,7 @@ public class MockExecutionEngine extends ExecutionEngine {
 
     @Override
     public void exportAction(boolean syncAction,
-            long ackOffset, long seqNo, int partitionId, String mTableSignature) {
+            long uso, long seqNo, int partitionId, String mTableSignature) {
     }
 
     @Override
@@ -215,14 +221,12 @@ public class MockExecutionEngine extends ExecutionEngine {
     }
 
     @Override
-    public void updateHashinator(TheHashinator.HashinatorConfig config)
-    {
-
+    public void updateHashinator(TheHashinator.HashinatorConfig config) {
     }
 
     @Override
-    public void applyBinaryLog(ByteBuffer log, long txnId, long spHandle, long lastCommittedSpHandle, long uniqueId,
-                               long undoToken) throws EEException
+    public long applyBinaryLog(ByteBuffer log, long txnId, long spHandle, long lastCommittedSpHandle, long uniqueId,
+                               int remoteClusterId, int remotePartitionId, long undoToken) throws EEException
     {
         throw new UnsupportedOperationException();
     }
@@ -240,5 +244,14 @@ public class MockExecutionEngine extends ExecutionEngine {
     @Override
     public ByteBuffer getParamBufferForExecuteTask(int requiredCapacity) {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void setPerFragmentTimingEnabled(boolean enabled) {
+    }
+
+    @Override
+    public int extractPerFragmentStats(int batchSize, long[] executionTimesOut) {
+        return 0;
     }
 }

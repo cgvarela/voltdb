@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,6 +23,10 @@
 
 package org.voltdb;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.UnknownHostException;
@@ -30,18 +34,18 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.junit.AfterClass;
 import org.junit.Test;
-import org.voltdb.TheHashinator.HashinatorType;
 import org.voltdb.VoltDB.Configuration;
 import org.voltdb.client.Client;
 import org.voltdb.client.ClientFactory;
 import org.voltdb.client.NoConnectionsException;
 import org.voltdb.client.ProcCallException;
-import org.voltdb.compiler.AsyncCompilerAgent;
 import org.voltdb.compiler.VoltProjectBuilder;
 import org.voltdb.regressionsuites.LocalCluster;
+import org.voltdb.sysprocs.AdHocNTBase;
 import org.voltdb.types.TimestampType;
 import org.voltdb.utils.MiscUtils;
 import org.voltdb.utils.VoltFile;
@@ -161,36 +165,27 @@ public class TestAdHocQueries extends AdHocQueryTester {
 
             results = m_client.callProcedure("executeSQLSP", 24, "select * from parted1 order by partval").getResults();
 
-            if (TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY) {
-                for (int ii = 0; ii < 4; ii++) {
+            //These constants break when partitioning changes
+            //Recently 23, 24, and 25, started hashing to the same place /facepalm
+            for (int ii = 0; ii < 4; ii++) {
+                //The third statement does an exact equality match
+                if (ii == 2) {
                     assertEquals( 1, results[ii].getRowCount());
                     assertTrue(results[ii].advanceRow());
                     assertEquals(24, results[ii].getLong(0));
                     assertEquals( 4, results[ii].getLong(1));
+                    continue;
                 }
-            } else {
-                //These constants break when partitioning changes
-                //Recently 23, 24, and 25, started hashing to the same place /facepalm
-                for (int ii = 0; ii < 4; ii++) {
-                    //The third statement does an exact equality match
-                    if (ii == 2) {
-                        assertEquals( 1, results[ii].getRowCount());
-                        assertTrue(results[ii].advanceRow());
-                        assertEquals(24, results[ii].getLong(0));
-                        assertEquals( 4, results[ii].getLong(1));
-                        continue;
-                    }
-                    assertEquals( 3, results[ii].getRowCount());
-                    assertTrue(results[ii].advanceRow());
-                    assertEquals(23, results[ii].getLong(0));
-                    assertEquals( 3, results[ii].getLong(1));
-                    assertTrue(results[ii].advanceRow());
-                    assertEquals(24, results[ii].getLong(0));
-                    assertEquals( 4, results[ii].getLong(1));
-                    assertTrue(results[ii].advanceRow());
-                    assertEquals(25, results[ii].getLong(0));
-                    assertEquals( 5, results[ii].getLong(1));
-                }
+                assertEquals( 3, results[ii].getRowCount());
+                assertTrue(results[ii].advanceRow());
+                assertEquals(23, results[ii].getLong(0));
+                assertEquals( 3, results[ii].getLong(1));
+                assertTrue(results[ii].advanceRow());
+                assertEquals(24, results[ii].getLong(0));
+                assertEquals( 4, results[ii].getLong(1));
+                assertTrue(results[ii].advanceRow());
+                assertEquals(25, results[ii].getLong(0));
+                assertEquals( 5, results[ii].getLong(1));
             }
         }
         catch (Exception e) {
@@ -229,24 +224,13 @@ public class TestAdHocQueries extends AdHocQueryTester {
             VoltTable modCount;
 
             //Hashes to partition 0
-            int hashableA;
+            int hashableA = 8;
             //Hashes to partition 1
-            int hashableB;
+            int hashableB = 2;
             //Hashes to partition 0
-            int hashableC;
+            int hashableC = 1;
             //Hashes to partition 1
-            int hashableD;
-            if (TheHashinator.getConfiguredHashinatorType() == HashinatorType.LEGACY) {
-                hashableA = 4;
-                hashableB = 1;
-                hashableC = 2;
-                hashableD = 3;
-            } else {
-                hashableA = 8;
-                hashableB = 2;
-                hashableC = 1;
-                hashableD = 4;
-            }
+            int hashableD = 4;
 
             //If things break you can use this to find what hashes where and fix the constants
 //            for (int ii = 0; ii < 10; ii++) {
@@ -371,12 +355,10 @@ public class TestAdHocQueries extends AdHocQueryTester {
             // test single-partition stuff
             // TODO: upgrade to use @GetPartitionKeys instead of TheHashinator interface
             VoltTable result1 = env.m_client.callProcedure("@AdHocSpForTest", "SELECT * FROM BLAH;",
-                    TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ?
-                    0 : 2).getResults()[0];
+                    2).getResults()[0];
             //System.out.println(result1.toString());
             VoltTable result2 = env.m_client.callProcedure("@AdHocSpForTest", "SELECT * FROM BLAH;",
-                    TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ?
-                    1 : 0).getResults()[0];
+                    0).getResults()[0];
             //System.out.println(result2.toString());
             assertEquals(1, result1.getRowCount() + result2.getRowCount());
             assertEquals(0, result1.getRowCount());
@@ -384,8 +366,7 @@ public class TestAdHocQueries extends AdHocQueryTester {
 
             try {
                 env.m_client.callProcedure("@AdHocSpForTest", "INSERT INTO BLAH VALUES (0, 0, 0);",
-                        TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ?
-                        1 : 2);
+                       2);
                 fail("Badly partitioned insert failed to throw expected exception");
             }
             catch (Exception e) {}
@@ -430,10 +411,74 @@ public class TestAdHocQueries extends AdHocQueryTester {
             result = env.m_client.callProcedure("@AdHoc", "SELECT * FROM BLAH WHERE IVAL = 2;").getResults()[0];
             assertEquals(1, result.getRowCount());
             //System.out.println(result.toString());
+
+            // test wasNull asScalarLong
+            long value;
+            boolean wasNull;
+            result = env.m_client.callProcedure("@AdHoc", "select top 1 cast(null as tinyInt) from BLAH").getResults()[0];
+            value = result.asScalarLong();
+            wasNull = result.wasNull();
+            assertEquals(VoltType.NULL_TINYINT, value);
+            assertEquals(true, wasNull);
+
+            result = env.m_client.callProcedure("@AdHoc", "select top 1 cast(null as smallInt) from BLAH").getResults()[0];
+            value = result.asScalarLong();
+            wasNull = result.wasNull();
+            assertEquals(VoltType.NULL_SMALLINT, value);
+            assertEquals(true, wasNull);
+
+            result = env.m_client.callProcedure("@AdHoc", "select top 1 cast(null as integer) from BLAH").getResults()[0];
+            value = result.asScalarLong();
+            wasNull = result.wasNull();
+            assertEquals(VoltType.NULL_INTEGER, value);
+            assertEquals(true, wasNull);
+
+            result = env.m_client.callProcedure("@AdHoc", "select top 1 cast(null as bigint) from BLAH").getResults()[0];
+            value = result.asScalarLong();
+            wasNull = result.wasNull();
+            assertEquals(VoltType.NULL_BIGINT, value);
+            assertEquals(true, wasNull);
         }
         finally {
             env.tearDown();
             System.out.println("Ending testSimple");
+        }
+    }
+
+    @Test
+    public void testAdHocLengthLimit() throws Exception {
+        System.out.println("Starting testAdHocLengthLimit");
+        TestEnv env = new TestEnv(m_catalogJar, m_pathToDeployment, 2, 2, 1);
+
+        env.setUp();
+        // by pass valgrind due to ENG-7843
+        if (env.isValgrind() || env.isMemcheckDefined()) {
+            env.tearDown();
+            System.out.println("Skipped testAdHocLengthLimit");
+            return;
+        }
+
+        try {
+            StringBuffer adHocQueryTemp = new StringBuffer("SELECT * FROM VOTES WHERE PHONE_NUMBER IN (");
+            int i = 0;
+            while (adHocQueryTemp.length() <= Short.MAX_VALUE * 2) {
+                String randPhone = RandomStringUtils.randomNumeric(10);
+                VoltTable result = env.m_client.callProcedure("@AdHoc", "INSERT INTO VOTES VALUES(?, ?, ?);", randPhone, "MA", i).getResults()[0];
+                assertEquals(1, result.getRowCount());
+                adHocQueryTemp.append(randPhone);
+                adHocQueryTemp.append(", ");
+                i++;
+            }
+            adHocQueryTemp.replace(adHocQueryTemp.length()-2, adHocQueryTemp.length(), ");");
+            // assure that adhoc query text can exceed 2^15 length, but the literals still cannot exceed 2^15
+            assert(adHocQueryTemp.length() > Short.MAX_VALUE);
+            assert(i < Short.MAX_VALUE);
+            VoltTable result = env.m_client.callProcedure("@AdHoc", adHocQueryTemp.toString()).getResults()[0];
+            assertEquals(i, result.getRowCount());
+        }
+         finally {
+            env.tearDown();
+            System.out.println("Ending testAdHocLengthLimit");
         }
     }
 
@@ -460,12 +505,10 @@ public class TestAdHocQueries extends AdHocQueryTester {
             // test single-partition stuff
             // TODO: upgrade to use @GetPartitionKeys instead of TheHashinator interface
             VoltTable result1 = env.m_client.callProcedure("@AdHocSpForTest", "SELECT * FROM BLAH WHERE IVAL = ?;",
-                    (TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ?
-                     0 : 2), 1).getResults()[0];
+                    2, 1).getResults()[0];
             //System.out.println(result1.toString());
             VoltTable result2 = env.m_client.callProcedure("@AdHocSpForTest", "SELECT * FROM BLAH WHERE IVAL = ?;",
-                    (TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ?
-                     1 : 0), 1).getResults()[0];
+                    0, 1).getResults()[0];
             //System.out.println(result2.toString());
             assertEquals(1, result1.getRowCount() + result2.getRowCount());
             assertEquals(0, result1.getRowCount());
@@ -473,8 +516,7 @@ public class TestAdHocQueries extends AdHocQueryTester {
 
             try {
                 env.m_client.callProcedure("@AdHocSpForTest", "INSERT INTO BLAH VALUES (?, ?, ?);",
-                        (TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ?
-                         1 : 2), 0, 0, 0);
+                        2, 0, 0, 0);
                 fail("Badly partitioned insert failed to throw expected exception");
             }
             catch (Exception e) {}
@@ -530,6 +572,48 @@ public class TestAdHocQueries extends AdHocQueryTester {
         finally {
             env.tearDown();
             System.out.println("Ending testAdHocWithParams");
+        }
+    }
+
+    @Test
+    public void testAdHocQueryForStackOverFlowCondition() throws IOException, Exception {
+        System.out.println("Starting testLongAdHocQuery");
+
+        VoltDB.Configuration config = setUpSPDB();
+        ServerThread localServer = new ServerThread(config);
+        localServer.start();
+        localServer.waitForInitialization();
+
+        m_client = ClientFactory.createClient();
+        m_client.createConnection("localhost", config.m_port);
+
+        try {
+            for (int len = 2000; len < 100000; len += 1000) {
+                String sql = getQueryForLongQueryTable(len);
+                m_client.callProcedure("@AdHoc", sql);
+            }
+            fail("Query was expected to generate stack overflow error");
+        }
+        catch (Exception exception) {
+            System.out.println(exception.getMessage());
+            String expectedMsg;
+            expectedMsg = "Encountered stack overflow error. " +
+                          "Try reducing the number of predicate expressions in the query.";
+            boolean foundMsg = exception.getMessage().contains(expectedMsg);
+            assertTrue("Expected text \"" + expectedMsg + "\" did not appear in exception "
+                    + "\"" + exception.getMessage() + "\"", foundMsg);
+        }
+        finally {
+            if (m_client != null) {
+                m_client.close();
+            }
+            m_client = null;
+
+            if (localServer != null) {
+                localServer.shutdown();
+                localServer.join();
+            }
+            localServer = null;
         }
     }
 
@@ -602,7 +686,7 @@ public class TestAdHocQueries extends AdHocQueryTester {
             //
             // test batch with extra parameter call
             //
-            String errorMsg = AsyncCompilerAgent.AdHocErrorResponseMessage;
+            String errorMsg = AdHocNTBase.AdHocErrorResponseMessage;
             // test batch question mark parameter guards
 
             adHocQuery = "SELECT * FROM AAA WHERE a1 = 'a1'; SELECT * FROM AAA WHERE a2 = 'a2';";
@@ -714,10 +798,9 @@ public class TestAdHocQueries extends AdHocQueryTester {
                     "                      WHERE STAFF.EMPNUM = WORKS.EMPNUM);";
             try {
                 env.m_client.callProcedure("@AdHoc", adHocQuery);
-                fail("did not fail on subquery In/Exists");
             }
             catch (ProcCallException pcex) {
-                assertTrue(pcex.getMessage().indexOf("Subquery expressions are only supported in SELECT statements") > 0);
+                fail("did fail on subquery In/Exists in UPDATE statement");
             }
 
             adHocQuery = "     SELECT 'ZZ', EMPNUM, EMPNAME, -99 \n" +
@@ -755,10 +838,9 @@ public class TestAdHocQueries extends AdHocQueryTester {
                     "                           AND PNUM > 'P2';";
             try {
                 env.m_client.callProcedure("@AdHoc", adHocQuery);
-                fail("did not fail on static clause");
             }
             catch (ProcCallException pcex) {
-                assertTrue(pcex.getMessage().indexOf("does not support WHERE clauses containing only constants") > 0);
+                fail("failed on static clause");
             }
             adHocQuery = "ROLLBACK;";
             try {
@@ -790,7 +872,7 @@ public class TestAdHocQueries extends AdHocQueryTester {
                 fail("Compilation should have failed.");
             }
             catch(ProcCallException e) {
-                assertTrue(e.getMessage().contains("Error compiling"));
+                assertTrue(e.getMessage().contains("invalid format for a constant timestamp value"));
             }
             String sql = String.format("INSERT INTO TS_CONSTRAINT_EXCEPTION VALUES ('%s','{}');",
                     new TimestampType().toString());
@@ -896,12 +978,9 @@ public class TestAdHocQueries extends AdHocQueryTester {
         TestEnv(String pathToCatalog, String pathToDeployment,
                      int siteCount, int hostCount, int kFactor) {
 
-            // hack for no k-safety in community version
-            if (!MiscUtils.isPro()) {
-                kFactor = 0;
-            }
-
             m_builder = new VoltProjectBuilder();
+            //Increase query tmeout as long literal queries taking long time.
+            m_builder.setQueryTimeout(60000);
             try {
                 m_builder.addLiteralSchema("create table BLAH (" +
                                            "IVAL bigint default 0 not null, " +
@@ -966,6 +1045,11 @@ public class TestAdHocQueries extends AdHocQueryTester {
                                            "CREATE TABLE INTS\n" +
                                            "  (INT1      SMALLINT NOT NULL,\n" +
                                            "   INT2      SMALLINT NOT NULL);\n" +
+                                           "CREATE TABLE VOTES\n" +
+                                           "  (PHONE_NUMBER BIGINT NOT NULL,\n" +
+                                           "   STATE     VARCHAR(2) NOT NULL,\n" +
+                                           "   CONTESTANT_NUMBER  INTEGER NOT NULL);\n" +
+                                           "\n" +
                                            "CREATE PROCEDURE TestProcedure AS INSERT INTO AAA VALUES(?,?,?);\n" +
                                            "CREATE PROCEDURE Insert AS INSERT into BLAH values (?, ?, ?);\n" +
                                            "CREATE PROCEDURE InsertWithDate AS \n" +
@@ -1041,6 +1125,16 @@ public class TestAdHocQueries extends AdHocQueryTester {
 
             // no clue how helpful this is
             System.gc();
+        }
+
+        boolean isValgrind() {
+            if (m_cluster != null)
+                return m_cluster.isValgrind();
+            return true;
+        }
+
+        boolean isMemcheckDefined() {
+            return (m_cluster != null) ? m_cluster.isMemcheckDefined() : true;
         }
     }
 

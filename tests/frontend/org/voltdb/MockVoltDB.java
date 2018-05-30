@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,6 +23,7 @@
 package org.voltdb;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -32,6 +33,7 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.zookeeper_voltpatches.CreateMode;
@@ -45,7 +47,6 @@ import org.json_voltpatches.JSONObject;
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.messaging.HostMessenger;
 import org.voltcore.utils.CoreUtils;
-import org.voltcore.utils.Pair;
 import org.voltcore.zk.ZKUtil;
 import org.voltdb.VoltDB.Configuration;
 import org.voltdb.VoltZK.MailboxType;
@@ -55,8 +56,18 @@ import org.voltdb.catalog.Column;
 import org.voltdb.catalog.Database;
 import org.voltdb.catalog.Procedure;
 import org.voltdb.catalog.Table;
+import org.voltdb.compiler.deploymentfile.DeploymentType;
+import org.voltdb.compiler.deploymentfile.PathsType;
 import org.voltdb.dtxn.SiteTracker;
+import org.voltdb.iv2.Cartographer;
+import org.voltdb.iv2.SpScheduler.DurableUniqueIdListener;
 import org.voltdb.licensetool.LicenseApi;
+import org.voltdb.settings.ClusterSettings;
+import org.voltdb.settings.DbSettings;
+import org.voltdb.settings.NodeSettings;
+import org.voltdb.snmp.DummySnmpTrapSender;
+import org.voltdb.snmp.SnmpTrapSender;
+import org.voltdb.utils.HTTPAdminListener;
 
 import com.google_voltpatches.common.util.concurrent.ListenableFuture;
 import com.google_voltpatches.common.util.concurrent.ListeningExecutorService;
@@ -70,7 +81,7 @@ public class MockVoltDB implements VoltDBInterface
     final String m_clusterName = "cluster";
     final String m_databaseName = "database";
     StatsAgent m_statsAgent = null;
-    HostMessenger m_hostMessenger = new HostMessenger(new HostMessenger.Config());
+    HostMessenger m_hostMessenger = new HostMessenger(new HostMessenger.Config(false), null, null);
     private OperationMode m_mode = OperationMode.RUNNING;
     private volatile String m_localMetadata;
     final SnapshotCompletionMonitor m_snapshotCompletionMonitor = new SnapshotCompletionMonitor();
@@ -80,11 +91,14 @@ public class MockVoltDB implements VoltDBInterface
     long m_clusterCreateTime = 0;
     VoltDB.Configuration voltconfig = null;
     private final ListeningExecutorService m_es = MoreExecutors.listeningDecorator(CoreUtils.getSingleThreadExecutor("Mock Computation Service"));
+    private ScheduledThreadPoolExecutor m_periodicWorkThread = CoreUtils.getScheduledThreadPoolExecutor("Periodic Work", 1, CoreUtils.SMALL_STACK_SIZE);;
     public int m_hostId = 0;
     private SiteTracker m_siteTracker;
     private final Map<MailboxType, List<MailboxNodeContent>> m_mailboxMap =
-            new HashMap<MailboxType, List<MailboxNodeContent>>();
+            new HashMap<>();
     private boolean m_replicationActive = false;
+    private CommandLog m_cl = null;
+    private int m_kfactor;
 
     public MockVoltDB() {
         this(VoltDB.DEFAULT_PORT, VoltDB.DEFAULT_ADMIN_PORT, -1, VoltDB.DEFAULT_DR_PORT);
@@ -196,12 +210,16 @@ public class MockVoltDB implements VoltDBInterface
         getTable(tableName).setSignature(tableName);
     }
 
-    public void setDRProducerClusterId(int clusterId)
+    public void setDRProducerEnabled()
     {
         getCluster().setDrproducerenabled(true);
-        getCluster().setDrclusterid(clusterId);
     }
 
+    public void setDRConsumerConnectionEnabled(boolean enabled) {
+        getCluster().setDrconsumerenabled(enabled);
+    }
+
+    String m_clSnapshotPath = "command_log_snapshot";
     public void configureLogging(boolean enabled, boolean sync,
             int fsyncInterval, int maxTxns, String logPath, String snapshotPath) {
         org.voltdb.catalog.CommandLog logConfig = getCluster().getLogconfig().get("log");
@@ -212,8 +230,24 @@ public class MockVoltDB implements VoltDBInterface
         logConfig.setSynchronous(sync);
         logConfig.setFsyncinterval(fsyncInterval);
         logConfig.setMaxtxns(maxTxns);
-        logConfig.setLogpath(logPath);
-        logConfig.setInternalsnapshotpath(snapshotPath);
+        m_clSnapshotPath = snapshotPath;
+    }
+    @Override
+    public String getCommandLogSnapshotPath() {
+        return m_clSnapshotPath;
+    }
+
+    String m_autoSnapshotPath = "snapshots";
+    public void configureSnapshotSchedulePath(String autoSnapshotPath) {
+        org.voltdb.catalog.SnapshotSchedule scheduleConfig = getDatabase().getSnapshotschedule().get("default");
+        if (scheduleConfig == null) {
+            scheduleConfig = getDatabase().getSnapshotschedule().add("default");
+        }
+        m_autoSnapshotPath = autoSnapshotPath;
+    }
+    @Override
+    public String getSnapshotPath() {
+        return m_autoSnapshotPath;
     }
 
     public void addColumnToTable(String tableName, String columnName,
@@ -261,7 +295,10 @@ public class MockVoltDB implements VoltDBInterface
     public CatalogContext getCatalogContext()
     {
         long now = System.currentTimeMillis();
-        m_context = new CatalogContext( now, now, m_catalog, new byte[] {}, new byte[] {}, 0) {
+        DbSettings settings = new DbSettings(ClusterSettings.create().asSupplier(), NodeSettings.create());
+
+        m_context = new CatalogContext(m_catalog, settings, 0, now,
+                new byte[] {}, null, new byte[] {}, m_hostMessenger) {
             @Override
             public long getCatalogCRC() {
                 return 13;
@@ -344,7 +381,19 @@ public class MockVoltDB implements VoltDBInterface
     }
 
     @Override
+    public boolean isRunningWithOldVerbs() {
+        return voltconfig.m_startAction.isLegacy();
+    }
+
+    @Override
     public void initialize(Configuration config)
+    {
+        m_noLoadLib = config.m_noLoadLibVOLTDB;
+        voltconfig = config;
+    }
+
+    @Override
+    public void cli(Configuration config)
     {
         m_noLoadLib = config.m_noLoadLibVOLTDB;
         voltconfig = config;
@@ -444,10 +493,16 @@ public class MockVoltDB implements VoltDBInterface
     }
 
     @Override
-    public Pair<CatalogContext, CatalogSpecificPlanner> catalogUpdate(String diffCommands,
-            byte[] catalogBytes, byte[] catalogHash, int expectedCatalogVersion,
-            long currentTxnId, long currentTxnTimestamp, byte[] deploymentBytes,
-            byte[] deploymentHash)
+    public CatalogContext catalogUpdate(String diffCommands,
+            int expectedCatalogVersion, long genId,
+            boolean isForReplay, boolean requireCatalogDiffCmdsApplyToEE,
+            boolean hasSchemaChange, boolean requiresNewExportGeneration,  boolean hasSecurityUserChange)
+    {
+        throw new UnsupportedOperationException("unimplemented");
+    }
+
+    @Override
+    public CatalogContext settingsUpdate(ClusterSettings settings, int expectedVersionId)
     {
         throw new UnsupportedOperationException("unimplemented");
     }
@@ -458,7 +513,7 @@ public class MockVoltDB implements VoltDBInterface
     }
 
     @Override
-    public void logUpdate(String xmlConfig, long currentTxnId)
+    public void logUpdate(String xmlConfig, long currentTxnId, File voltroot)
     {
     }
 
@@ -468,11 +523,68 @@ public class MockVoltDB implements VoltDBInterface
 
     @Override
     public CommandLog getCommandLog() {
-        return new DummyCommandLog();
+        if (m_cl != null) {
+            return m_cl;
+        } else {
+            return new DummyCommandLog();
+        }
+    }
+
+    public void setCommandLog(CommandLog cl) {
+        m_cl = cl;
     }
 
     @Override
     public boolean rejoining() {
+        return false;
+    }
+
+    @Override
+    public String getVoltDBRootPath(PathsType.Voltdbroot path) { return path.getPath(); }
+    @Override
+    public String getCommandLogPath(PathsType.Commandlog path) { return path.getPath(); }
+    @Override
+    public String getCommandLogSnapshotPath(PathsType.Commandlogsnapshot path) { return path.getPath(); }
+    @Override
+    public String getSnapshotPath(PathsType.Snapshots path) { return path.getPath(); }
+    @Override
+    public String getExportOverflowPath(PathsType.Exportoverflow path) { return path.getPath(); }
+    @Override
+    public String getDROverflowPath(PathsType.Droverflow path) { return path.getPath(); }
+    @Override
+    public String getLargeQuerySwapPath(PathsType.Largequeryswap path) { return path.getPath(); }
+
+    @Override
+    public String getCommandLogPath() {
+        return "command_log";
+    }
+
+    @Override
+    public void loadLegacyPathProperties(DeploymentType deployment) throws IOException {
+    }
+
+    @Override
+    public String getVoltDBRootPath() {
+        return "voltdbroot";
+    }
+
+    @Override
+    public String getExportOverflowPath() {
+        return "export_overflow";
+    }
+
+    @Override
+    public String getDROverflowPath() {
+        return "dr_overflow";
+    }
+
+    @Override
+    public String getLargeQuerySwapPath() {
+        return "large_query_swap";
+    }
+
+    @Override
+    public boolean isBare() {
         return false;
     }
 
@@ -510,9 +622,9 @@ public class MockVoltDB implements VoltDBInterface
     }
 
     @Override
-    public void setReplicationRole(ReplicationRole role)
+    public void promoteToMaster()
     {
-        m_replicationRole = role;
+        m_replicationRole = ReplicationRole.NONE;
     }
 
     @Override
@@ -533,7 +645,11 @@ public class MockVoltDB implements VoltDBInterface
 
     @Override
     public ScheduledFuture<?> scheduleWork(Runnable work, long initialDelay, long delay, TimeUnit unit) {
-        return null;
+        if (delay > 0) {
+            return m_periodicWorkThread.scheduleWithFixedDelay(work, initialDelay, delay, unit);
+        } else {
+            return m_periodicWorkThread.schedule(work, initialDelay, unit);
+        }
     }
 
     @Override
@@ -578,7 +694,17 @@ public class MockVoltDB implements VoltDBInterface
             }
 
             @Override
-            public boolean isTrial() {
+            public boolean isAnyKindOfTrial() {
+                return false;
+            }
+
+            @Override
+            public boolean isProTrial() {
+                return false;
+            }
+
+            @Override
+            public boolean isEnterpriseTrial() {
                 return false;
             }
 
@@ -610,7 +736,55 @@ public class MockVoltDB implements VoltDBInterface
             }
 
             @Override
+            public boolean isDrActiveActiveAllowed() {
+                // TestExecutionSite (and probably others)
+                // use MockVoltDB without requiring unique
+                // zmq ports for the DR replicator.
+                return false;
+            }
+
+            @Override
             public boolean isCommandLoggingAllowed() {
+                return true;
+            }
+
+            @Override
+            public boolean isAWSMarketplace() {
+                return false;
+            }
+
+            @Override
+            public boolean isEnterprise() {
+                return false;
+            }
+
+            @Override
+            public boolean isPro() {
+                return false;
+            }
+
+            @Override
+            public String licensee() {
+                return null;
+            }
+
+            @Override
+            public Calendar issued() {
+                return null;
+            }
+
+            @Override
+            public String note() {
+                return null;
+            }
+
+            @Override
+            public boolean hardExpiration() {
+                return false;
+            }
+
+            @Override
+            public boolean secondaryInitialization() {
                 return true;
             }
         };
@@ -630,7 +804,7 @@ public class MockVoltDB implements VoltDBInterface
     @Override
     public ScheduledFuture<?> schedulePriorityWork(Runnable work,
             long initialDelay, long delay, TimeUnit unit) {
-        return null;
+        return m_periodicWorkThread.scheduleWithFixedDelay(work, initialDelay, delay, unit);
     }
 
     @Override
@@ -659,6 +833,57 @@ public class MockVoltDB implements VoltDBInterface
     }
 
     @Override
+    public void configureDurabilityUniqueIdListener(Integer partition, DurableUniqueIdListener listener, boolean install) {
+    }
+
+    @Override
     public void onSyncSnapshotCompletion() {
+    }
+
+    @Override
+    public boolean isPreparingShuttingdown() {
+        return false;
+    }
+
+    @Override
+    public void setShuttingdown(boolean shuttingdown) {
+    }
+
+    @Override
+    public Cartographer getCartograhper() {
+        return null;
+    }
+
+    @Override
+    public SnmpTrapSender getSnmpTrapSender() {
+        return new DummySnmpTrapSender();
+    }
+
+    @Override
+    public void swapTables(String oneTable, String otherTable) {
+    }
+
+    @Override
+    public HTTPAdminListener getHttpAdminListener() {
+        return null;
+    }
+
+    @Override
+    public long getLowestSiteId() {
+        return 0;
+    }
+
+    @Override
+    public int getLowestPartitionId() {
+        return 0;
+    }
+
+    @Override
+    public int getKFactor() {
+        return m_kfactor;
+    }
+
+    public void setKFactor(int kfactor) {
+        m_kfactor = kfactor;
     }
 }

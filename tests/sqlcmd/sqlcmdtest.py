@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # This file is part of VoltDB.
-# Copyright (C) 2008-2015 VoltDB Inc.
+# Copyright (C) 2008-2018 VoltDB Inc.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -91,7 +91,21 @@ def launch_and_wait_on_voltdb(reportout):
     # Launch a single local voltdb server to serve all scripted sqlcmd runs.
     # The scripts are expected to clean up after themselves  -- and/or defensively
     # drop and create all of their tables up front.
-    subprocess.Popen(['../../bin/voltdb', 'create'], shell=False)
+    voltenv=os.environ.copy()
+    sqlcmdenv=os.environ.copy()
+    sqlcmdopts=[]
+    if os.environ.has_key("ENABLE_SSL") and os.environ["ENABLE_SSL"].lower() == "true":
+        prop_pfx="-Djavax.net.ssl."
+        keystore=os.path.realpath("../../tests/frontend/org/voltdb/keystore")
+        voltenv["VOLTDB_OPTS"] = (prop_pfx + "keyStore=" + keystore + " " + prop_pfx +
+                                  "keyStorePassword=password " + prop_pfx + "trustStore=" +
+                                  keystore + " " + prop_pfx + "trustStorePassword=password")
+        sqlcmdenv["ENABLE_SSL"] = "false"
+        sqlcmdopts = ["-J" + prop_pfx + "trustStore=" + keystore]
+        sqlcmdopts = sqlcmdopts + ["-J" + prop_pfx + "trustStorePassword=password", "--ssl"]
+    print "Initializing directory..."
+    subprocess.call(['../../bin/voltdb', 'init', '--force'], shell=False)
+    subprocess.Popen(['../../bin/voltdb', 'start'], shell=False)
     # give server a little startup time.
     time.sleep(5)
 
@@ -104,7 +118,7 @@ def launch_and_wait_on_voltdb(reportout):
     # that could connect later in response to a directive.
     for waited in xrange(0, 19):
         empty_input.seek(0)
-        waiting = subprocess.call(['../../bin/sqlcmd'], stdin=empty_input)
+        waiting = subprocess.call(['../../bin/sqlcmd'] + sqlcmdopts, stdin=empty_input, env=sqlcmdenv)
         if not waiting:
             break
         if waited == 19:
@@ -150,7 +164,7 @@ def clean_output(parent, path):
     memory_check_matcher = re.compile(r"""
             ^(WARN:\s)?Strict\sjava\smemory\schecking.*$  # Match the start.
             """, re.VERBOSE)
-    # 2. Allow different latency numbers to be reported like
+    # 2. Allow different latency numbers to be reported, like
     # "(Returned 3 rows in 9.99s)" vs. "(Returned 3 rows in 10.01s)".
     # These both get "fuzzed" into the same generic string "(Returned 3 rows in #.##s)".
     # This produces identical 'baseline` results on platforms and builds that
@@ -160,6 +174,29 @@ def clean_output(parent, path):
                                  # survives as \g<1>
             [0-9]+\.[0-9]+s      # also required, replaced with #.##s
             """, re.VERBOSE)
+    # 3. Allow different query timeout periods to be reported, like
+    # "A SQL query was terminated after 1.000 seconds because it exceeded the query timeout period." vs.
+    # "A SQL query was terminated after 1.001 seconds because it exceeded the query timeout period.".
+    # These both get "fuzzed" into the same generic string:
+    # "A SQL query was terminated after 1.00# seconds because it exceeded the query timeout period."
+    # ignoring the final milliseconds digit.
+    # This produces identical 'baseline` results on platforms and builds that
+    # may terminate a query after a slightly different number of milliseconds.
+    query_timeout_matcher = re.compile(r"""
+            (terminated\safter\s[0-9]+\.[0-9][0-9])  # required to match a query timeout
+                                                     # line, survives as \g<1>
+            [0-9]                                    # final digit, replaced with #
+            (\sseconds)                              # survives as \g<2>
+            """, re.VERBOSE)
+    # 4. Allow stack trace differences that might normally arise from different versions of
+    # voltdb or other library (e.g. reflection) source code.
+    stack_frame_matcher = re.compile(r"""
+            (at\s.+\.java\:)                         # required to match a stack trace line
+                                                     # line, survives as \g<1>
+            [0-9]+                                   # line number digits, replaced with #
+            (\))                                     # survives as \g<2>
+            """, re.VERBOSE)
+
     for line in outbackin:
         # Note len(cleanedline) here counts 1 EOL character.
         # Preserve blank lines as is -- there's no need to try cleaning them.
@@ -168,6 +205,8 @@ def clean_output(parent, path):
             continue
         cleanedline = memory_check_matcher.sub("", line)
         cleanedline = latency_matcher.sub("\g<1>#.##s", cleanedline)
+        cleanedline = query_timeout_matcher.sub("\g<1>#\g<2>", cleanedline)
+        cleanedline = stack_frame_matcher.sub("\g<1>#\g<2>", cleanedline)
         # # enable for debug print "DEBUG line length %d" % (len(cleanedline))
         # # enable for debug #print cleanedline
         # Here, a blank line resulted from a total text replacement,
@@ -226,6 +265,79 @@ def compare_cleaned_to_baseline(parent, baseparent, path, inpath, do_refresh, re
             return True
     return False
 
+def delete_proc(pfile):
+    # drop any procedures left in between any tests
+    defaultstoredprocedures = {".insert",".update",".select",".delete",".upsert"}
+    procset = set()
+
+    for line in pfile.splitlines():
+        columns = line.split(',')
+        # column[2] gives the procedure name. using set to discard duplicates among partition.
+        try:
+            if columns[2] != ' ' :
+                procname = columns[2].replace('\"','')
+                if any( procname.endswith(defaultprocedure) for defaultprocedure in defaultstoredprocedures) :
+                    continue
+                print "user procedure : " + procname  #debug
+                procset.add(procname)
+        except IndexError:
+            pass
+
+    if len(procset) :
+        sb = ''
+        sb += 'file -inlinebatch EOB'+ '\n' + '\n'
+        for procname in procset:
+            sb += 'DROP PROCEDURE ' + procname + ' IF EXISTS;' + '\n'
+        sb += '\n' + 'EOB'
+
+        proc = subprocess.Popen(['../../bin/sqlcmd'],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        proc.communicate(sb)
+        rc = proc.wait()
+
+        if(rc != 0) :
+            # debug
+            (stdoutprocdata, stderrdata) = proc.communicate()
+            print "sqlcmdtest error \n"
+            print "Detail output : " +  stdoutprocdata
+            print "Detail error : " +  stderrdata
+
+
+def delete_table_and_view(pfile):
+    # drop table (unique) and all its views left in between any tests
+    tableset = set()
+    for line in pfile.splitlines():
+        columns = line.split(',')
+        # column[5] gives the table and views. using set to discard duplicates among partition.
+        try:
+            if columns[5] != ' ' :
+                tablename = columns[5].replace('\"','')
+                tableset.add(tablename)
+        except IndexError:
+            pass
+
+    if len(tableset) :
+        sb = ''
+        sb += 'file -inlinebatch EOB'+ '\n' + '\n'
+        for tablename in tableset:
+            print "user table/view : " + tablename  #debug
+            sb += 'DROP TABLE ' + tablename + ' IF EXISTS CASCADE;' + '\n'
+        sb += '\n' + 'EOB'
+
+        proc = subprocess.Popen(['../../bin/sqlcmd'],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        proc.communicate(sb)
+        rc = proc.wait()
+
+        if(rc != 0) :
+            # debug
+            (stdouttabledata, stderrdata) = proc.communicate()
+            print "sqlcmdtest error \n"
+            print "Detail output : " +  stdouttabledata
+            print "Detail error : " +  stderrdata
+
 
 def do_main():
     parser = OptionParser()
@@ -260,6 +372,7 @@ def do_main():
     # VoltDB server and remember to leave it running on exit.
     launch_and_wait_on_voltdb(reportout)
 
+
     # Except in refresh mode, any diffs change the scripts exit code to fail ant/jenkins
     haddiffs = False
     try:
@@ -272,19 +385,61 @@ def do_main():
             for inpath in files:
                 if not inpath.endswith(".in"):
                     continue
-                print "Running ", os.path.join(parent, inpath)
                 prefix = inpath[:-3]
+
+                config_params = ""
+                prompt = "Running " + os.path.join(parent, inpath)
+                if os.path.isfile(os.path.join(parent, prefix + '.config')):
+                    with open (os.path.join(parent, prefix + '.config'), "r") as configFile:
+                        config_params=configFile.read().strip()
+                    prompt += " with configuration:" + config_params.replace('\n', ' ')
+                print prompt
+
                 childin = open(os.path.join(parent, inpath))
                 # TODO use temp scratch files instead of local files to avoid polluting the git
                 # workspace. Ideally they would be self-purging except in failure cases or debug
                 # modes when they may contain useful diagnostic detail.
                 childout = open(os.path.join(parent, prefix + '.out'), 'w+')
                 childerr = open(os.path.join(parent, prefix + '.err'), 'w+')
-                subprocess.call(['../../bin/sqlcmd'],
+
+
+                if config_params:
+                    subprocess.call(['../../bin/sqlcmd'] + config_params.split("\n"),
+                        stdin=childin, stdout=childout, stderr=childerr)
+                else:
+                    subprocess.call(['../../bin/sqlcmd'],
                         stdin=childin, stdout=childout, stderr=childerr)
 
-                # TODO launch a hard-coded script that verifies a clean database and healthy server
-                # ("show tables" or equivalent) after each test run to prevent cross-contamination.
+                # Verify a clean database by dropping any procedure,views and table after each test to prevent cross-contamination.
+                proc = subprocess.Popen(['../../bin/sqlcmd', '--query=exec @SystemCatalog procedures', '--output-skip-metadata', '--output-format=csv'],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+                rc = proc.wait()
+                (stdoutprocdata, stdoutprocerr) = proc.communicate()
+
+
+                if (rc != 0) :
+                    # debug
+                    print "sqlcmdtest error \n"
+                    print "Detail output : " +  stdoutprocdata
+                    print "Detail error : " +  stdoutprocerr
+                else :
+                    delete_proc(stdoutprocdata)
+
+                proc = subprocess.Popen(['../../bin/sqlcmd', '--query=exec @Statistics table 0', '--output-skip-metadata', '--output-format=csv'],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+                rc = proc.wait()
+                (stdouttabledata, stdouttableerr) = proc.communicate()
+
+
+                if (rc != 0) :
+                    # debug
+                    print "sqlcmdtest error \n"
+                    print "Detail output : " +  stdouttabledata
+                    print "Detail error : " +  stdouttableerr
+                else :
+                    delete_table_and_view(stdouttabledata)
 
                 # fuzz the sqlcmd output for reliable comparison
                 clean_output(parent, prefix + '.out')

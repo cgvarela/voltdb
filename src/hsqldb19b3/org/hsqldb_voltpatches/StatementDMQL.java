@@ -34,9 +34,11 @@ package org.hsqldb_voltpatches;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.hsqldb_voltpatches.Expression.SimpleColumnContext;
 import org.hsqldb_voltpatches.HSQLInterface.HSQLParseException;
 import org.hsqldb_voltpatches.HsqlNameManager.HsqlName;
 import org.hsqldb_voltpatches.ParserDQL.CompileContext;
+import org.hsqldb_voltpatches.QueryExpression.WithList;
 import org.hsqldb_voltpatches.lib.ArrayUtil;
 import org.hsqldb_voltpatches.lib.HashSet;
 import org.hsqldb_voltpatches.lib.OrderedHashSet;
@@ -185,6 +187,7 @@ public abstract class StatementDMQL extends Statement {
         }
     }
 
+    @Override
     public Result execute(Session session) {
 
         Result result = getAccessRightsResult(session);
@@ -208,7 +211,8 @@ public abstract class StatementDMQL extends Statement {
             materializeSubQueries(session);
 
             result = getResult(session);
-        } catch (Throwable t) {
+        }
+        catch (Throwable t) {
             String commandString = sql;
 
             if (session.database.getProperties().getErrorLevel()
@@ -233,6 +237,7 @@ public abstract class StatementDMQL extends Statement {
     /**
      * For the creation of the statement
      */
+    @Override
     public void setGeneratedColumnInfo(int generate, ResultMetaData meta) {
 
         // can support INSERT_SELECT also
@@ -309,6 +314,7 @@ public abstract class StatementDMQL extends Statement {
         return values;
     }
 
+    @Override
     public boolean hasGeneratedColumns() {
         return generatedIndexes != null;
     }
@@ -364,6 +370,7 @@ public abstract class StatementDMQL extends Statement {
         }
     }
 
+    @Override
     public void clearVariables() {
 
         isValid            = false;
@@ -381,7 +388,7 @@ public abstract class StatementDMQL extends Statement {
         subqueries = null;
     }
 
-    void setDatabseObjects(CompileContext compileContext) {
+    void setDatabaseObjects(CompileContext compileContext) {
 
         parameters = compileContext.getParameters();
 
@@ -502,7 +509,8 @@ public abstract class StatementDMQL extends Statement {
 
         try {
             checkAccessRights(session);
-        } catch (HsqlException e) {
+        }
+        catch (HsqlException e) {
             return Result.newErrorResult(e);
         }
 
@@ -513,6 +521,7 @@ public abstract class StatementDMQL extends Statement {
      * Returns the metadata, which is empty if the CompiledStatement does not
      * generate a Result.
      */
+    @Override
     public ResultMetaData getResultMetaData() {
 
         switch (type) {
@@ -534,6 +543,7 @@ public abstract class StatementDMQL extends Statement {
     /**
      * Returns the metadata for the placeholder parameters.
      */
+    @Override
     public ResultMetaData getParametersMetaData() {
         return parameterMetaData;
     }
@@ -542,7 +552,6 @@ public abstract class StatementDMQL extends Statement {
 
         int     offset;
         int     idx;
-        boolean hasReturnValue;
 
         offset = 0;
 
@@ -602,11 +611,13 @@ public abstract class StatementDMQL extends Statement {
     /**
      * Retrieves a String representation of this object.
      */
+    @Override
     public String describe(Session session) {
 
         try {
             return describeImpl(session);
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             e.printStackTrace();
 
             return e.toString();
@@ -637,21 +648,18 @@ public abstract class StatementDMQL extends Statement {
                     sb.append('[').append('\n');
                     appendMultiColumns(sb, insertColumnMap).append('\n');
                     appendTable(sb).append('\n');
-                    appendParms(sb).append('\n');
-                    appendSubqueries(session, sb).append(']');
-
-                    return sb.toString();
-                } else {
+                }
+                else {
                     sb.append("INSERT SELECT");
                     sb.append('[').append('\n');
                     appendColumns(sb, insertColumnMap).append('\n');
                     appendTable(sb).append('\n');
                     sb.append(queryExpression.describe(session)).append('\n');
-                    appendParms(sb).append('\n');
-                    appendSubqueries(session, sb).append(']');
-
-                    return sb.toString();
                 }
+                appendParms(sb).append('\n');
+                appendSubqueries(session, sb).append(']');
+
+                return sb.toString();
             }
             case StatementTypes.UPDATE_WHERE : {
                 sb.append("UPDATE");
@@ -659,10 +667,9 @@ public abstract class StatementDMQL extends Statement {
                 appendColumns(sb, updateColumnMap).append('\n');
                 appendTable(sb).append('\n');
                 appendCondition(session, sb);
-                sb.append(targetRangeVariables[0].describe(session)).append(
-                    '\n');
-                sb.append(targetRangeVariables[1].describe(session)).append(
-                    '\n');
+                for (RangeVariable trv : targetRangeVariables) {
+                    sb.append(trv.describe(session)).append('\n');
+                }
                 appendParms(sb).append('\n');
                 appendSubqueries(session, sb).append(']');
 
@@ -673,10 +680,9 @@ public abstract class StatementDMQL extends Statement {
                 sb.append('[').append('\n');
                 appendTable(sb).append('\n');
                 appendCondition(session, sb);
-                sb.append(targetRangeVariables[0].describe(session)).append(
-                    '\n');
-                sb.append(targetRangeVariables[1].describe(session)).append(
-                    '\n');
+                for (RangeVariable trv : targetRangeVariables) {
+                    sb.append(trv.describe(session)).append('\n');
+                }
                 appendParms(sb).append('\n');
                 appendSubqueries(session, sb).append(']');
 
@@ -695,12 +701,9 @@ public abstract class StatementDMQL extends Statement {
                 appendColumns(sb, updateColumnMap).append('\n');
                 appendTable(sb).append('\n');
                 appendCondition(session, sb);
-                sb.append(targetRangeVariables[0].describe(session)).append(
-                    '\n');
-                sb.append(targetRangeVariables[1].describe(session)).append(
-                    '\n');
-                sb.append(targetRangeVariables[2].describe(session)).append(
-                    '\n');
+                for (RangeVariable trv : targetRangeVariables) {
+                    sb.append(trv.describe(session)).append('\n');
+                }
                 appendParms(sb).append('\n');
                 appendSubqueries(session, sb).append(']');
 
@@ -734,14 +737,6 @@ public abstract class StatementDMQL extends Statement {
     private StringBuffer appendTable(StringBuffer sb) {
 
         sb.append("TABLE[").append(targetTable.getName().name).append(']');
-
-        return sb;
-    }
-
-    private StringBuffer appendSourceTable(StringBuffer sb) {
-
-        sb.append("SOURCE TABLE[").append(sourceTable.getName().name).append(
-            ']');
 
         return sb;
     }
@@ -810,8 +805,10 @@ public abstract class StatementDMQL extends Statement {
                                      "]\n");
     }
 
+    @Override
     public void resolve() {}
 
+    @Override
     public RangeVariable[] getRangeVariables() {
         return rangeVariables;
     }
@@ -846,7 +843,7 @@ public abstract class StatementDMQL extends Statement {
          * inference.
          */
         public static <T extends Comparable<T>, U> Pair<T, U> of(T x, U y) {
-            return new Pair<T, U>(x, y);
+            return new Pair<>(x, y);
         }
     }
     /**
@@ -866,22 +863,6 @@ public abstract class StatementDMQL extends Statement {
     }
 
     /**
-     * Extract columnref elements from the input element.
-     * @param element
-     * @param cols - output collection containing the column references
-     */
-
-    static protected void extractColumnReferences(VoltXMLElement element, java.util.List<VoltXMLElement> cols) {
-        if ("columnref".equalsIgnoreCase(element.name)) {
-            cols.add(element);
-        } else {
-            for (VoltXMLElement child : element.children) {
-                extractColumnReferences(child, cols);
-            }
-        }
-    }
-
-    /**
      * VoltDB added method to get a non-catalog-dependent
      * representation of this HSQLDB object.
      * @param session The current Session object may be needed to resolve
@@ -891,8 +872,7 @@ public abstract class StatementDMQL extends Statement {
      */
     @Override
     VoltXMLElement voltGetStatementXML(Session session)
-            throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException
-    {
+            throws HSQLParseException {
         // XXX this seems, how you say, dumb.  leaving it though until I track
         // down that nobody cares
         assert(false);
@@ -900,86 +880,128 @@ public abstract class StatementDMQL extends Statement {
     }
 
     static VoltXMLElement voltGetXMLExpression(QueryExpression queryExpr, ExpressionColumn parameters[], Session session)
-    throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException
-    {
+            throws HSQLParseException {
         // "select" statements/clauses are always represented by a QueryExpression of type QuerySpecification.
         // The only other instances of QueryExpression are direct QueryExpression instances instantiated in XreadSetOperation
         // to represent UNION, etc.
+        VoltXMLElement answer = null;
         int exprType = queryExpr.getUnionType();
         if (exprType == QueryExpression.NOUNION) {
             // "select" statements/clauses are always represented by a QueryExpression of type QuerySpecification.
             if (! (queryExpr instanceof QuerySpecification)) {
-                throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(
+                throw new HSQLParseException(
                         queryExpr.operatorName() + " is not supported.");
             }
             QuerySpecification select = (QuerySpecification) queryExpr;
-            return voltGetXMLSpecification(select, parameters, session);
-        } else if (exprType == QueryExpression.UNION || exprType == QueryExpression.UNION_ALL ||
-                   exprType == QueryExpression.EXCEPT || exprType == QueryExpression.EXCEPT_ALL ||
-                   exprType == QueryExpression.INTERSECT || exprType == QueryExpression.INTERSECT_ALL){
-            VoltXMLElement unionExpr = new VoltXMLElement("union");
-            unionExpr.attributes.put("uniontype", queryExpr.operatorName());
-
-            VoltXMLElement leftExpr = voltGetXMLExpression(
-                    queryExpr.getLeftQueryExpression(), parameters, session);
-            VoltXMLElement rightExpr = voltGetXMLExpression(
-                    queryExpr.getRightQueryExpression(), parameters, session);
-
-            // parameters
-            voltAppendParameters(session, unionExpr, parameters);
-
-            // Limit/Offset
-            List<VoltXMLElement> limitOffsetXml = voltGetLimitOffsetXMLFromSortAndSlice(session, queryExpr.sortAndSlice);
-            for (VoltXMLElement elem : limitOffsetXml) {
-                unionExpr.children.add(elem);
+            answer = voltGetXMLSpecification(select, parameters, session);
+            if (answer != null) {
+                answer = voltAddXMLWithClause(queryExpr, answer, parameters, session);
             }
+        } else
+        {
+            if (exprType == QueryExpression.UNION || exprType == QueryExpression.UNION_ALL ||
+                exprType == QueryExpression.EXCEPT || exprType == QueryExpression.EXCEPT_ALL ||
+                exprType == QueryExpression.INTERSECT || exprType == QueryExpression.INTERSECT_ALL) {
+                VoltXMLElement unionExpr = new VoltXMLElement("union");
+                unionExpr.attributes.put("uniontype", queryExpr.operatorName());
 
-            // Order By
-            if (queryExpr.sortAndSlice.getOrderLength() > 0) {
-                List<Expression> displayCols = getDisplayColumnsForSetOp(queryExpr);
-                java.util.Set<Integer> ignoredColsIndexes = new java.util.HashSet<Integer>();
+                VoltXMLElement leftExpr = voltGetXMLExpression(
+                        queryExpr.getLeftQueryExpression(), parameters, session);
+                VoltXMLElement rightExpr = voltGetXMLExpression(
+                        queryExpr.getRightQueryExpression(), parameters, session);
 
-                VoltXMLElement orderCols = new VoltXMLElement("ordercolumns");
-                unionExpr.children.add(orderCols);
-                for (int i=0; i < queryExpr.sortAndSlice.exprList.size(); ++i) {
-                    Expression e = (Expression) queryExpr.sortAndSlice.exprList.get(i);
-                    assert(e.getLeftNode() != null);
-                    // Get the display column with a corresponding index
-                    int index = e.getLeftNode().queryTableColumnIndex;
-                    assert(index < displayCols.size());
-                    Expression column = displayCols.get(index);
-                    e.setLeftNode(column);
-                    VoltXMLElement xml = e.voltGetXML(session, displayCols, ignoredColsIndexes, i);
-                    orderCols.children.add(xml);
+                // parameters
+                voltAppendParameters(session, unionExpr, parameters);
+
+                // Limit/Offset
+                List<VoltXMLElement> limitOffsetXml = voltGetLimitOffsetXMLFromSortAndSlice(session, queryExpr.sortAndSlice);
+                for (VoltXMLElement elem : limitOffsetXml) {
+                    unionExpr.children.add(elem);
                 }
-            }
 
-            /**
-             * Try to merge parent and the child nodes for UNION and INTERSECT (ALL) set operation
-             * only if they don't have their own limit/offset/order by clauses
-             * In case of EXCEPT(ALL) operation only the left child can be merged with the parent in order to preserve
-             * associativity - (Select1 EXCEPT Select2) EXCEPT Select3 vs. Select1 EXCEPT (Select2 EXCEPT Select3)
-             */
-            boolean canMergeLeft = !hasLimitOrOrder(leftExpr);
-            if (canMergeLeft && "union".equalsIgnoreCase(leftExpr.name) &&
-                    queryExpr.operatorName().equalsIgnoreCase(leftExpr.attributes.get("uniontype"))) {
-                unionExpr.children.addAll(leftExpr.children);
-            } else {
-                unionExpr.children.add(leftExpr);
+                // Order By
+                if (queryExpr.sortAndSlice.getOrderLength() > 0) {
+                    List<Expression> displayCols = getDisplayColumnsForSetOp(queryExpr);
+                    SimpleColumnContext context = new SimpleColumnContext(session, displayCols, displayCols.size());
+                    VoltXMLElement orderCols = new VoltXMLElement("ordercolumns");
+                    unionExpr.children.add(orderCols);
+                    for (int i=0; i < queryExpr.sortAndSlice.exprList.size(); ++i) {
+                        Expression e = (Expression) queryExpr.sortAndSlice.exprList.get(i);
+                        assert(e.getLeftNode() != null);
+                        // Get the display column with a corresponding index
+                        int index = e.getLeftNode().queryTableColumnIndex;
+                        assert(index < displayCols.size());
+                        Expression column = displayCols.get(index);
+                        e.setLeftNode(column);
+                        VoltXMLElement xml = e.voltGetXML(context.withStartKey(i), null);
+                        orderCols.children.add(xml);
+                    }
+                }
+
+                /**
+                 * Try to merge parent and the child nodes for UNION and INTERSECT (ALL) set operation
+                 * only if they don't have their own limit/offset/order by clauses
+                 * In case of EXCEPT(ALL) operation only the left child can be merged with the parent in order to preserve
+                 * associativity - (Select1 EXCEPT Select2) EXCEPT Select3 vs. Select1 EXCEPT (Select2 EXCEPT Select3)
+                 */
+                boolean canMergeLeft = !hasLimitOrOrder(leftExpr);
+                if (canMergeLeft && "union".equalsIgnoreCase(leftExpr.name) &&
+                        queryExpr.operatorName().equalsIgnoreCase(leftExpr.attributes.get("uniontype"))) {
+                    unionExpr.children.addAll(leftExpr.children);
+                } else {
+                    unionExpr.children.add(leftExpr);
+                }
+                boolean canMergeRight = !hasLimitOrOrder(rightExpr);
+                if (canMergeRight && exprType != QueryExpression.EXCEPT && exprType != QueryExpression.EXCEPT_ALL &&
+                    "union".equalsIgnoreCase(rightExpr.name) &&
+                    queryExpr.operatorName().equalsIgnoreCase(rightExpr.attributes.get("uniontype"))) {
+                    unionExpr.children.addAll(rightExpr.children);
+                } else {
+                    unionExpr.children.add(rightExpr);
+                }
+                answer = unionExpr;
             }
-            boolean canMergeRight = !hasLimitOrOrder(rightExpr);
-            if (canMergeRight && exprType != QueryExpression.EXCEPT && exprType != QueryExpression.EXCEPT_ALL &&
-                "union".equalsIgnoreCase(rightExpr.name) &&
-                queryExpr.operatorName().equalsIgnoreCase(rightExpr.attributes.get("uniontype"))) {
-                unionExpr.children.addAll(rightExpr.children);
-            } else {
-                unionExpr.children.add(rightExpr);
-            }
-            return unionExpr;
-        } else {
-            throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(
-                    queryExpr.operatorName() + " tuple set operator is not supported.");
         }
+        if (answer != null) {
+            return answer;
+        }
+        throw new HSQLParseException(
+                queryExpr.operatorName() + " tuple set operator is not supported.");
+    }
+
+    private static VoltXMLElement voltAddXMLWithClause(QueryExpression queryExpr,
+                                                       VoltXMLElement mainQueryXML,
+                                                       ExpressionColumn [] parameters,
+                                                       Session session) throws HSQLParseException {
+        WithList withList = queryExpr.getWithList();
+        if (withList == null) {
+            return mainQueryXML;
+        }
+        VoltXMLElement withAnswerXML = new VoltXMLElement("withClause");
+        withAnswerXML.attributes.put("recursive", (withList.isRecursive() ? "true" : "false"));
+        VoltXMLElement withListXML = new VoltXMLElement("withList");
+        withAnswerXML.children.add(withListXML);
+        for (WithExpression withExpr : withList.getWithExpressions()) {
+            withListXML.children.add(voltGetXMLForWithExpr(withExpr, parameters, session));
+        }
+        mainQueryXML.children.add(0, withAnswerXML);
+        return mainQueryXML;
+    }
+
+    private static VoltXMLElement voltGetXMLForWithExpr(WithExpression withExpr,
+                                                        ExpressionColumn [] parameters,
+                                                        Session session) throws HSQLParseException {
+        VoltXMLElement withExprXML = new VoltXMLElement("withListElement");
+        Table tbl = withExpr.getTable();
+        VoltXMLElement tblXML = tbl.voltGetTableXML(session);
+        withExprXML.children.add(tblXML);
+        QueryExpression baseQuery = withExpr.getBaseQuery();
+        QueryExpression recursiveQuery = withExpr.getRecursiveQuery();
+        withExprXML.children.add(voltGetXMLExpression(baseQuery, parameters, session));
+        if (recursiveQuery != null) {
+            withExprXML.children.add(voltGetXMLExpression(recursiveQuery, parameters, session));
+        }
+        return withExprXML;
     }
 
     /**
@@ -999,7 +1021,7 @@ public abstract class StatementDMQL extends Statement {
 
     /**
      * Return a list of the display columns for the left most statement from a set op
-     * @return
+     * @returnn
      */
     private static List<Expression> getDisplayColumnsForSetOp(QueryExpression queryExpr) {
         assert(queryExpr != null);
@@ -1026,7 +1048,7 @@ public abstract class StatementDMQL extends Statement {
         if (sortAndSlice.limitCondition != null) {
             Expression limitCondition = sortAndSlice.limitCondition;
             if (limitCondition.nodes.length != 2) {
-                throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(
+                throw new HSQLParseException(
                     "Parser did not create limit and offset expression for LIMIT.");
             }
             try {
@@ -1073,67 +1095,27 @@ public abstract class StatementDMQL extends Statement {
     }
 
     private static VoltXMLElement voltGetXMLSpecification(QuerySpecification select, ExpressionColumn parameters[], Session session)
-    throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException
-    {
+            throws HSQLParseException {
         // select
         VoltXMLElement query = new VoltXMLElement("select");
-        if (select.isDistinctSelect)
+        if (select.isDistinctSelect) {
             query.attributes.put("distinct", "true");
+        }
 
         List<VoltXMLElement> limitOffsetXml = voltGetLimitOffsetXMLFromSortAndSlice(session, select.sortAndSlice);
         for (VoltXMLElement elem : limitOffsetXml) {
             query.children.add(elem);
         }
 
-        // Just gather a mish-mash of every possible relevant expression
-        // and uniq them later
-        org.hsqldb_voltpatches.lib.HsqlList col_list = new org.hsqldb_voltpatches.lib.HsqlArrayList();
-        select.collectAllExpressions(col_list, Expression.columnExpressionSet, Expression.emptyExpressionSet);
-        if (select.queryCondition != null)
-        {
-            Expression.collectAllExpressions(col_list, select.queryCondition,
-                                             Expression.columnExpressionSet,
-                                             Expression.emptyExpressionSet);
-        }
-        for (int i = 0; i < select.exprColumns.length; i++) {
-            Expression.collectAllExpressions(col_list, select.exprColumns[i],
-                                             Expression.columnExpressionSet,
-                                             Expression.emptyExpressionSet);
-        }
-        for (RangeVariable rv : select.rangeVariables)
-        {
-            if (rv.indexCondition != null)
-            {
-                Expression.collectAllExpressions(col_list, rv.indexCondition,
-                                                 Expression.columnExpressionSet,
-                                                 Expression.emptyExpressionSet);
-
-            }
-            if (rv.indexEndCondition != null)
-            {
-                Expression.collectAllExpressions(col_list, rv.indexEndCondition,
-                                                 Expression.columnExpressionSet,
-                                                 Expression.emptyExpressionSet);
-
-            }
-            if (rv.nonIndexJoinCondition != null)
-            {
-                Expression.collectAllExpressions(col_list, rv.nonIndexJoinCondition,
-                                                 Expression.columnExpressionSet,
-                                                 Expression.emptyExpressionSet);
-
-            }
-        }
-
         // columns
         VoltXMLElement cols = new VoltXMLElement("columns");
         query.children.add(cols);
 
-        java.util.ArrayList<Expression> orderByCols = new java.util.ArrayList<Expression>();
-        java.util.ArrayList<Expression> groupByCols = new java.util.ArrayList<Expression>();
+        java.util.ArrayList<Expression> orderByCols = new java.util.ArrayList<>();
+        java.util.ArrayList<Expression> groupByCols = new java.util.ArrayList<>();
         select.displayCols.clear();
         java.util.ArrayList<Pair<Integer, HsqlNameManager.SimpleName>> aliases =
-                new java.util.ArrayList<Pair<Integer, HsqlNameManager.SimpleName>>();
+                new java.util.ArrayList<>();
 
         /*
          * select.exprColumn stores all of the columns needed by HSQL to
@@ -1167,7 +1149,8 @@ public abstract class StatementDMQL extends Statement {
                     if (exprColumn.alias != null && exprColumn.columnName == null) {
                         aliases.add(Pair.of(expr.columnIndex, expr.alias));
                     }
-                } else if (expr.columnIndex > -1) {
+                }
+                else if (expr.columnIndex > -1) {
                     /*
                      * Only add it to the list of aliases that need to be
                      * propagated to columns if the column index is valid.
@@ -1187,17 +1170,24 @@ public abstract class StatementDMQL extends Statement {
 
             if (isGroupByColumn(select, i)) {
                 groupByCols.add(expr);
-            } else if (expr.opType == OpTypes.ORDER_BY) {
-                orderByCols.add(expr);
-            } else if (expr.equals(select.getHavingCondition())) {
+            }
+            else if (expr.opType == OpTypes.ORDER_BY) {
+                if (select.sortAndSlice.hasOrder())
+                    // If the selectQuerySpecification's sort structure has been reset,
+                    // do not add orderByCols.
+                    orderByCols.add(expr);
+            }
+            else if (expr.equals(select.getHavingCondition())) {
                 // Having
-                if( !(expr instanceof ExpressionLogical && expr.isAggregate) ) {
-                    throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(
+                if ( !(expr instanceof ExpressionLogical && expr.isAggregate) ) {
+                    throw new HSQLParseException(
                             "VoltDB does not support HAVING clause without aggregation. " +
                             "Consider using WHERE clause if possible");
                 }
 
-            } else if (expr.opType != OpTypes.SIMPLE_COLUMN || (expr.isAggregate && expr.alias != null)) {
+            }
+            else if (expr.opType != OpTypes.SIMPLE_COLUMN || (expr.isAggregate && expr.alias != null)) {
+
                 // Add aggregate aliases to the display columns to maintain
                 // the output schema column ordering.
                 select.displayCols.add(expr);
@@ -1225,22 +1215,23 @@ public abstract class StatementDMQL extends Statement {
          *
          * Serialize the display columns in the exprColumn order.
          */
-        java.util.Set<Integer> ignoredColsIndexes = new java.util.HashSet<Integer>();
+        SimpleColumnContext context = new SimpleColumnContext(session, select.displayCols, select.indexLimitVisible);
+
         // having
         Expression havingCondition = select.getHavingCondition();
         if (havingCondition != null) {
             VoltXMLElement having = new VoltXMLElement("having");
             query.children.add(having);
-            VoltXMLElement havingExpr = havingCondition.voltGetXML(session, select.displayCols, ignoredColsIndexes, 0);
+            VoltXMLElement havingExpr = havingCondition.voltGetXML(context.withStartKey(0), null);
             having.children.add(havingExpr);
         }
 
         for (int jj=0; jj < select.displayCols.size(); ++jj) {
             Expression expr = select.displayCols.get(jj);
-            if (ignoredColsIndexes.contains(jj)) {
+            if (context.disabledTheColumnForDisplay(jj)) {
                 continue;
             }
-            VoltXMLElement xml = expr.voltGetXML(session, select.displayCols, ignoredColsIndexes, jj);
+            VoltXMLElement xml = expr.voltGetXML(context.withStartKey(jj), null);
             cols.children.add(xml);
             assert(xml != null);
         }
@@ -1264,7 +1255,7 @@ public abstract class StatementDMQL extends Statement {
 
             for (int jj=0; jj < groupByCols.size(); ++jj) {
                 Expression expr = groupByCols.get(jj);
-                VoltXMLElement xml = expr.voltGetXML(session, select.displayCols, ignoredColsIndexes, jj);
+                VoltXMLElement xml = expr.voltGetXML(context.withStartKey(jj), null);
                 groupCols.children.add(xml);
             }
         }
@@ -1275,17 +1266,21 @@ public abstract class StatementDMQL extends Statement {
             query.children.add(orderCols);
             for (int jj=0; jj < orderByCols.size(); ++jj) {
                 Expression expr = orderByCols.get(jj);
-                VoltXMLElement xml = expr.voltGetXML(session, select.displayCols, ignoredColsIndexes, jj);
+                VoltXMLElement xml = expr.voltGetXML(context.withStartKey(jj), null);
                 orderCols.children.add(xml);
             }
         }
 
-        // Columns from USING expression in join are not qualified.
+        // Columns from USING expressions in joins are not qualified.
         // if join is INNER then the column from USING expression can be from any table
-        // participating in join. In case of OUTER join, it must be the outer column
-        java.util.List<VoltXMLElement> exprCols = new java.util.ArrayList<VoltXMLElement>();
-        extractColumnReferences(query, exprCols);
-        resolveUsingColumns(exprCols, select.rangeVariables);
+        // participating in the join. In case of OUTER join, it must be the outer column
+        // or a coalesce of the columns if both sides of the join are OUTER.
+        // This tree search can be expensive, so don't pointlessly search for
+        // the effects of a join if there is only one table scan in the statement.
+        if (scans.children.size() > 1) {
+            List<VoltXMLElement> exprCols = query.extractSubElements("operation", "optype", "operator_case_when");
+            resolveUsingExpressions(exprCols, select.rangeVariables);
+        }
 
         return query;
     }
@@ -1294,37 +1289,35 @@ public abstract class StatementDMQL extends Statement {
      * Columns from USING expression are unqualified. In case of INNER join, it doesn't matter
      * we can pick the first table which contains the input column. In case of OUTER joins, we must
      * the OUTER table - if it's a null-able column the outer join must return them.
-     * @param columns list of columns to resolve
-     * @return rvs list of range variables
+     * In case of a FULL join, a USING column expression must be replaced with the
+     * COALESCE(leftTable.C, rightTable.C) expression.
+     *
+     * @param elements list of expression columns to resolve
+     * @param rvs list of range variables
      */
-    static protected void resolveUsingColumns(java.util.List<VoltXMLElement> columns, RangeVariable[] rvs)
+    static protected void resolveUsingExpressions(List<VoltXMLElement> elements, RangeVariable[] rvs)
             throws org.hsqldb_voltpatches.HSQLInterface.HSQLParseException {
 
-        // Only one OUTER join for a whole select is supported so far
-        for (VoltXMLElement columnElmt : columns) {
+        for (VoltXMLElement element : elements) {
             String table = null;
             String tableAlias = null;
-            if (columnElmt.attributes.get("table") == null) {
-                columnElmt.attributes.put("using", "true");
-                for (RangeVariable rv : rvs) {
-                    if (!rv.getTable().columnList.containsKey(columnElmt.attributes.get("column"))) {
-                        // The column is not from this table. Skip it
-                        continue;
-                    }
+            boolean isFullJoin = false;
+            assert(element.hasValue("optype", "operator_case_when"));
+            String column = element.attributes.get("column");
+            for (RangeVariable rv : rvs) {
+                if (!rv.getTable().columnList.containsKey(column)) {
+                    // The column is not from this table. Skip it
+                    continue;
+                }
 
-                    // If there is an OUTER join we need to pick the outer table
-                    if (rv.isRightJoin == true) {
-                        // this is the outer table. no need to search further.
-                        table = rv.getTable().getName().name;
-                        if (rv.tableAlias != null) {
-                            tableAlias = rv.tableAlias.name;
-                        } else {
-                            tableAlias = null;
-                        }
-                        break;
-                    } else if (rv.isLeftJoin == false) {
-                        // it's the inner join. we found the table but still need to iterate
-                        // just in case there is an outer table we haven't seen yet.
+                // If there is an OUTER join we need to pick the outer table
+                if (rv.isRightJoin == true) {
+                    if (rv.isLeftJoin == true) {
+                        // this is a full join. No need to do anything
+                        isFullJoin = true;
+                    } else {
+                        // this is the outer table. no need to search
+                        // further.
                         table = rv.getTable().getName().name;
                         if (rv.tableAlias != null) {
                             tableAlias = rv.tableAlias.name;
@@ -1332,75 +1325,106 @@ public abstract class StatementDMQL extends Statement {
                             tableAlias = null;
                         }
                     }
+                    break;
+                } else if (rv.isLeftJoin == false) {
+                    // it's the inner join. we found the table but still need to iterate
+                    // just in case there is an outer table we haven't seen yet.
+                    table = rv.getTable().getName().name;
+                    if (rv.tableAlias != null) {
+                        tableAlias = rv.tableAlias.name;
+                    } else {
+                        tableAlias = null;
+                    }
                 }
-                if (table != null) {
-                    columnElmt.attributes.put("table", table);
-                }
-                if (tableAlias != null) {
-                    columnElmt.attributes.put("tablealias", tableAlias);
-                }
+            }
+            if (isFullJoin) {
+                continue;
+            }
+            if (table != null) {
+                collapseCoalesceExpression(element, table, tableAlias);
+            }
+        }
+    }
+
+    static private void collapseCoalesceExpression(VoltXMLElement element, String table, String tableAlias) {
+        List<VoltXMLElement> exprCols = element.extractSubElements("columnref", null, null);
+
+        // Iterate over the columns looking for the first columnref expression that matches input table
+        // Once found, replace the input element 'in-place' with the matching columnref
+        for (VoltXMLElement columnref : exprCols) {
+            if (columnref.hasValue("tablealias", tableAlias) || columnref.hasValue("table", table)) {
+                element.children.clear();
+                element.attributes.clear();
+
+                element.name = "columnref";
+                element.children.addAll(columnref.children);
+                element.attributes.putAll(columnref.attributes);
+                break;
             }
         }
     }
 
     static protected void voltAppendParameters(Session session, VoltXMLElement parentXml,
-                                               ExpressionColumn[] parameters)
-    {
+                                               ExpressionColumn[] parameters) {
         VoltXMLElement parameterXML = new VoltXMLElement("parameters");
         parentXml.children.add(parameterXML);
         assert(parameterXML != null);
-        int index = 0;
-        for (Expression expr : parameters) {
-            org.hsqldb_voltpatches.types.Type paramType = expr.getDataType();
-            if (paramType == null) {
-                // Parameters used with " IN ?" use a different method of recording their paramType
-                // to avoid confusing the HSQL front end. Account for that here.
-                if (expr.nodeDataTypes != null &&
-                        expr.nodeDataTypes.length == 1 &&
-                        expr.nodeDataTypes[0] != null) {
-                    paramType = expr.nodeDataTypes[0];
+
+        if (parameters.length > 0) {
+            // We need to reset the current parameter count because statements with set operators
+            // will produce multiple "parameters" nodes, each with the same content.
+            session.getParameterStateManager().resetCurrentParamIndex();
+            for (Expression expr : parameters) {
+                org.hsqldb_voltpatches.types.Type paramType = expr.getDataType();
+                if (paramType == null) {
+                    // Parameters used with " IN ?" use a different method of recording their paramType
+                    // to avoid confusing the HSQL front end. Account for that here.
+                    if (expr.nodeDataTypes != null &&
+                            expr.nodeDataTypes.length == 1 &&
+                            expr.nodeDataTypes[0] != null) {
+                        paramType = expr.nodeDataTypes[0];
+                    }
+                    else {
+                        // This covers the case of parameters that were getting tentatively scanned
+                        // by the parser but then lost in a "rewind" and later rescanned and added
+                        // (again!) to this list but then actually processed, given a data type, etc.
+                        // Somehow (?) the hsql executor manages to just ignore the originally scanned
+                        // duplicate parameters left behind like this. So, so should VoltDB.
+                        continue;
+                    }
                 }
-                else {
-                    // This covers the case of parameters that were getting tentatively scanned
-                    // by the parser but then lost in a "rewind" and later rescanned and added
-                    // (again!) to this list but then actually processed, given a data type, etc.
-                    // Somehow (?) the hsql executor manages to just ignore the originally scanned
-                    // duplicate parameters left behind like this. So, so should VoltDB.
-                    continue;
+                VoltXMLElement parameter = new VoltXMLElement("parameter");
+                parameterXML.children.add(parameter);
+                int index = session.getParameterStateManager().getNextParamIndex();
+                parameter.attributes.put("index", String.valueOf(index));
+                parameter.attributes.put("id", expr.getUniqueId(session));
+                if (paramType == NumberType.SQL_NUMERIC_DEFAULT_INT) {
+                    parameter.attributes.put("valuetype", "BIGINT");
+                } else {
+                    parameter.attributes.put("valuetype", Types.getTypeName(paramType.typeCode));
                 }
-            }
-            VoltXMLElement parameter = new VoltXMLElement("parameter");
-            parameterXML.children.add(parameter);
-            parameter.attributes.put("index", String.valueOf(index));
-            ++index;
-            parameter.attributes.put("id", expr.getUniqueId(session));
-            if (paramType == NumberType.SQL_NUMERIC_DEFAULT_INT) {
-                parameter.attributes.put("valuetype", "BIGINT");
-            } else {
-                parameter.attributes.put("valuetype", Types.getTypeName(paramType.typeCode));
-            }
-            // Use of non-null nodeDataTypes for a DYNAMIC_PARAM is a voltdb extension to signal
-            // that values passed to parameters such as the one in "col in ?" must be vectors.
-            // So, it can just be forwarded as a boolean.
-            if (expr.nodeDataTypes != null) {
-                parameter.attributes.put("isvector", "true");
+                // Use of non-null nodeDataTypes for a DYNAMIC_PARAM is a voltdb extension to signal
+                // that values passed to parameters such as the one in "col in ?" must be vectors.
+                // So, it can just be forwarded as a boolean.
+                if (expr.nodeDataTypes != null) {
+                    parameter.attributes.put("isvector", "true");
+                }
             }
         }
     }
 
-    static protected Expression voltCombineWithAnd(Expression... conditions)
-    {
+    static protected Expression voltCombineWithAnd(Expression... conditions) {
         Expression result = null;
-        for(Expression child : conditions) {
-            if (child != null) {
-                if (result == null) {
-                    result = child;
-                    continue;
-                }
-                result = new ExpressionLogical(OpTypes.AND, result, child);
+        for (Expression child : conditions) {
+            if (child == null) {
+                continue;
             }
+            if (result == null) {
+                result = child;
+                continue;
+            }
+            result = new ExpressionLogical(OpTypes.AND, result, child);
         }
         return result;
     }
-    /**********************************************************************/
 }

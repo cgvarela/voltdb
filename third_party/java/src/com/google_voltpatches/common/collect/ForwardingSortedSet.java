@@ -18,12 +18,10 @@ package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.Beta;
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.SortedSet;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -32,12 +30,16 @@ import javax.annotation_voltpatches.Nullable;
  * backing sorted set as desired per the <a
  * href="http://en.wikipedia.org/wiki/Decorator_pattern">decorator pattern</a>.
  *
- * <p><i>Warning:</i> The methods of {@code ForwardingSortedSet} forward
+ * <p><b>Warning:</b> The methods of {@code ForwardingSortedSet} forward
  * <i>indiscriminately</i> to the methods of the delegate. For example,
  * overriding {@link #add} alone <i>will not</i> change the behavior of {@link
  * #addAll}, which can lead to unexpected behavior. In this case, you should
  * override {@code addAll} as well, either providing your own implementation, or
  * delegating to the provided {@code standardAddAll} method.
+ *
+ * <p><b>{@code default} method warning:</b> This class does <i>not</i> forward calls to {@code
+ * default} methods. Instead, it inherits their default implementations. When those implementations
+ * invoke methods, they invoke methods on the {@code ForwardingSortedSet}.
  *
  * <p>Each of the {@code standard} methods, where appropriate, uses the set's
  * comparator (or the natural ordering of the elements, if there is no
@@ -51,16 +53,16 @@ import javax.annotation_voltpatches.Nullable;
  *
  * @author Mike Bostock
  * @author Louis Wasserman
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
-public abstract class ForwardingSortedSet<E> extends ForwardingSet<E>
-    implements SortedSet<E> {
+public abstract class ForwardingSortedSet<E> extends ForwardingSet<E> implements SortedSet<E> {
 
   /** Constructor for use by subclasses. */
   protected ForwardingSortedSet() {}
 
-  @Override protected abstract SortedSet<E> delegate();
+  @Override
+  protected abstract SortedSet<E> delegate();
 
   @Override
   public Comparator<? super E> comparator() {
@@ -108,7 +110,9 @@ public abstract class ForwardingSortedSet<E> extends ForwardingSet<E>
    *
    * @since 7.0
    */
-  @Override @Beta protected boolean standardContains(@Nullable Object object) {
+  @Override
+  @Beta
+  protected boolean standardContains(@Nullable Object object) {
     try {
       // any ClassCastExceptions are caught
       @SuppressWarnings("unchecked")
@@ -131,7 +135,9 @@ public abstract class ForwardingSortedSet<E> extends ForwardingSet<E>
    *
    * @since 7.0
    */
-  @Override @Beta protected boolean standardRemove(@Nullable Object object) {
+  @Override
+  @Beta
+  protected boolean standardRemove(@Nullable Object object) {
     try {
       // any ClassCastExceptions are caught
       @SuppressWarnings("unchecked")
@@ -160,7 +166,8 @@ public abstract class ForwardingSortedSet<E> extends ForwardingSet<E>
    *
    * @since 7.0
    */
-  @Beta protected SortedSet<E> standardSubSet(E fromElement, E toElement) {
+  @Beta
+  protected SortedSet<E> standardSubSet(E fromElement, E toElement) {
     return tailSet(fromElement).headSet(toElement);
   }
 }

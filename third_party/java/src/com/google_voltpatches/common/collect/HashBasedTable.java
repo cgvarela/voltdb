@@ -20,15 +20,15 @@ import static com.google_voltpatches.common.collect.CollectPreconditions.checkNo
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
 import com.google_voltpatches.common.base.Supplier;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.Serializable;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
- * Implementation of {@link Table} using hash tables.
+ * Implementation of {@link Table} using linked hash tables. This guarantees predictable iteration
+ * order of the various views.
  *
  * <p>The views returned by {@link #column}, {@link #columnKeySet()}, and {@link
  * #columnMap()} have iterators that don't support {@code remove()}. Otherwise,
@@ -46,7 +46,7 @@ import javax.annotation_voltpatches.Nullable;
  * must be synchronized externally.
  * 
  * <p>See the Guava User Guide article on <a href=
- * "http://code.google.com/p/guava-libraries/wiki/NewCollectionTypesExplained#Table">
+ * "https://github.com/google/guava/wiki/NewCollectionTypesExplained#table">
  * {@code Table}</a>.
  *
  * @author Jared Levy
@@ -54,16 +54,18 @@ import javax.annotation_voltpatches.Nullable;
  */
 @GwtCompatible(serializable = true)
 public class HashBasedTable<R, C, V> extends StandardTable<R, C, V> {
-  private static class Factory<C, V>
-      implements Supplier<Map<C, V>>, Serializable {
+  private static class Factory<C, V> implements Supplier<Map<C, V>>, Serializable {
     final int expectedSize;
+
     Factory(int expectedSize) {
       this.expectedSize = expectedSize;
     }
+
     @Override
     public Map<C, V> get() {
-      return Maps.newHashMapWithExpectedSize(expectedSize);
+      return Maps.newLinkedHashMapWithExpectedSize(expectedSize);
     }
+
     private static final long serialVersionUID = 0;
   }
 
@@ -71,8 +73,7 @@ public class HashBasedTable<R, C, V> extends StandardTable<R, C, V> {
    * Creates an empty {@code HashBasedTable}.
    */
   public static <R, C, V> HashBasedTable<R, C, V> create() {
-    return new HashBasedTable<R, C, V>(
-        new HashMap<R, Map<C, V>>(), new Factory<C, V>(0));
+    return new HashBasedTable<R, C, V>(new LinkedHashMap<R, Map<C, V>>(), new Factory<C, V>(0));
   }
 
   /**
@@ -87,10 +88,8 @@ public class HashBasedTable<R, C, V> extends StandardTable<R, C, V> {
   public static <R, C, V> HashBasedTable<R, C, V> create(
       int expectedRows, int expectedCellsPerRow) {
     checkNonnegative(expectedCellsPerRow, "expectedCellsPerRow");
-    Map<R, Map<C, V>> backingMap =
-        Maps.newHashMapWithExpectedSize(expectedRows);
-    return new HashBasedTable<R, C, V>(
-        backingMap, new Factory<C, V>(expectedCellsPerRow));
+    Map<R, Map<C, V>> backingMap = Maps.newLinkedHashMapWithExpectedSize(expectedRows);
+    return new HashBasedTable<R, C, V>(backingMap, new Factory<C, V>(expectedCellsPerRow));
   }
 
   /**
@@ -114,33 +113,39 @@ public class HashBasedTable<R, C, V> extends StandardTable<R, C, V> {
 
   // Overriding so NullPointerTester test passes.
 
-  @Override public boolean contains(
-      @Nullable Object rowKey, @Nullable Object columnKey) {
+  @Override
+  public boolean contains(@Nullable Object rowKey, @Nullable Object columnKey) {
     return super.contains(rowKey, columnKey);
   }
 
-  @Override public boolean containsColumn(@Nullable Object columnKey) {
+  @Override
+  public boolean containsColumn(@Nullable Object columnKey) {
     return super.containsColumn(columnKey);
   }
 
-  @Override public boolean containsRow(@Nullable Object rowKey) {
+  @Override
+  public boolean containsRow(@Nullable Object rowKey) {
     return super.containsRow(rowKey);
   }
 
-  @Override public boolean containsValue(@Nullable Object value) {
+  @Override
+  public boolean containsValue(@Nullable Object value) {
     return super.containsValue(value);
   }
 
-  @Override public V get(@Nullable Object rowKey, @Nullable Object columnKey) {
+  @Override
+  public V get(@Nullable Object rowKey, @Nullable Object columnKey) {
     return super.get(rowKey, columnKey);
   }
 
-  @Override public boolean equals(@Nullable Object obj) {
+  @Override
+  public boolean equals(@Nullable Object obj) {
     return super.equals(obj);
   }
 
-  @Override public V remove(
-      @Nullable Object rowKey, @Nullable Object columnKey) {
+  @CanIgnoreReturnValue
+  @Override
+  public V remove(@Nullable Object rowKey, @Nullable Object columnKey) {
     return super.remove(rowKey, columnKey);
   }
 

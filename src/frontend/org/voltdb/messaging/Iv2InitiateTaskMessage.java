@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -26,6 +26,7 @@ import org.voltcore.utils.CoreUtils;
 import org.voltdb.StoredProcedureInvocation;
 import org.voltdb.iv2.TxnEgo;
 import org.voltdb.iv2.UniqueIdGenerator;
+import org.voltdb.sysprocs.AdHocBase;
 
 /**
  * Message from a client interface to an initiator, instructing the
@@ -40,9 +41,14 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
     public static final long UNUSED_MP_TXNID = Long.MIN_VALUE;
     public static final long UNUSED_TRUNC_HANDLE = Long.MIN_VALUE;
 
+    public static int SINGLE_PARTITION_MASK = 1;
+    public static int N_PARTITION_MASK = 2;
+    public static int SHOULD_RETURN_TABLES_MASK = 2;
+
     long m_clientInterfaceHandle;
     long m_connectionId;
     boolean m_isSinglePartition;
+    int[] m_nPartitions;
     //Flag to indicate the the replica applying the write transaction
     //doesn't need to send back the result tables
     boolean m_shouldReturnResultTables = true;
@@ -56,6 +62,32 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
         super();
     }
 
+    public Iv2InitiateTaskMessage(long initiatorHSId,
+            long coordinatorHSId,
+            long truncationHandle,
+            long txnId,
+            long uniqueId,
+            boolean isReadOnly,
+            boolean isSinglePartition,
+            StoredProcedureInvocation invocation,
+            long clientInterfaceHandle,
+            long connectionId,
+            boolean isForReplay)
+    {
+        this(initiatorHSId,
+            coordinatorHSId,
+            truncationHandle,
+            txnId,
+            uniqueId,
+            isReadOnly,
+            isSinglePartition,
+            invocation,
+            clientInterfaceHandle,
+            connectionId,
+            isForReplay,
+            false);
+    }
+
     // SpScheduler creates messages with truncation handles.
     public Iv2InitiateTaskMessage(long initiatorHSId,
                         long coordinatorHSId,
@@ -67,32 +99,59 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
                         StoredProcedureInvocation invocation,
                         long clientInterfaceHandle,
                         long connectionId,
-                        boolean isForReplay)
+                        boolean isForReplay,
+                        boolean toReplica) {
+        super(initiatorHSId, coordinatorHSId, txnId, uniqueId, isReadOnly, isForReplay);
+        setTruncationHandle(truncationHandle);
+        m_isSinglePartition = isSinglePartition;
+        m_invocation = invocation;
+        m_clientInterfaceHandle = clientInterfaceHandle;
+        m_connectionId = connectionId;
+        m_isForReplica = toReplica;
+    }
+
+    // SpScheduler creates messages with truncation handles.
+    public Iv2InitiateTaskMessage(long initiatorHSId,
+            long coordinatorHSId,
+            long truncationHandle,
+            long txnId,
+            long uniqueId,
+            boolean isReadOnly,
+            boolean isSinglePartition,
+            int[] nPartitions,
+            StoredProcedureInvocation invocation,
+            long clientInterfaceHandle,
+            long connectionId,
+            boolean isForReplay)
     {
         super(initiatorHSId, coordinatorHSId, txnId, uniqueId, isReadOnly, isForReplay);
-        super.setOriginalTxnId(invocation.getOriginalTxnId());
 
         setTruncationHandle(truncationHandle);
         m_isSinglePartition = isSinglePartition;
         m_invocation = invocation;
         m_clientInterfaceHandle = clientInterfaceHandle;
         m_connectionId = connectionId;
+        m_nPartitions = nPartitions;
     }
 
     /** Copy constructor for repair. */
     public Iv2InitiateTaskMessage(long initiatorHSId,
             long coordinatorHSId, Iv2InitiateTaskMessage rhs)
     {
+        this(initiatorHSId, coordinatorHSId, rhs, false);
+    }
+
+    /** Copy constructor for repair. */
+    public Iv2InitiateTaskMessage(long initiatorHSId,
+            long coordinatorHSId, Iv2InitiateTaskMessage rhs, boolean toReplica)
+    {
         super(initiatorHSId, coordinatorHSId, rhs);
         m_isSinglePartition = rhs.m_isSinglePartition;
         m_invocation = rhs.m_invocation;
         m_clientInterfaceHandle = rhs.m_clientInterfaceHandle;
         m_connectionId = rhs.m_connectionId;
-    }
-
-    @Override
-    public boolean isForDR() {
-        return super.isForDR();
+        m_nPartitions = rhs.m_nPartitions;
+        m_isForReplica = toReplica;
     }
 
     @Override
@@ -103,6 +162,10 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
     @Override
     public boolean isSinglePartition() {
         return m_isSinglePartition;
+    }
+
+    public short getNPartCount() {
+        return (short)(m_nPartitions != null ? m_nPartitions.length : 0);
     }
 
     public boolean shouldReturnResultTables() {
@@ -149,6 +212,10 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
         return m_connectionId;
     }
 
+    public int[] getNParitionIds() {
+        return m_nPartitions;
+    }
+
     @Override
     public int getSerializedSize()
     {
@@ -157,6 +224,10 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
         msgsize += 8; // m_connectionId
         msgsize += 1; // is single partition flag
         msgsize += 1; // should generate a response
+        msgsize += 1; // flags (SP/NP/return tables)
+        if (m_nPartitions != null) {
+            msgsize += 2 + m_nPartitions.length * 4; // 2 for length prefix and 4 each
+        }
         msgsize += m_invocation.getSerializedSize();
         return msgsize;
     }
@@ -164,12 +235,26 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
     @Override
     public void flattenToBuffer(ByteBuffer buf) throws IOException
     {
+        byte flags = 0;
+        if (m_isSinglePartition) flags |= SINGLE_PARTITION_MASK;
+        if (m_nPartitions != null) flags |= N_PARTITION_MASK;
+
+        //Should never generate a response if we have to forward to a replica
+        //if (m_shouldReturnResultTables) flags |= SHOULD_RETURN_TABLES_MASK;
+
         buf.put(VoltDbMessageFactory.IV2_INITIATE_TASK_ID);
         super.flattenToBuffer(buf);
         buf.putLong(m_clientInterfaceHandle);
         buf.putLong(m_connectionId);
         buf.put(m_isSinglePartition ? (byte) 1 : (byte) 0);
         buf.put((byte)0);//Should never generate a response if we have to forward to a replica
+        buf.put(flags);
+        if (m_nPartitions != null) {
+            buf.putShort((short) m_nPartitions.length);
+            for (int i : m_nPartitions) {
+                buf.putInt(i);
+            }
+        }
         m_invocation.flattenToBuffer(buf);
 
         assert(buf.capacity() == buf.position());
@@ -183,6 +268,16 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
         m_connectionId = buf.getLong();
         m_isSinglePartition = buf.get() == 1;
         m_shouldReturnResultTables = buf.get() != 0;
+        byte flags = buf.get();
+        m_isSinglePartition = (flags & SINGLE_PARTITION_MASK) != 0;
+        m_shouldReturnResultTables = (flags & SHOULD_RETURN_TABLES_MASK) != 0;
+        if ((flags & N_PARTITION_MASK) != 0) {
+            int partitionCount = buf.getShort();
+            m_nPartitions = new int[partitionCount];
+            for (int i = 0; i < partitionCount; i++) {
+                m_nPartitions[i] = buf.getInt();
+            }
+        }
         m_invocation = new StoredProcedureInvocation();
         m_invocation.initFromBuffer(buf);
     }
@@ -195,13 +290,12 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
         sb.append(CoreUtils.hsIdToString(getInitiatorHSId()));
         sb.append(" TO ");
         sb.append(CoreUtils.hsIdToString(getCoordinatorHSId()));
-        sb.append(") FOR TXN ");
-        sb.append(m_txnId).append(" (").append(TxnEgo.txnIdToString(m_txnId)).append(")").append("\n");
+        sb.append(") FOR TXN ").append(TxnEgo.txnIdToString(m_txnId));
         sb.append(" UNIQUE ID ").append(m_uniqueId).append(" (").append(UniqueIdGenerator.toString(m_uniqueId));
         sb.append(")").append("\n");
         sb.append(") TRUNC HANDLE ");
-        sb.append(getTruncationHandle()).append("\n");
-        sb.append("SP HANDLE: ").append(getSpHandle()).append("\n");
+        sb.append(TxnEgo.txnIdToString(getTruncationHandle())).append("\n");
+        sb.append("SP HANDLE: ").append(TxnEgo.txnIdToString(getSpHandle())).append("\n");
         sb.append("CLIENT INTERFACE HANDLE: ").append(m_clientInterfaceHandle);
         sb.append("\n");
         sb.append("CONNECTION ID: ").append(m_connectionId).append("\n");
@@ -211,6 +305,9 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
             sb.append("  WRITE, ");
         if (m_isSinglePartition)
             sb.append("SINGLE PARTITION, ");
+        else
+        if (getNPartCount() != 0)
+            sb.append("N PARTITION (").append(m_nPartitions).append("), ");
         else
             sb.append("MULTI PARTITION, ");
         if (isForReplay())
@@ -225,6 +322,12 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
             sb.append(m_invocation.getProcName());
             sb.append("\n  PARAMS: ");
             sb.append(m_invocation.getParams().toString());
+            // print out extra information for adhoc
+            if (m_invocation.getProcName().startsWith("@AdHoc")) {
+                sb.append("\n  ADHOC INFO: ");
+                sb.append(AdHocBase.adHocSQLFromInvocationForDebug(m_invocation));
+            }
+
         } else {
             sb.append("\n NO INVOCATION");
         }
@@ -234,5 +337,16 @@ public class Iv2InitiateTaskMessage extends TransactionInfoBaseMessage {
 
     public ByteBuffer getSerializedParams() {
         return m_invocation.getSerializedParams();
+    }
+
+    @Override
+    public String getMessageInfo() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Iv2InitiateTaskMessage TxnId:" + TxnEgo.txnIdToString(m_txnId));
+        if (m_invocation != null) {
+            builder.append(" Procedure: ");
+            builder.append(m_invocation.getProcName());
+        }
+        return builder.toString();
     }
 }

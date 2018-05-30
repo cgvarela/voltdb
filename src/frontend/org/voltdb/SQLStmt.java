@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,8 +16,6 @@
  */
 
 package org.voltdb;
-
-import java.nio.ByteBuffer;
 
 import org.apache.hadoop_voltpatches.util.PureJavaCrc32C;
 import org.voltdb.common.Constants;
@@ -49,14 +47,14 @@ public class SQLStmt {
         }
     }
 
-    // Used for uncompiled SQL.
+    // Used for non-compiled SQL.
     byte[] sqlText;
     String sqlTextStr;
     String joinOrder;
-    // hash of the sql string for determinism checks
-    byte[] sqlCRC;
+    // hash of the SQL string for determinism checks
+    int sqlCRC;
 
-    byte statementParamJavaTypes[];
+    byte statementParamTypes[];
 
     Frag aggregator;
     Frag collector;
@@ -65,6 +63,14 @@ public class SQLStmt {
     boolean isReadOnly;
 
     boolean inCatalog;
+
+    String stmtName = null;
+    protected void setStmtName(String name) {
+        stmtName = name;
+    }
+    protected String getStmtName() {
+        return stmtName;
+    }
 
     // used to clean up plans
     SiteProcedureConnection site;
@@ -87,21 +93,21 @@ public class SQLStmt {
      * @param joinOrder separated list of tables used by the query specifying the order they should be joined in
      */
     public SQLStmt(String sqlText, String joinOrder) {
-        this(sqlText.getBytes(Constants.UTF8ENCODING), joinOrder);
+        this(canonicalizeStmt(sqlText).getBytes(Constants.UTF8ENCODING), joinOrder);
     }
 
     /**
      * Construct a SQLStmt instance from a byte array for internal use.
      */
-    private SQLStmt(byte[] sqlText, String joinOrder) {
+    protected SQLStmt(byte[] sqlText, String joinOrder) {
         this.sqlText = sqlText;
         this.joinOrder = joinOrder;
 
         // create a hash for determinism purposes
         PureJavaCrc32C crc = new PureJavaCrc32C();
         crc.update(sqlText);
-        // ugly hack to get bytes from an int
-        this.sqlCRC = ByteBuffer.allocate(4).putInt((int) crc.getValue()).array();
+        // this will sometimes go negative in the cast, but should be 1-1
+        this.sqlCRC = (int) crc.getValue();
 
         inCatalog = true;
     }
@@ -172,9 +178,9 @@ public class SQLStmt {
          * Fill out the parameter types
          */
         if (params != null) {
-            stmt.statementParamJavaTypes = new byte[params.length];
+            stmt.statementParamTypes = new byte[params.length];
             for (int i = 0; i < params.length; i++) {
-                stmt.statementParamJavaTypes[i] = params[i].getValue();
+                stmt.statementParamTypes[i] = params[i].getValue();
             }
         }
 
@@ -207,4 +213,33 @@ public class SQLStmt {
     public String getJoinOrder() {
         return joinOrder;
     }
+
+    /**
+     * Is this a read only statement?
+     *
+     * @return true if it's read only, false otherwise
+     */
+    public boolean isReadOnly() {
+        return isReadOnly;
+    }
+
+    // In SQL statement the input without ending with a semicolon is legitimate,
+    // however in order to do a reverse look up (crc -> sql str), we'd like to
+    // use the same statement to compute crc.
+    public static String canonicalizeStmt(String stmtStr) {
+        // Cleanup whitespace newlines and adding semicolon for catalog compatibility
+        stmtStr = stmtStr.replaceAll("\n", " ");
+        stmtStr = stmtStr.trim();
+
+        if (!stmtStr.endsWith(";")) {
+            stmtStr += ";";
+        }
+        return stmtStr;
+    }
+
+    public void setInCatalog(boolean inCatalog) {
+        this.inCatalog = inCatalog;
+    }
+
+
 }

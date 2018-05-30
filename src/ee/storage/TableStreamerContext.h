@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -26,12 +26,9 @@
 #include "common/FatalException.hpp"
 #include "storage/TupleBlock.h"
 
-namespace voltdb
-{
-
+namespace voltdb {
 class TupleOutputStreamProcessor;
 class TableTuple;
-class TupleSerializer;
 class PersistentTable;
 class PersistentTableSurgeon;
 
@@ -137,17 +134,9 @@ public:
     /**
      * Tuple length accessor.
      */
-    int getMaxTupleLength() const
+    size_t getMaxTupleLength() const
     {
         return m_maxTupleLength;
-    }
-
-    /**
-     * Tuple serializer accessor.
-     */
-    TupleSerializer &getSerializer()
-    {
-        return m_serializer;
     }
 
     /**
@@ -178,7 +167,6 @@ protected:
     TableStreamerContext(PersistentTable &table,
                          PersistentTableSurgeon &surgeon,
                          int32_t partitionId,
-                         TupleSerializer &serializer,
                          const std::vector<std::string> &predicateStrings);
 
     /**
@@ -186,8 +174,7 @@ protected:
      */
     TableStreamerContext(PersistentTable &table,
                          PersistentTableSurgeon &surgeon,
-                         int32_t partitionId,
-                         TupleSerializer &serializer);
+                         int32_t partitionId);
 
     /**
      * Predicate delete flags accessor.
@@ -219,12 +206,7 @@ private:
     /**
      * Maximum serialized length of a tuple
      */
-    const int m_maxTupleLength;
-
-    /**
-     * Serializer for tuples
-     */
-    TupleSerializer &m_serializer;
+    const size_t m_maxTupleLength;
 
     /**
      * Partition ID

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -43,50 +43,45 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <algorithm>
-#include <vector>
 #include "orderbyexecutor.h"
-#include "common/debuglog.h"
-#include "common/common.h"
-#include "common/tabletuple.h"
-#include "common/FatalException.hpp"
 #include "execution/ProgressMonitorProxy.h"
 #include "plannodes/orderbynode.h"
 #include "plannodes/limitnode.h"
-#include "storage/table.h"
-#include "storage/temptable.h"
 #include "storage/tableiterator.h"
 #include "storage/tablefactory.h"
 
-using namespace voltdb;
-using namespace std;
+namespace voltdb {
 
 bool
 OrderByExecutor::p_init(AbstractPlanNode* abstract_node,
-                        TempTableLimits* limits)
+                        const ExecutorVector& executorVector)
 {
     VOLT_TRACE("init OrderBy Executor");
+    // We cannot yet do any sorting with large queries.
+    assert(! executorVector.isLargeQuery());
 
     OrderByPlanNode* node = dynamic_cast<OrderByPlanNode*>(abstract_node);
     assert(node);
-    assert(node->getInputTableCount() == 1);
 
-    assert(node->getChildren()[0] != NULL);
+    if (!node->isInline()) {
+        assert(node->getInputTableCount() == 1);
 
-    //
-    // Our output table should look exactly like out input table
-    //
-    node->
-        setOutputTable(TableFactory::
-                       getCopiedTempTable(node->databaseId(),
-                                          node->getInputTable()->name(),
-                                          node->getInputTable(),
-                                          limits));
+        assert(node->getChildren()[0] != NULL);
 
-    // pickup an inlined limit, if one exists
-    limit_node =
-        dynamic_cast<LimitPlanNode*>(node->
+        //
+        // Our output table should look exactly like our input table
+        //
+        node->setOutputTable(TableFactory::buildCopiedTempTable(node->getInputTable()->name(),
+                                                                node->getInputTable(),
+                                                                executorVector));
+        // pickup an inlined limit, if one exists
+        limit_node =
+            dynamic_cast<LimitPlanNode*>(node->
                                      getInlinePlanNode(PLAN_NODE_TYPE_LIMIT));
+    } else {
+        assert(node->getChildren().empty());
+        assert(node->getInlinePlanNode(PLAN_NODE_TYPE_LIMIT) == NULL);
+    }
 
 #if defined(VOLT_LOG_LEVEL)
 #if VOLT_LOG_LEVEL<=VOLT_LEVEL_TRACE
@@ -100,55 +95,12 @@ OrderByExecutor::p_init(AbstractPlanNode* abstract_node,
     return true;
 }
 
-class TupleComparer
-{
-public:
-    TupleComparer(const vector<AbstractExpression*>& keys,
-                  const vector<SortDirectionType>& dirs)
-        : m_keys(keys), m_dirs(dirs), m_keyCount(keys.size())
-    {
-        assert(keys.size() == dirs.size());
-    }
-
-    bool operator()(TableTuple ta, TableTuple tb)
-    {
-        for (size_t i = 0; i < m_keyCount; ++i)
-        {
-            AbstractExpression* k = m_keys[i];
-            SortDirectionType dir = m_dirs[i];
-            int cmp = k->eval(&ta, NULL).compare(k->eval(&tb, NULL));
-            if (dir == SORT_DIRECTION_TYPE_ASC)
-            {
-                if (cmp < 0) return true;
-                if (cmp > 0) return false;
-            }
-            else if (dir == SORT_DIRECTION_TYPE_DESC)
-            {
-                if (cmp < 0) return false;
-                if (cmp > 0) return true;
-            }
-            else
-            {
-                throw SerializableEEException(VOLT_EE_EXCEPTION_TYPE_EEEXCEPTION,
-                                              "Attempted to sort using"
-                                              " SORT_DIRECTION_TYPE_INVALID");
-            }
-        }
-        return false; // ta == tb on these keys
-    }
-
-private:
-    const vector<AbstractExpression*>& m_keys;
-    const vector<SortDirectionType>& m_dirs;
-    size_t m_keyCount;
-};
-
 bool
 OrderByExecutor::p_execute(const NValueArray &params)
 {
     OrderByPlanNode* node = dynamic_cast<OrderByPlanNode*>(m_abstractNode);
     assert(node);
-    TempTable* output_table = dynamic_cast<TempTable*>(node->getOutputTable());
+    AbstractTempTable* output_table = dynamic_cast<AbstractTempTable*>(node->getOutputTable());
     assert(output_table);
     Table* input_table = node->getInputTable();
     assert(input_table);
@@ -166,59 +118,66 @@ OrderByExecutor::p_execute(const NValueArray &params)
 
     VOLT_TRACE("Running OrderBy '%s'", m_abstractNode->debug().c_str());
     VOLT_TRACE("Input Table:\n '%s'", input_table->debug().c_str());
-    TableIterator iterator = input_table->iterator();
     TableTuple tuple(input_table->schema());
-    vector<TableTuple> xs;
-    ProgressMonitorProxy pmp(m_engine, this);
-    while (iterator.next(tuple))
-    {
-        pmp.countdownProgress();
-        assert(tuple.isActive());
-        xs.push_back(tuple);
-    }
-    VOLT_TRACE("\n***** Input Table PreSort:\n '%s'",
-               input_table->debug().c_str());
+
+    // If limit == 0 we have no work here.  There's no need to sort anything,
+    // or to fetch the vector of tuples from the input.  If limit < 0 we
+    // need to do the loop below, though.  The only case where we can skip
+    // is if limit == 0.
+    if (limit != 0) {
+        vector<TableTuple> xs;
+        ProgressMonitorProxy pmp(m_engine->getExecutorContext(), this);
+        TableIterator iterator = input_table->iterator();
+        while (iterator.next(tuple))
+        {
+            pmp.countdownProgress();
+            assert(tuple.isActive());
+            xs.push_back(tuple);
+        }
+        VOLT_TRACE("\n***** Input Table PreSort:\n '%s'",
+                   input_table->debug().c_str());
 
 
-    if (limit >= 0 && xs.begin() + limit + offset < xs.end()) {
-        // partial sort
-        partial_sort(xs.begin(), xs.begin() + limit + offset, xs.end(),
-                TupleComparer(node->getSortExpressions(), node->getSortDirections()));
-    } else {
-        // full sort
-        sort(xs.begin(), xs.end(),
-                TupleComparer(node->getSortExpressions(), node->getSortDirections()));
-    }
-
-    int tuple_ctr = 0;
-    int tuple_skipped = 0;
-    for (vector<TableTuple>::iterator it = xs.begin(); it != xs.end(); it++)
-    {
-        //
-        // Check if has gone past the offset
-        //
-        if (tuple_skipped < offset) {
-            tuple_skipped++;
-            continue;
+        if (limit >= 0 && xs.begin() + limit + offset < xs.end()) {
+            // partial sort
+            partial_sort(xs.begin(), xs.begin() + limit + offset, xs.end(),
+                    AbstractExecutor::TupleComparer(node->getSortExpressions(), node->getSortDirections()));
+        } else {
+            // full sort
+            sort(xs.begin(), xs.end(),
+                    AbstractExecutor::TupleComparer(node->getSortExpressions(), node->getSortDirections()));
         }
 
-        VOLT_TRACE("\n***** Input Table PostSort:\n '%s'",
-                   input_table->debug().c_str());
-        output_table->insertTupleNonVirtual(*it);
-        pmp.countdownProgress();
-        //
-        // Check whether we have gone past our limit
-        //
-        if (limit >= 0 && ++tuple_ctr >= limit) {
-            break;
+        int tuple_ctr = 0;
+        int tuple_skipped = 0;
+        // If (limit < 0), so we don't have a limit at all, then just compare
+        // the iterator with the end.  Otherwise check that the tuple_counter is
+        // not over the limit.
+        for (vector<TableTuple>::iterator it = xs.begin();
+             ((limit < 0) || (tuple_ctr < limit)) && it != xs.end();
+             it++)
+        {
+            //
+            // Check if has gone past the offset
+            //
+            if (tuple_skipped < offset) {
+                tuple_skipped++;
+                continue;
+            }
+
+            VOLT_TRACE("\n***** Input Table PostSort:\n '%s'",
+                       input_table->debug().c_str());
+            output_table->insertTempTuple(*it);
+            pmp.countdownProgress();
+            tuple_ctr += 1;
         }
     }
     VOLT_TRACE("Result of OrderBy:\n '%s'", output_table->debug().c_str());
-
-    cleanupInputTempTable(input_table);
 
     return true;
 }
 
 OrderByExecutor::~OrderByExecutor() {
 }
+
+} // end namespace voltdb

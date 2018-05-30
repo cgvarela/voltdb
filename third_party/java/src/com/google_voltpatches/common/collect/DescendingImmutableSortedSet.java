@@ -17,7 +17,6 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtIncompatible;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -25,12 +24,18 @@ import javax.annotation_voltpatches.Nullable;
  *
  * @author Louis Wasserman
  */
+@GwtIncompatible
 class DescendingImmutableSortedSet<E> extends ImmutableSortedSet<E> {
   private final ImmutableSortedSet<E> forward;
 
   DescendingImmutableSortedSet(ImmutableSortedSet<E> forward) {
     super(Ordering.from(forward.comparator()).reverse());
     this.forward = forward;
+  }
+
+  @Override
+  public boolean contains(@Nullable Object object) {
+    return forward.contains(object);
   }
 
   @Override

@@ -31,6 +31,7 @@
 
 package org.hsqldb_voltpatches;
 
+import org.hsqldb_voltpatches.HSQLInterface.HSQLParseException;
 import org.hsqldb_voltpatches.ParserDQL.CompileContext;
 import org.hsqldb_voltpatches.lib.IntValueHashMap;
 import org.hsqldb_voltpatches.store.ValuePool;
@@ -245,6 +246,7 @@ public class FunctionSQL extends Expression {
     }
 
     public static boolean isFunction(String token) {
+        token = token.toUpperCase();
         return isRegularFunction(token) || isValueFunction(token);
     }
 
@@ -379,9 +381,6 @@ public class FunctionSQL extends Expression {
             case FUNC_LN :
                 name      = Tokens.T_LN;
                 parseList = singleParamList;
-                // A VoltDB extension to customize the SQL function set support
-                voltDisabled = DISABLED_IN_FUNCTIONSQL_CONSTRUCTOR;
-                // End of VoltDB extension
                 break;
 
             case FUNC_EXP :
@@ -636,7 +635,8 @@ public class FunctionSQL extends Expression {
 
             case FUNC_CURRENT_TIMESTAMP :
                 name            = Tokens.T_CURRENT_TIMESTAMP;
-                parseList       = optionalIntegerParamList;
+                parseList       = emptyParamList;
+                parseListAlt    = noParamList;
                 isValueFunction = true;
                 break;
 
@@ -674,6 +674,7 @@ public class FunctionSQL extends Expression {
     /**
      * Evaluates and returns this Function in the context of the session.<p>
      */
+    @Override
     public Object getValue(Session session) {
 
         Object[] data = new Object[nodes.length];
@@ -1222,6 +1223,7 @@ public class FunctionSQL extends Expression {
         }
     }
 
+    @Override
     public void resolveTypes(Session session, Expression parent) {
 
         for (int i = 0; i < nodes.length; i++) {
@@ -1312,18 +1314,13 @@ public class FunctionSQL extends Expression {
                 break;
             }
             case FUNC_CHAR_LENGTH :
-                if (!nodes[0].dataType.isCharacterType()) {
-                    throw Error.error(ErrorCode.X_42565);
-                }
-
-            // $FALL-THROUGH$
             case FUNC_OCTET_LENGTH : {
                 if (nodes[0].dataType == null) {
                     nodes[0].dataType = Type.SQL_VARCHAR_DEFAULT;
                 }
-
-                if (!nodes[0].dataType.isCharacterType()
-                        && !nodes[0].dataType.isBinaryType()) {
+                else if (!nodes[0].dataType.isCharacterType() &&
+                             ((funcType == FUNC_CHAR_LENGTH) ||
+                              (!nodes[0].dataType.isBinaryType() && (funcType == FUNC_OCTET_LENGTH)))) {
                     throw Error.error(ErrorCode.X_42565);
                 }
 
@@ -1338,36 +1335,40 @@ public class FunctionSQL extends Expression {
             }
             case FUNC_MOD : {
                 if (nodes[0].dataType == null) {
-                    nodes[1].dataType = nodes[0].dataType;
+                    if (nodes[1].dataType == null) {
+                        // Data types for both operands are unknown, throw exception.
+                        throw Error.error(ErrorCode.X_42567);
+                    }
+                    nodes[0].dataType = nodes[1].dataType;
+                }
+                if (nodes[0].dataType.isIntegralType()) {
+                    // Promote the data type to BIGINT for integral data types.
+                    nodes[0].dataType = Type.SQL_BIGINT;
                 }
 
                 if (nodes[1].dataType == null) {
-                    nodes[0].dataType = nodes[1].dataType;
+                    nodes[1].dataType = nodes[0].dataType;
                 }
 
-                if (nodes[0].dataType == null) {
-                    throw Error.error(ErrorCode.X_42567);
-                }
-
-                if (!nodes[0].dataType.isNumberType()
-                        || !nodes[1].dataType.isNumberType()) {
+                // Only allow integral (standard) and decimal
+                // (actually a non-standard extension when
+                // "scale != 0", supported by customer request).
+                if (!(nodes[0].dataType.isIntegralType() || nodes[0].dataType.typeCode == Types.SQL_DECIMAL)) {
                     throw Error.error(ErrorCode.X_42565);
                 }
-                // A VoltDB extension
-                if (!nodes[0].dataType.isIntegralType() || !nodes[1].dataType.isIntegralType()) {
-                    throw new RuntimeException("unsupported non-integral type for SQL MOD function");
+
+                if (!(nodes[1].dataType.isIntegralType() || nodes[1].dataType.typeCode == Types.SQL_DECIMAL)) {
+                    throw Error.error(ErrorCode.X_42565);
                 }
-                // End of VoltDB extension
 
-                nodes[0].dataType =
-                    ((NumberType) nodes[0].dataType).getIntegralType();
-                nodes[1].dataType =
-                    ((NumberType) nodes[1].dataType).getIntegralType();
-                dataType = nodes[1].dataType;
-                // A VoltDB extension to customize the SQL function set support
+                // Don't allow mixing of integral and decimal types
+                // (by the decision of the requesting customer).
+                if (nodes[0].dataType.isIntegralType() != nodes[1].dataType.isIntegralType()) {
+                    throw Error.error(ErrorCode.X_42565);
+                }
+
                 parameterArg = 1;
-                // End of VoltDB extension
-
+                dataType = nodes[1].dataType;
                 break;
             }
             case FUNC_POWER : {
@@ -1797,6 +1798,7 @@ public class FunctionSQL extends Expression {
         }
     }
 
+    @Override
     public String getSQL() {
 
         StringBuffer sb = new StringBuffer();
@@ -2065,7 +2067,8 @@ public class FunctionSQL extends Expression {
             case FUNC_CURRENT_TIMESTAMP : {
                 int precision = DateTimeType.defaultTimestampFractionPrecision;
 
-                if (nodes[0] != null) {
+                // Because this function supports empty parameter list, the nodes array could be empty.
+                if (nodes.length > 0 && nodes[0] != null) {
                     precision = ((Number) nodes[0].valueData).intValue();
                 }
 
@@ -2086,6 +2089,7 @@ public class FunctionSQL extends Expression {
         return sb.toString();
     }
 
+    @Override
     public boolean equals(Object other) {
 
         if (other instanceof FunctionSQL
@@ -2096,6 +2100,7 @@ public class FunctionSQL extends Expression {
         return false;
     }
 
+    @Override
     public int hashCode() {
         return opType + funcType;
     }
@@ -2103,6 +2108,7 @@ public class FunctionSQL extends Expression {
     /**
      * Returns a String representation of this object. <p>
      */
+    @Override
     public String describe(Session session, int blanks) {
 
         StringBuffer sb = new StringBuffer();
@@ -2117,7 +2123,9 @@ public class FunctionSQL extends Expression {
         sb.append(name).append("(");
 
         for (int i = 0; i < nodes.length; i++) {
-            sb.append("[").append(nodes[i].describe(session)).append("]");
+        	if (nodes[i] != null) {
+                sb.append("[").append(nodes[i].describe(session)).append("]");
+        	}
         }
 
         sb.append(") returns ").append(dataType.getNameString());
@@ -2304,24 +2312,24 @@ public class FunctionSQL extends Expression {
             exp.children.remove(0);
             return exp;
 
-        case FunctionForVoltDB.FunctionId.FUNC_VOLT_SINCE_EPOCH :
+        case FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_SINCE_EPOCH :
             implied_argument = null;
             keywordConstant = ((Integer) nodes[0].valueData).intValue();
             int since_epoch_func = -1;
             switch (keywordConstant) {
             case Tokens.SECOND :
                 implied_argument = "SECOND";
-                since_epoch_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_SINCE_EPOCH_SECOND;
+                since_epoch_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_SINCE_EPOCH_SECOND;
                 break;
             case Tokens.MILLIS :
             case Tokens.MILLISECOND:
                 implied_argument = "MILLISECOND";
-                since_epoch_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_SINCE_EPOCH_MILLISECOND;
+                since_epoch_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_SINCE_EPOCH_MILLISECOND;
                 break;
             case Tokens.MICROS :
             case Tokens.MICROSECOND :
                 implied_argument = "MICROSECOND";
-                since_epoch_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_SINCE_EPOCH_MICROSECOND;
+                since_epoch_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_SINCE_EPOCH_MICROSECOND;
                 break;
             default:
                 throw Error.runtimeError(ErrorCode.U_S0500, "DateTimeTypeForVoltDB: " + String.valueOf(keywordConstant));
@@ -2336,24 +2344,24 @@ public class FunctionSQL extends Expression {
             exp.children.remove(0);
             return exp;
 
-        case FunctionForVoltDB.FunctionId.FUNC_VOLT_TO_TIMESTAMP :
+        case FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TO_TIMESTAMP :
             implied_argument = null;
             keywordConstant = ((Integer) nodes[0].valueData).intValue();
             int to_timestamp_func = -1;
             switch (keywordConstant) {
             case Tokens.SECOND :
                 implied_argument = "SECOND";
-                to_timestamp_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TO_TIMESTAMP_SECOND;
+                to_timestamp_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TO_TIMESTAMP_SECOND;
                 break;
             case Tokens.MILLIS :
             case Tokens.MILLISECOND :
                 implied_argument = "MILLISECOND";
-                to_timestamp_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TO_TIMESTAMP_MILLISECOND;
+                to_timestamp_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TO_TIMESTAMP_MILLISECOND;
                 break;
             case Tokens.MICROS :
             case Tokens.MICROSECOND :
                 implied_argument = "MICROSECOND";
-                to_timestamp_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TO_TIMESTAMP_MICROSECOND;
+                to_timestamp_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TO_TIMESTAMP_MICROSECOND;
                 break;
             default:
                 throw Error.runtimeError(ErrorCode.U_S0500, "DateTimeTypeForVoltDB: " + String.valueOf(keywordConstant));
@@ -2367,48 +2375,48 @@ public class FunctionSQL extends Expression {
             exp.children.remove(0);
             return exp;
 
-        case FunctionForVoltDB.FunctionId.FUNC_VOLT_TRUNCATE_TIMESTAMP :
+        case FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TRUNCATE_TIMESTAMP :
             implied_argument = null;
             keywordConstant = ((Integer) nodes[0].valueData).intValue();
             int truncate_func = -1;
             switch (keywordConstant) {
             case Tokens.YEAR :
                 implied_argument = "YEAR";
-                truncate_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TRUNCATE_YEAR;
+                truncate_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TRUNCATE_YEAR;
                 break;
             case Tokens.QUARTER :
                 implied_argument = "QUARTER";
-                truncate_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TRUNCATE_QUARTER;
+                truncate_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TRUNCATE_QUARTER;
                 break;
             case Tokens.MONTH :
                 implied_argument = "MONTH";
-                truncate_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TRUNCATE_MONTH;
+                truncate_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TRUNCATE_MONTH;
                 break;
             case Tokens.DAY :
                 implied_argument = "DAY";
-                truncate_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TRUNCATE_DAY;
+                truncate_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TRUNCATE_DAY;
                 break;
             case Tokens.HOUR :
                 implied_argument = "HOUR";
-                truncate_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TRUNCATE_HOUR;
+                truncate_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TRUNCATE_HOUR;
                 break;
             case Tokens.MINUTE :
                 implied_argument = "MINUTE";
-                truncate_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TRUNCATE_MINUTE;
+                truncate_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TRUNCATE_MINUTE;
                 break;
             case Tokens.SECOND :
                 implied_argument = "SECOND";
-                truncate_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TRUNCATE_SECOND;
+                truncate_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TRUNCATE_SECOND;
                 break;
             case Tokens.MILLIS:
             case Tokens.MILLISECOND :
                 implied_argument = "MILLISECOND";
-                truncate_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TRUNCATE_MILLISECOND;
+                truncate_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TRUNCATE_MILLISECOND;
                 break;
             case Tokens.MICROS:
             case Tokens.MICROSECOND :
                 implied_argument = "MICROSECOND";
-                truncate_func = FunctionForVoltDB.FunctionId.FUNC_VOLT_TRUNCATE_MICROSECOND;
+                truncate_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_TRUNCATE_MICROSECOND;
                 break;
             default:
                 throw Error.runtimeError(ErrorCode.U_S0500, "DateTimeTypeForVoltDB: " + String.valueOf(keywordConstant));
@@ -2417,6 +2425,113 @@ public class FunctionSQL extends Expression {
             assert(implied_argument != null);
             assert(-1 != truncate_func);
             exp.attributes.put("function_id", String.valueOf(truncate_func));
+            exp.attributes.put("implied_argument", implied_argument);
+
+            // Having accounted for the first argument, remove it from the child expression list.
+            exp.children.remove(0);
+            return exp;
+
+        case FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DISTANCE :
+            Type leftChildType = nodes[0].dataType;
+            Type rightChildType = nodes[1].dataType;
+
+            // in here the only cases needed to be handled are distance between polygon-to-point
+            // and point-to-point.
+            assert(leftChildType.isGeographyType() || leftChildType.isGeographyPointType());
+            assert(rightChildType.isGeographyPointType());
+
+            if (leftChildType.isGeographyType()) {
+                exp.attributes.put("function_id", String.valueOf(FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DISTANCE_POLYGON_POINT));
+            }
+            else {
+                exp.attributes.put("function_id", String.valueOf(FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DISTANCE_POINT_POINT));
+            }
+            return exp;
+
+        case FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DWITHIN:
+            Type firstArgType = nodes[0].dataType;
+            Type secondArgType = nodes[1].dataType;
+            Type thirdArgType = nodes[2].dataType;
+
+            // valid first and second arguments are geo types
+            // third argument, distance, is a numeric type
+            // resolveTypes() has logic to perform the type-validity for arguments
+            assert(firstArgType.isGeographyType() || firstArgType.isGeographyPointType());
+            assert(secondArgType.isGeographyPointType());
+            assert(thirdArgType.isNumberType());
+
+            if (firstArgType.isGeographyType()) {
+                exp.attributes.put("function_id", String.valueOf(FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DWITHIN_POLYGON_POINT));
+            }
+            else {
+                exp.attributes.put("function_id", String.valueOf(FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DWITHIN_POINT_POINT));
+            }
+            return exp;
+
+        case FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_ASTEXT:
+            // only valid types for asText are geography and geography-point
+            // resolveTypes in FunctionForVoltDB will block any other types
+            // as unsupported types
+            assert(nodes[0].dataType.isGeographyPointType() || nodes[0].dataType.isGeographyType());
+
+            if (nodes[0].dataType.isGeographyPointType()) {
+                exp.attributes.put("function_id", String.valueOf(FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_ASTEXT_GEOGRAPHY_POINT));
+            }
+            else {
+                exp.attributes.put("function_id", String.valueOf(FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_ASTEXT_GEOGRAPHY));
+            }
+            return exp;
+
+        case FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DATEADD :
+            implied_argument = null;
+            keywordConstant = ((Integer) nodes[0].valueData).intValue();
+            int dateadd_func = -1;
+            switch (keywordConstant) {
+            case Tokens.YEAR :
+                implied_argument = "YEAR";
+                dateadd_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DATEADD_YEAR;
+                break;
+            case Tokens.QUARTER :
+                implied_argument = "QUARTER";
+                dateadd_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DATEADD_QUARTER;
+                break;
+            case Tokens.MONTH :
+                implied_argument = "MONTH";
+                dateadd_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DATEADD_MONTH;
+                break;
+            case Tokens.DAY :
+                implied_argument = "DAY";
+                dateadd_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DATEADD_DAY;
+                break;
+            case Tokens.HOUR :
+                implied_argument = "HOUR";
+                dateadd_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DATEADD_HOUR;
+                break;
+            case Tokens.MINUTE :
+                implied_argument = "MINUTE";
+                dateadd_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DATEADD_MINUTE;
+                break;
+            case Tokens.SECOND :
+                implied_argument = "SECOND";
+                dateadd_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DATEADD_SECOND;
+                break;
+            case Tokens.MILLIS:
+            case Tokens.MILLISECOND :
+                implied_argument = "MILLISECOND";
+                dateadd_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DATEADD_MILLISECOND;
+                break;
+            case Tokens.MICROS:
+            case Tokens.MICROSECOND :
+                implied_argument = "MICROSECOND";
+                dateadd_func = FunctionForVoltDB.FunctionDescriptor.FUNC_VOLT_DATEADD_MICROSECOND;
+                break;
+            default:
+                throw Error.runtimeError(ErrorCode.U_S0500, "DateTimeTypeForVoltDB: " + String.valueOf(keywordConstant));
+            }
+
+            assert(implied_argument != null);
+            assert(-1 != dateadd_func);
+            exp.attributes.put("function_id", String.valueOf(dateadd_func));
             exp.attributes.put("implied_argument", implied_argument);
 
             // Having accounted for the first argument, remove it from the child expression list.

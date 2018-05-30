@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -32,14 +32,14 @@ import java.util.regex.Pattern;
  *
  */
 public class ClassMatcher {
-    enum ClassNameMatchStatus {
+    public enum ClassNameMatchStatus {
         MATCH_FOUND,
         NO_WILDCARD_MATCH,
         NO_EXACT_MATCH,
     }
 
     /** List of .class files found in the classpath */
-    String m_classList = null;
+    public String m_classList = null;
     /** List of matches found after applying patterns */
     SortedSet<String> m_classNameMatches = new TreeSet<String>();
 

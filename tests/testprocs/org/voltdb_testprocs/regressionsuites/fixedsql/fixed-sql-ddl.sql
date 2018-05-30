@@ -37,6 +37,8 @@ CREATE TABLE R1 (
   RATIO FLOAT,
   PRIMARY KEY (ID)
 );
+CREATE PROCEDURE R1_PROC1 AS SELECT NUM + 0.1 FROM R1;
+CREATE PROCEDURE R1_PROC2 AS SELECT NUM + 1.0E-1 FROM R1;
 
 CREATE TABLE P2 (
   ID INTEGER DEFAULT 0 NOT NULL,
@@ -248,14 +250,12 @@ CREATE TABLE transaction(
 );
 PARTITION TABLE transaction ON COLUMN acc_no;
 
-CREATE TABLE offers_given_exp(
+CREATE STREAM offers_given_exp PARTITION ON COLUMN acc_no (
   acc_no BIGINT NOT NULL,
   vendor_id INTEGER,
   offer_ts TIMESTAMP NOT NULL,
   offer_text VARCHAR(200)
 );
-PARTITION TABLE offers_given_exp ON COLUMN acc_no;
-EXPORT TABLE offers_given_exp;
 
 CREATE VIEW acct_vendor_totals AS
 SELECT
@@ -302,23 +302,23 @@ create procedure one_string_scalar_param as
 -- ********************************** --
 -- Stored procedure for ENG-7724      --
 CREATE TABLE product_changes (
-  location              VARCHAR(12) NOT NULL, 
-  product_id               VARCHAR(18) NOT NULL, 
-  start_date               TIMESTAMP,  
+  location              VARCHAR(12) NOT NULL,
+  product_id               VARCHAR(18) NOT NULL,
+  start_date               TIMESTAMP,
   safety_time_promo        SMALLINT,
   safety_time_base         SMALLINT,
   POQ                      SMALLINT,
   case_size                INTEGER,
   multiple                 INTEGER,
   lead_time                SMALLINT,
-  supplier                 VARCHAR(12), 
+  supplier                 VARCHAR(12),
   facings                  INTEGER,
-  minimum_deep             FLOAT, 
+  minimum_deep             FLOAT,
   maximum_deep             INTEGER,
   backroom_sfty_stck       INTEGER,
-  cost                     FLOAT, 
+  cost                     FLOAT,
   selling_price            FLOAT,
-  model                    VARCHAR(12), 
+  model                    VARCHAR(12),
   assortment_adj           FLOAT,
   safety_stock_days        SMALLINT
 );
@@ -342,8 +342,156 @@ SELECT
   supplier,
   safety_stock_days
 FROM product_changes
-WHERE location = ? 
-AND product_id = ? 
+WHERE location = ?
+AND product_id = ?
 ORDER by location, product_id, start_date;
 PARTITION PROCEDURE voltdbSelectProductChanges ON TABLE product_changes COLUMN location PARAMETER 0;
 -- ********************************** --
+
+-- ENG-9032, ENG-9389
+CREATE TABLE t1(
+ a INTEGER,
+ b integer);
+create index t1_idx1 on t1 (a);
+create index t1_idx2 on t1 (b);
+
+CREATE TABLE t2(
+ b INTEGER,
+ d integer);
+create unique index t2_idx1 on t2 (b);
+
+CREATE TABLE t3(
+ a INTEGER,
+ x INTEGER,
+ d integer);
+create unique index t3_idx1 on t3 (a);
+create unique index t3_idx2 on t3 (d);
+
+CREATE TABLE t3_no_index (
+ a INTEGER,
+ x INTEGER,
+ d integer);
+
+-- ENG-9533
+CREATE TABLE test1_eng_9533 (
+  id bigint not null,
+  primary key (id)
+);
+PARTITION TABLE test1_eng_9533 ON COLUMN ID;
+
+CREATE TABLE test2_eng_9533 (
+   T_ID bigint NOT NULL,
+   T_CHAR_ID1 varchar(128),
+   T_CHAR_ID2 varchar(128),
+   T_INT integer,
+   PRIMARY KEY (T_ID, T_CHAR_ID1, T_CHAR_ID2)
+);
+PARTITION TABLE test2_eng_9533 ON COLUMN T_ID;
+
+CREATE TABLE ENG_12105 (
+  ID      INTEGER NOT NULL,
+  TINY    TINYINT,
+  SMALL   SMALLINT,
+  INT     INTEGER,
+  BIG     BIGINT,
+  NUM     FLOAT,
+  DEC     DECIMAL,
+  VCHAR   VARCHAR(500),
+  VCHAR_INLINE_MAX VARCHAR(63 BYTES),
+  VCHAR_INLINE     VARCHAR(14),
+  TIME    TIMESTAMP,
+  VARBIN  VARBINARY(100),
+  PRIMARY KEY (ID)
+);
+
+CREATE TABLE ENG_539 (
+  ID      INTEGER NOT NULL,
+  VARBIN  VARBINARY(3),
+  BIG     BIGINT,
+  PRIMARY KEY (ID)
+);
+
+create table swapper_table_foo (
+       i integer,
+       j varchar(32),
+       primary key (i)
+);
+
+create table swapper_table_bar (
+       i integer,
+       j varchar(32),
+       primary key (i)
+);
+
+-- Tables for reproducer for ENG-13852
+CREATE TABLE ENG_13852_P5 (
+       ID      INTEGER  NOT NULL,
+       TINY    TINYINT  NOT NULL,
+       SMALL   SMALLINT NOT NULL,
+       INT     INTEGER  NOT NULL,
+       BIG     BIGINT   NOT NULL,
+       NUM     FLOAT    NOT NULL,
+       DEC     DECIMAL  NOT NULL,
+       VCHAR_INLINE      VARCHAR(42 BYTES)   NOT NULL,
+       VCHAR_INLINE_MAX  VARCHAR(15)         NOT NULL,
+       VCHAR_OUTLINE_MIN VARCHAR(16)         NOT NULL,
+       VCHAR             VARCHAR             NOT NULL,
+       VCHAR_JSON        VARCHAR(4000 BYTES) NOT NULL,
+       TIME    TIMESTAMP       NOT NULL,
+       VARBIN  VARBINARY(100)  NOT NULL,
+       POINT   GEOGRAPHY_POINT NOT NULL,
+       POLYGON GEOGRAPHY,
+       IPV4    VARCHAR(15),
+       IPV6    VARCHAR(60),
+       VBIPV4  VARBINARY(4),
+       VBIPV6  VARBINARY(16)       NOT NULL,
+       PRIMARY KEY (VCHAR, ID)
+);
+
+PARTITION TABLE ENG_13852_P5 ON COLUMN ID;
+CREATE       UNIQUE INDEX IDX_P5_IV  ON ENG_13852_P5 (ID, VCHAR)                WHERE ID >= 0;
+CREATE ASSUMEUNIQUE INDEX IDX_P5_VSI ON ENG_13852_P5 (VCHAR_INLINE, SMALL, INT) WHERE VCHAR_INLINE_MAX < 'a';
+CREATE              INDEX IDX_P5_IVI ON ENG_13852_P5 (INT, VCHAR_INLINE_MAX)    WHERE INT >= 0 AND VCHAR_INLINE IS NOT NULL;
+
+CREATE TABLE ENG_13852_R11 (
+       ID      INTEGER NOT NULL PRIMARY KEY,
+       TINY    TINYINT,
+       SMALL   SMALLINT,
+       INT     INTEGER,
+       BIG     BIGINT,
+       NUM     FLOAT,
+       DEC     DECIMAL,
+       VCHAR_INLINE      VARCHAR(42 BYTES),
+       VCHAR_INLINE_MAX  VARCHAR(15),
+       VCHAR_OUTLINE_MIN VARCHAR(16),
+       VCHAR             VARCHAR,
+       VCHAR_JSON        VARCHAR(4000 BYTES),
+       TIME    TIMESTAMP,
+       VARBIN  VARBINARY(100),
+       POINT   GEOGRAPHY_POINT,
+       POLYGON GEOGRAPHY,
+       IPV4    VARCHAR(15),
+       IPV6    VARCHAR(60),
+       VBIPV4  VARBINARY(4),
+       VBIPV6  VARBINARY(16)
+);
+
+
+CREATE VIEW ENG_13852_VP5 (SMALL, VCHAR, TINY,
+       ID, INT, BIG, NUM, DEC,
+       VCHAR_INLINE, VCHAR_INLINE_MAX, VCHAR_OUTLINE_MIN, VCHAR_JSON, TIME
+       , VARBIN, POINT, POLYGON
+       , IPV4, IPV6, VBIPV4, VBIPV6
+) AS
+SELECT SMALL, VCHAR, TINY,
+       COUNT(*), COUNT(VARBIN), COUNT(POLYGON), SUM(NUM), SUM(DEC),
+       MIN(VCHAR_INLINE), MAX(VCHAR_INLINE_MAX), MIN(VCHAR_OUTLINE_MIN), MAX(VCHAR_JSON), MIN(TIME)
+       , MAX(VARBIN), MIN(POINT), MAX(POLYGON)
+       , MIN(IPV4), MAX(IPV6), MIN(VBIPV4), MAX(VBIPV6)
+FROM ENG_13852_P5
+WHERE TINY < 64
+GROUP BY SMALL, VCHAR, TINY;
+
+CREATE INDEX IDX_VP5_SVT ON ENG_13852_VP5 (SMALL, VCHAR, TINY)      WHERE SMALL >= 0;
+CREATE INDEX IDX_VP5_VID ON ENG_13852_VP5 (VCHAR_INLINE, INT, DEC)  WHERE VCHAR_INLINE < 'a';
+CREATE INDEX IDX_VP5_VS  ON ENG_13852_VP5 (VCHAR_INLINE_MAX, SMALL) WHERE SMALL >= 0 AND VCHAR_INLINE_MAX IS NOT NULL;

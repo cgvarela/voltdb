@@ -19,11 +19,10 @@ package com.google_voltpatches.common.collect;
 import com.google_voltpatches.common.annotations.Beta;
 import com.google_voltpatches.common.annotations.GwtCompatible;
 import com.google_voltpatches.common.base.Objects;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Set;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -40,33 +39,39 @@ import javax.annotation_voltpatches.Nullable;
  * your own implementation, or delegating to the provided {@code standardAdd}
  * method.
  *
+ * <p><b>{@code default} method warning:</b> This class does <i>not</i> forward calls to {@code
+ * default} methods. Instead, it inherits their default implementations. When those implementations
+ * invoke methods, they invoke methods on the {@code ForwardingMultiset}.
+ *
  * <p>The {@code standard} methods and any collection views they return are not
  * guaranteed to be thread-safe, even when all of the methods that they depend
  * on are thread-safe.
  *
  * @author Kevin Bourrillion
  * @author Louis Wasserman
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
-public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
-    implements Multiset<E> {
+public abstract class ForwardingMultiset<E> extends ForwardingCollection<E> implements Multiset<E> {
 
   /** Constructor for use by subclasses. */
   protected ForwardingMultiset() {}
 
-  @Override protected abstract Multiset<E> delegate();
+  @Override
+  protected abstract Multiset<E> delegate();
 
   @Override
   public int count(Object element) {
     return delegate().count(element);
   }
 
+  @CanIgnoreReturnValue
   @Override
   public int add(E element, int occurrences) {
     return delegate().add(element, occurrences);
   }
 
+  @CanIgnoreReturnValue
   @Override
   public int remove(Object element, int occurrences) {
     return delegate().remove(element, occurrences);
@@ -82,19 +87,23 @@ public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
     return delegate().entrySet();
   }
 
-  @Override public boolean equals(@Nullable Object object) {
+  @Override
+  public boolean equals(@Nullable Object object) {
     return object == this || delegate().equals(object);
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     return delegate().hashCode();
   }
 
+  @CanIgnoreReturnValue
   @Override
   public int setCount(E element, int count) {
     return delegate().setCount(element, count);
   }
 
+  @CanIgnoreReturnValue
   @Override
   public boolean setCount(E element, int oldCount, int newCount) {
     return delegate().setCount(element, oldCount, newCount);
@@ -107,7 +116,8 @@ public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
    * 
    * @since 7.0
    */
-  @Override protected boolean standardContains(@Nullable Object object) {
+  @Override
+  protected boolean standardContains(@Nullable Object object) {
     return count(object) > 0;
   }
 
@@ -118,7 +128,8 @@ public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
    *
    * @since 7.0
    */
-  @Override protected void standardClear() {
+  @Override
+  protected void standardClear() {
     Iterators.clear(entrySet().iterator());
   }
 
@@ -129,7 +140,8 @@ public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
    * 
    * @since 7.0
    */
-  @Beta protected int standardCount(@Nullable Object object) {
+  @Beta
+  protected int standardCount(@Nullable Object object) {
     for (Entry<?> entry : this.entrySet()) {
       if (Objects.equal(entry.getElement(), object)) {
         return entry.getCount();
@@ -158,8 +170,9 @@ public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
    * 
    * @since 7.0
    */
-  @Beta @Override protected boolean standardAddAll(
-      Collection<? extends E> elementsToAdd) {
+  @Beta
+  @Override
+  protected boolean standardAddAll(Collection<? extends E> elementsToAdd) {
     return Multisets.addAllImpl(this, elementsToAdd);
   }
 
@@ -171,7 +184,8 @@ public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
    * 
    * @since 7.0
    */
-  @Override protected boolean standardRemove(Object element) {
+  @Override
+  protected boolean standardRemove(Object element) {
     return remove(element, 1) > 0;
   }
 
@@ -183,8 +197,8 @@ public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
    *
    * @since 7.0
    */
-  @Override protected boolean standardRemoveAll(
-      Collection<?> elementsToRemove) {
+  @Override
+  protected boolean standardRemoveAll(Collection<?> elementsToRemove) {
     return Multisets.removeAllImpl(this, elementsToRemove);
   }
 
@@ -196,8 +210,8 @@ public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
    *
    * @since 7.0
    */
-  @Override protected boolean standardRetainAll(
-      Collection<?> elementsToRetain) {
+  @Override
+  protected boolean standardRetainAll(Collection<?> elementsToRetain) {
     return Multisets.retainAllImpl(this, elementsToRetain);
   }
 
@@ -273,9 +287,9 @@ public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
   }
 
   /**
-   * A sensible, albeit inefficient, definition of {@link #size} in terms of
+   * A sensible, albeit inefficient, definition of {@link #equals} in terms of
    * {@code entrySet().size()} and {@link #count}. If you override either of
-   * these methods, you may wish to override {@link #size} to forward to this
+   * these methods, you may wish to override {@link #equals} to forward to this
    * implementation.
    *
    * @since 7.0
@@ -302,7 +316,8 @@ public abstract class ForwardingMultiset<E> extends ForwardingCollection<E>
    *
    * @since 7.0
    */
-  @Override protected String standardToString() {
+  @Override
+  protected String standardToString() {
     return entrySet().toString();
   }
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,9 +26,9 @@ package org.voltdb.compiler;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 
-import junit.framework.TestCase;
-
 import org.voltdb.VoltDB.Configuration;
+
+import junit.framework.TestCase;
 
 public class TestProcCompiler extends TestCase {
 
@@ -50,11 +50,11 @@ public class TestProcCompiler extends TestCase {
 
         // Test for index use on a constant equality using inequality queries as "control" cases.
         builder.addStmtProcedure("StmtIndexOnConstant",
-                                 "select * from indexed_replicated_blah where ival = 1", null);
+                                 "select * from indexed_replicated_blah where ival = 1");
         builder.addStmtProcedure("StmtScanOnConstant",
-                                 "select * from indexed_replicated_blah where ival <> 1", null);
+                                 "select * from indexed_replicated_blah where ival <> 1");
         builder.addStmtProcedure("StmtScanOnConstant2",
-                                 "select * from indexed_replicated_blah where ival <> 0", null);
+                                 "select * from indexed_replicated_blah where ival <> 0");
 
 
         boolean success = builder.compile(Configuration.getPathToCatalogForTest("index_on_constant.jar"));
@@ -66,6 +66,64 @@ public class TestProcCompiler extends TestCase {
         // A result of 2 confirms that the legitimate table scans are getting trapped.
         // This builds confidence that there isn't a third one sneaking by in place of the index scan.
         assertEquals(2, countLinesMatching(lines, "^\\s*\\[TABLE SCAN]\\sselect.*indexed_replicated_blah.*"));
+    }
+
+    protected static String getQueryForFoo(int numberOfPredicates) {
+        StringBuilder string = new StringBuilder("SELECT * FROM FOO ");
+        if (numberOfPredicates > 0) {
+            string.append("WHERE ID = 10 ");
+            for (int i = 1; i < numberOfPredicates; i++) {
+                string.append("AND ID > 1 ");
+            }
+        }
+        string.append(";");
+        return string.toString();
+    }
+
+    public void testStmtWithLotsOfPredicates() throws Exception {
+        String simpleSchema =  "Create Table foo ( " +
+                               "id BIGINT DEFAULT 0 NOT NULL, " +
+                               "name VARCHAR(255) NOT NULL, " +
+                               "PRIMARY KEY(id));";
+
+        VoltProjectBuilder builder = new VoltProjectBuilder();
+        builder.addLiteralSchema(simpleSchema);
+
+        // Generate a stored procedure with a query with a lot of predicates.
+        String sql = getQueryForFoo(350);
+        builder.addStmtProcedure("StmtWithPredicates", sql);
+
+        boolean success = builder.compile(Configuration.getPathToCatalogForTest("lots_of_predicates.jar"));
+        assert(success);
+    }
+
+    public void testStmtForStackOverflowCondition() throws Exception {
+        boolean success = true;
+        ByteArrayOutputStream capturer = null;
+        for (int npreds = 2000; success && npreds < 100000; npreds += 1000) {
+            String schema =  "Create Table foo ( " +
+                             "id BIGINT DEFAULT 0 NOT NULL, " +
+                             "name VARCHAR(255) NOT NULL, " +
+                             "PRIMARY KEY(id));";
+
+            VoltProjectBuilder builder = new VoltProjectBuilder();
+            capturer = new ByteArrayOutputStream();
+            PrintStream capturing = new PrintStream(capturer);
+            builder.setCompilerDebugPrintStream(capturing);
+            builder.addLiteralSchema(schema);
+
+            // Test that a stored procedure with more than the max allowable predicates
+            // results in an error and does not crash or hang the system.
+            String sql = getQueryForFoo(npreds);
+            builder.addStmtProcedure("StmtForStackOverFlow", sql);
+            success = builder.compile(Configuration.getPathToCatalogForTest("max_plus_predicates.jar"));
+        }
+
+        assert(!success);
+        String captured = capturer.toString("UTF-8");
+        String errMsg = "Encountered stack overflow error. " +
+                        "Try reducing the number of predicate expressions in the query";
+        assert(captured.contains(errMsg));
     }
 
     private int countLinesMatching(String[] lines, String pattern) {

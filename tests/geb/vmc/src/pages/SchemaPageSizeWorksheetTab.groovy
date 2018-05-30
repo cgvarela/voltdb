@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2014 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -31,46 +31,45 @@ package vmcTest.pages
 
 class SchemaPageSizeWorksheetTab extends SchemaPage {
     static content = {
-        name		{ $(class:"tablesorter-header-inner", text:"Name") }
-        type		{ $(class:"tablesorter-header-inner", text:"Type") }
-        count		{ $(class:"tablesorter-header-inner", text:"Count") }
-        rowMin		{ $(class:"tablesorter-header-inner", text:"Row Min") }
-        rowMax		{ $(class:"tablesorter-header-inner", text:"Row Max") }
-        indexMin	{ $(class:"tablesorter-header-inner", text:"Index Min") }
-        indexMax	{ $(class:"tablesorter-header-inner", text:"Index Max") }
-        tableMin	{ $(class:"tablesorter-header-inner", text:"Table Min") }
-        tableMax	{ $(class:"tablesorter-header-inner", text:"Table Max") }
+        name        { $(class:"tablesorter-header-inner", text:"Name") }
+        type        { $(class:"tablesorter-header-inner", text:"Type") }
+        count       { $(class:"tablesorter-header-inner", text:"Count") }
+        rowMin      { $(class:"tablesorter-header-inner", text:"Row Min") }
+        rowMax      { $(class:"tablesorter-header-inner", text:"Row Max") }
+        indexMin    { $(class:"tablesorter-header-inner", text:"Index Min") }
+        indexMax    { $(class:"tablesorter-header-inner", text:"Index Max") }
+        tableMin    { $(class:"tablesorter-header-inner", text:"Table Min") }
+        tableMax    { $(class:"tablesorter-header-inner", text:"Table Max") }
 
-        ascending	{ $(class:"tablesorter-icon icon-chevron-up") }
-        descending	{ $(class:"tablesorter-icon icon-chevron-down") }
+        //ascending     { $(class:"tablesorter-icon icon-chevron-up") }
+        ascending       { $("#sizetable > thead > tr.tablesorter-headerRow > th.tablesorter-header.bootstrap-header.tablesorter-headerAsc") }
+        //descending        { $(class:"tablesorter-icon icon-chevron-down") }
+        descending      { $("#sizetable > thead > tr.tablesorter-headerRow > th.tablesorter-header.bootstrap-header.tablesorter-headerDesc") }
 
-        sizeAnalysisSummary	{ $("h3", text:"Size Analysis Summary") }
+        sizeAnalysisSummary { $("#z > div:nth-child(1) > div.dataBlockHeading > h1") }
 
-        sizeTableMin		{ $("#s-size-summary-table-min") }
-        sizeTableMax		{ $("#s-size-summary-table-max") }
-        sizeViewMin			{ $("#s-size-summary-view-min") }
-        sizeIndexMin		{ $("#s-size-summary-index-min") }
-        sizeTotalMin		{ $("#s-size-summary-total-min") }
-        sizeTotalMax		{ $("#s-size-summary-total-max") }
+        sizeTableMin        { $("#s-size-summary-table-min") }
+        sizeTableMax        { $("#s-size-summary-table-max") }
+        sizeViewMin         { $("#s-size-summary-view-min") }
+        sizeIndexMin        { $("#s-size-summary-index-min") }
+        sizeTotalMin        { $("#s-size-summary-total-min") }
+        sizeTotalMax        { $("#s-size-summary-total-max") }
 
-        textTable			{ $("#z > div:nth-child(2) > div.dataBlockContent > div > table > tbody > tr:nth-child(1) > td:nth-child(2)") }
-        textView			{ $("#z > div:nth-child(2) > div.dataBlockContent > div > table > tbody > tr:nth-child(2) > td:nth-child(2)") }
-        textIndex			{ $("#z > div:nth-child(2) > div.dataBlockContent > div > table > tbody > tr:nth-child(3) > td:nth-child(2)") }
-        textTotal			{ $("#z > div:nth-child(2) > div.dataBlockContent > div > table > tbody > tr:nth-child(5) > td:nth-child(1) > b") }
+        textTable           { $("#z > div:nth-child(3) > div.dataBlockContent > div > table > tbody > tr:nth-child(1) > td:nth-child(2)") }
+        textView            { $("#z > div:nth-child(3) > div.dataBlockContent > div > table > tbody > tr:nth-child(2) > td:nth-child(2)") }
+        textIndex           { $("#z > div:nth-child(3) > div.dataBlockContent > div > table > tbody > tr:nth-child(3) > td:nth-child(2)") }
+        textTotal           { $("#z > div:nth-child(2) > div.dataBlockContent > div > table > tbody > tr:nth-child(5) > td:nth-child(1) > b") }
 
-        tablenamePresent	{ $(class:"table-view-name") }
+        tablenamePresent    (required:false) { $(class:"table-view-name", text:"voters") }
 
-        searchName			{ $("#sizetable > thead > tr.tablesorter-filter-row > td:nth-child(1) > input") }
-        documentationLink 	{ $("#iconDoc") }
-        generatedbytxt		{$("#catalogContainer > div.documentation > span")}
+        searchName          { $("#sizetable > thead > tr.tablesorter-filter-row > td:nth-child(1) > input") }
+        documentationLink   { $("#iconDoc") }
+        generatedbytxt      {$("#catalogContainer > div.documentation > span")}
         refreshtableworksheet   { $("#MenuCatalog > div > button", text:"Refresh")}
-
     }
-
 
     static at = {
         sizeTab.displayed
         sizeTab.attr('class') == 'active'
     }
-
 }

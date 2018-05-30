@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -65,7 +65,7 @@ class AbstractExecutor;
 class AbstractExpression;
 class Table;
 class TableCatalogDelegate;
-class TempTable;
+class AbstractTempTable;
 class TupleSchema;
 
 class AbstractPlanNode {
@@ -101,30 +101,37 @@ public:
     class TableReference {
     public:
         TableReference() : m_tcd(NULL), m_tempTable(NULL) { }
-        //TableReference(TableCatalogDelegate* tcd) : m_tcd(tcd), m_tempTable(NULL) { }
-        //TableReference(TempTable* tempTable) : m_tcd(NULL), m_tempTable(tempTable) { }
 
         Table* getTable() const;
+
+        AbstractTempTable* getTempTable() const {
+            return m_tempTable;
+        }
+
         void setTable(TableCatalogDelegate* tcd)
         {
             assert(! m_tcd);
             assert(! m_tempTable);
             m_tcd = tcd;
         }
-        void setTable(TempTable* table)
+
+        void setTable(AbstractTempTable* table)
         {
             assert(! m_tcd);
             assert(! m_tempTable);
             m_tempTable = table;
         }
+
         void clearTable()
         {
             m_tcd = NULL;
             m_tempTable = NULL;
         }
 
+    private:
+
         TableCatalogDelegate* m_tcd;
-        TempTable* m_tempTable;
+        AbstractTempTable* m_tempTable;
     };
 
     // Adds cleanup behavior that only effects output temp tables.
@@ -134,19 +141,19 @@ public:
     };
 
     void setInputTables(const std::vector<Table*> &val);
-    size_t getInputTableCount() { return m_inputTables.size(); }
+    size_t getInputTableCount() const { return m_inputTables.size(); }
     const std::vector<TableReference>& getInputTableRefs() { return m_inputTables; }
 
     Table *getInputTable() const { return m_inputTables[0].getTable(); }
 
     Table *getInputTable(int which) const { return m_inputTables[which].getTable(); }
 
-    TempTable *getTempInputTable() const { return m_inputTables[0].m_tempTable; }
+    AbstractTempTable *getTempInputTable() const { return m_inputTables[0].getTempTable(); }
 
     void setOutputTable(Table* val);
     void clearOutputTableReference() { m_outputTable.clearTable(); }
     Table *getOutputTable() const { return m_outputTable.getTable(); }
-    TempTable *getTempOutputTable() const { return m_outputTable.m_tempTable; }
+    AbstractTempTable *getTempOutputTable() const { return m_outputTable.getTempTable(); }
 
     //
     // Each sub-class will have to implement this function to return their type
@@ -199,6 +206,25 @@ public:
 
     void setPlanNodeIdForTest(int32_t plannode_id) { m_planNodeId = plannode_id; }
 
+    /**
+     * Load list of sort expressions and directions from a JSON object.
+     * The pointers may be null if one of the vectors is not wanted.
+     */
+    static void loadSortListFromJSONObject(PlannerDomValue obj,
+                                           std::vector<AbstractExpression*> *sortExprs,
+                                           std::vector<SortDirectionType>   *sortDirs);
+
+    // A simple method of managing the lifetime of AbstractExpressions referenced by
+    // a vector that is never mutated once it is loaded.
+    struct OwningExpressionVector : public std::vector<AbstractExpression*> {
+        // Nothing prevents the vector from being set up or even modified
+        // via other vector methods, with this caveat:
+        // The memory management magic provided here simply assumes ownership
+        // of any elements referenced by the _final_ state of the vector.
+        ~OwningExpressionVector();
+        void loadExpressionArrayFromJSONObject(const char* label,
+                                               PlannerDomValue obj);
+    };
 
 protected:
     AbstractPlanNode();
@@ -209,22 +235,20 @@ protected:
     // and by AbstractJoinPlanNode::loadFromJSONObject for its pre-agg output tuple.
     static TupleSchema* generateTupleSchema(const std::vector<SchemaColumn*>& outputSchema);
 
-    static void loadIntArrayFromJSONObject(const char* label, PlannerDomValue obj, std::vector<int>& ary);
+    static void loadIntArrayFromJSONObject(const char* label,
+                                           PlannerDomValue obj,
+                                           std::vector<int>& ary);
+
+    static void loadStringArrayFromJSONObject(const char* label,
+                                              PlannerDomValue obj,
+                                              std::vector<std::string>& ary);
+
+    static void loadBooleanArrayFromJSONObject(const char* label,
+                                              PlannerDomValue obj,
+                                              std::vector<bool>& ary);
 
     static AbstractExpression* loadExpressionFromJSONObject(const char* label,
                                                             PlannerDomValue obj);
-
-    // A simple method of managing the lifetime of AbstractExpressions referenced by
-    // a vector that is never mutated once it is loaded.
-    struct OwningExpressionVector : public std::vector<AbstractExpression*> {
-        // Nothing prevents the vector from being set up or even modified
-        // via other vector methods, with this caveat:
-        // The memory managament magic provided here simply assumes ownership
-        // of any elements referenced by the _final_ state of the vector.
-        ~OwningExpressionVector();
-        void loadExpressionArrayFromJSONObject(const char* label,
-                                               PlannerDomValue obj);
-    };
 
     // Every PlanNode will have a unique id assigned to it at compile time
     int32_t m_planNodeId;

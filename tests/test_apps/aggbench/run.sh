@@ -48,8 +48,8 @@ function clean() {
 # compile the source code for procedures and the client
 function srccompile() {
     mkdir -p obj
-    javac -target 1.7 -source 1.7 -classpath $APPCLASSPATH -d obj \
-        src/aggregationbenchmark/*.java 
+    javac -classpath $APPCLASSPATH -d obj \
+        src/aggregationbenchmark/*.java
     # stop if compilation fails
     if [ $? != 0 ]; then exit; fi
 }
@@ -62,7 +62,7 @@ function catalog() {
     echo
     echo "voltdb compile --classpath obj -o $APPNAME.jar agg_ddl.sql"
     echo
-    $VOLTDB compile --classpath obj -o $APPNAME.jar agg_ddl.sql
+    $VOLTDB legacycompile --classpath obj -o $APPNAME.jar agg_ddl.sql
     # stop if compilation fails
     if [ $? != 0 ]; then exit; fi
 }
@@ -76,7 +76,7 @@ function server() {
     # run the server
     echo "Starting the VoltDB server."
     echo "To perform this action manually, use the command line: "
-    echo 
+    echo
     echo "${VOLTDB} create -d deployment.xml -l ${LICENSE} -H ${HOST} ${APPNAME}.jar"
     echo
     ${VOLTDB} create -d deployment.xml -l ${LICENSE} -H ${HOST} ${APPNAME}.jar
@@ -100,7 +100,7 @@ function client() {
         --restore=0 \
         --proc=1 \
         --invocations=6 \
-        --statsfile="stats" 
+        --statsfile="stats"
 }
 
 # Run the target passed as the first arg on the command line

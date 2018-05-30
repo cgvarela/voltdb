@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -57,6 +57,7 @@
 #include "common/TupleSchema.h"
 #include "indexes/IndexStats.h"
 #include "common/ThreadLocalPool.h"
+#include "expressions/abstractexpression.h"
 
 namespace voltdb {
 
@@ -70,11 +71,13 @@ struct TableIndexScheme {
         tupleSchema = NULL;
     }
 
-    TableIndexScheme(std::string a_name, TableIndexType a_type,
+    TableIndexScheme(const std::string &a_name,
+                     TableIndexType a_type,
                      const std::vector<int32_t>& a_columnIndices,
                      const std::vector<AbstractExpression*>& a_indexedExpressions,
                      AbstractExpression* a_predicate,
-                     bool a_unique, bool a_countable,
+                     bool a_unique,
+                     bool a_countable,
                      const std::string& a_expressionsAsText,
                      const std::string& a_predicateAsText,
                      const TupleSchema *a_tupleSchema);
@@ -91,10 +94,12 @@ struct TableIndexScheme {
     // This change would eliminate the mostly redundant method for TableIndexScheme-to-indexId conversion.
     // TableIndexScheme construction in most if not all ee tests could provide a dummy (empty or nonce) value
     // for indexId. Index Ids seem only to be of interest in catalog-driven processing.
-    TableIndexScheme(std::string a_name, TableIndexType a_type,
+    TableIndexScheme(const std::string &a_name,
+                     TableIndexType a_type,
                      const std::vector<int32_t>& a_columnIndices,
                      const std::vector<AbstractExpression*>& a_indexedExpressions,
-                     bool a_unique, bool a_countable,
+                     bool a_unique,
+                     bool a_countable,
                      const TupleSchema *a_tupleSchema) :
       name(a_name),
       type(a_type),
@@ -216,7 +221,7 @@ public:
     /**
      * adds passed value as an index entry linked to given tuple
      */
-    bool addEntry(const TableTuple *tuple);
+    void addEntry(const TableTuple *tuple, TableTuple *conflictTuple);
 
     /**
      * removes the index entry linked to given value (and tuple
@@ -231,7 +236,7 @@ public:
                                  const TableTuple &originalTuple);
 
     /**
-     * Does the key out-of-line strings or binary data?
+     * Does the key use out-of-line strings or binary data?
      * Used for an optimization when key values are the same.
      */
     virtual bool keyUsesNonInlinedMemory() const = 0;
@@ -267,6 +272,12 @@ public:
     virtual bool moveToKey(const TableTuple *searchKey, IndexCursor& cursor) const = 0;
 
     /**
+      * A slightly different to the previous function, this function requires
+      * full tuple instead of just key as the search parameter.
+      */
+     virtual bool moveToKeyByTuple(const TableTuple* searchTuple, IndexCursor &cursor) const = 0;
+
+    /**
      * This method moves to the first tuple equal or greater than
      * given key.  Use this with nextValue(). This method works for
      * partial index search where following value might not match with
@@ -298,6 +309,12 @@ public:
     {
         throwFatalException("Invoked TableIndex virtual method moveToLessThanKey which has no implementation");
     };
+
+    virtual bool moveToCoveringCell(const TableTuple* searchKey,
+                                    IndexCursor &cursor) const
+    {
+        throwFatalException("Invoked TableIndex virtual method moveToCoveringCell which has no implementation");
+    }
 
     virtual void moveToBeforePriorEntry(IndexCursor& cursor) const
     {
@@ -361,7 +378,9 @@ public:
         throwFatalException("Invoked TableIndex virtual method advanceToNextKey which has no implementation");
     };
 
-    /** retrieves from a primary key index the persistent tuple matching the given temp tuple */
+    /** retrieves from a primary key index the persistent tuple
+     *  matching the given temp tuple.  The tuple's schema should be
+     *  the table's schema, not the index's key schema.  */
     virtual TableTuple uniqueMatchingTuple(const TableTuple &searchTuple) const
     {
         throwFatalException("Invoked TableIndex virtual method uniqueMatchingTuple which has no use on a non-unique index");
@@ -431,6 +450,24 @@ public:
         throwFatalException("Invoked non-countable TableIndex virtual method getCounterLET which has no implementation");
     }
 
+    // dense rank value tuple look up
+
+    /**
+     * This function only supports countable tree index. It moves the @param cursor to the tuple with
+     * dense rank value @param denseRank ranging from 1 to N (the size of the index). Out of range rank
+     * look up will move the @param cursor to NULL tuple.
+     *
+     * This method is powered by the underline counting index with LogN time complexity other than doing
+     * index scan.
+     * @param denseRank rank value from 1 to N consecutively.
+     * @param forward the index search direction after moving to the tuple with its rank
+     * @param cursor IndexCursor object
+     * @return true if it finds tuple with the dense rank value, otherwise false
+     */
+    virtual bool moveToRankTuple(int64_t denseRank, bool forward, IndexCursor& cursor) const
+    {
+        throwFatalException("Invoked non-countable TableIndex virtual method moveToRankTuple which has no implementation");
+    }
 
     virtual size_t getSize() const = 0;
 
@@ -526,7 +563,7 @@ protected:
 
 protected:
     // Index specific implementations
-    virtual bool addEntryDo(const TableTuple *tuple) = 0;
+    virtual void addEntryDo(const TableTuple *tuple, TableTuple *conflictTuple) = 0;
     virtual bool deleteEntryDo(const TableTuple *tuple) = 0;
     virtual bool replaceEntryNoKeyChangeDo(const TableTuple &destinationTuple,
                                          const TableTuple &originalTuple) = 0;

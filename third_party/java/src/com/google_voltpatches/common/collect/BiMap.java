@@ -17,10 +17,9 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Map;
 import java.util.Set;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -30,11 +29,11 @@ import javax.annotation_voltpatches.Nullable;
  * as this bimap but with reversed keys and values.
  * 
  * <p>See the Guava User Guide article on <a href=
- * "http://code.google.com/p/guava-libraries/wiki/NewCollectionTypesExplained#BiMap">
+ * "https://github.com/google/guava/wiki/NewCollectionTypesExplained#bimap">
  * {@code BiMap}</a>.
  *
  * @author Kevin Bourrillion
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
 public interface BiMap<K, V> extends Map<K, V> {
@@ -47,7 +46,9 @@ public interface BiMap<K, V> extends Map<K, V> {
    *     different key in this bimap. The bimap will remain unmodified in this
    *     event. To avoid this exception, call {@link #forcePut} instead.
    */
+  @CanIgnoreReturnValue
   @Override
+  @Nullable
   V put(@Nullable K key, @Nullable V value);
 
   /**
@@ -67,6 +68,8 @@ public interface BiMap<K, V> extends Map<K, V> {
    * @return the value which was previously associated with the key, which may
    *     be {@code null}, or {@code null} if there was no previous entry
    */
+  @CanIgnoreReturnValue
+  @Nullable
   V forcePut(@Nullable K key, @Nullable V value);
 
   // Bulk Operations

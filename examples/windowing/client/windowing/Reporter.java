@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -61,8 +61,8 @@ public class Reporter implements Runnable {
                 // SQL BEING RUN:
                 //  SELECT SUM(sum_values) / SUM(count_values)
                 //  FROM agg_by_second
-                //  WHERE second_ts >= TO_TIMESTAMP(SECOND, SINCE_EPOCH(SECOND, NOW) - ?);
-                ClientResponse cr = app.client.callProcedure("Average", seconds);
+                //  WHERE second_ts >= DATEADD(SECOND, CAST(? as INTEGER), NOW);
+                ClientResponse cr = app.client.callProcedure("Average", -seconds);
                 long average = cr.getResults()[0].asScalarLong();
                 averagesForWindows.put(seconds, average);
             } catch (IOException | ProcCallException e) {
@@ -100,11 +100,6 @@ public class Reporter implements Runnable {
             //
             // FAILURE REPORTING FOR PERIODIC OPERATIONS
             //
-            long partitionTrackerFailures = app.partitionTracker.failureCount.getAndSet(0);
-            if (partitionTrackerFailures > 0) {
-                System.out.printf("  Partition Tracker failed %d times since last report.\n",
-                                  partitionTrackerFailures);
-            }
             long continuousDeleterFailures = app.deleter.failureCount.getAndSet(0);
             if (continuousDeleterFailures > 0) {
                 System.out.printf("  Continuous Deleter failed %d times since last report.\n",

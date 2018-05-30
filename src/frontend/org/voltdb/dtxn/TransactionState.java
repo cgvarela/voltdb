@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -52,6 +52,8 @@ public abstract class TransactionState extends OrderableTransaction  {
     // IZZY: make me protected/private
     public final long m_spHandle;
     private ArrayList<UndoAction> m_undoLog;
+    // This timestamp is only used for restarted transactions
+    protected long m_restartTimestamp = TransactionInfoBaseMessage.INITIAL_TIMESTAMP;
 
     /**
      * Set up the final member variables from the parameters. This will
@@ -141,10 +143,9 @@ public abstract class TransactionState extends OrderableTransaction  {
         return m_beginUndoToken;
     }
 
-    // Assume that rollback-ness is a latch.
-    public void setNeedsRollback()
+    public void setNeedsRollback(boolean rollback)
     {
-        m_needsRollback = true;
+        m_needsRollback = rollback;
     }
 
     public boolean needsRollback()
@@ -207,5 +208,16 @@ public abstract class TransactionState extends OrderableTransaction  {
 
     public List<UndoAction> getUndoLog() {
         return m_undoLog;
+    }
+
+    public void terminateTransaction() {
+    }
+
+    public void setTimestamp(long timestamp) {
+        m_restartTimestamp = timestamp;
+    }
+
+    public long getTimetamp() {
+        return m_restartTimestamp;
     }
 }

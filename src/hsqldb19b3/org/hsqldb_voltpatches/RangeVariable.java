@@ -31,6 +31,8 @@
 
 package org.hsqldb_voltpatches;
 
+import java.util.Arrays;
+
 import org.hsqldb_voltpatches.HSQLInterface.HSQLParseException;
 import org.hsqldb_voltpatches.HsqlNameManager.SimpleName;
 import org.hsqldb_voltpatches.ParserDQL.CompileContext;
@@ -218,14 +220,55 @@ final class RangeVariable {
     }
 
     /**
-     * Retruns index for column
+     * Returns the index for column, given only the column name.
      *
      * @param columnName name of column
      * @return int index or -1 if not found
      */
     public int findColumn(String columnName) {
+        return findColumn(null, columnName);
+    }
 
+    /**
+     * Returns the index for the column given the column's table name
+     * and column name.  If the table name is null, there is no table
+     * name specified.  For example, in a query "select C from T" there
+     * is no table name, so tableName would be null.  In the query
+     * "select T.C from T" tableName would be the string "T".  Don't
+     * return any column found in a USING join condition.
+     *
+     * @param tableName
+     * @param columnName
+     * @return the column index or -1 if the column name is in a using list.
+     */
+    public int findColumn(String tableName, String columnName) {
+        // The namedJoinColumnExpressions are ExpressionColumn objects
+        // for columns named in USING conditions.  Each range variable
+        // has a possibly empty list of these.  If two range variables are
+        // operands of a join with a USING condition, both get the same list
+        // of USING columns.  In our semantics the query
+        //      select T2.C from T1 join T2 using(C);
+        // selects T2.C.  This is not standard behavior, but it seems to
+        // be common to mysql and postgresql.  The query
+        //      select C from T1 join T2 using(C);
+        // selects the C from T1 or T2, since the using clause says
+        // they will have the same value.  In the query
+        //      select C from T1 join T2 using(C), T3;
+        // where T3 has a column named C, there is an ambiguity, since
+        // the first join tree (T1 join T2 using(C)) has a column named C and
+        // T3 has another C column.  In this case we need the T1.C notation.
+        // The query
+        //      select T1.C from T1 join T2 using(C), T3;
+        // will select the C from the first join tree, and
+        //      select T3.C from T1 join T2 using(C), T3;
+        // will select the C from the second join tree, which is just T3.
+
+        // If we don't have a table name and there are some USING columns,
+        // then look into them.  If the name is in the USING columns, it
+        // is not in this range variable.  The function getColumnExpression
+        // will fetch this using variable in another search.
         if (namedJoinColumnExpressions != null
+                && tableName == null
                 && namedJoinColumnExpressions.containsKey(columnName)) {
             return -1;
         }
@@ -272,7 +315,7 @@ final class RangeVariable {
         }
     }
 
-    boolean hasColumnAlias() {
+    boolean hasColumnAliases() {
         return columnAliases != null;
     }
 
@@ -451,17 +494,21 @@ final class RangeVariable {
 
             case OpTypes.GREATER :
             case OpTypes.GREATER_EQUAL :
-                indexCondition = e;
+            	indexCondition = makeConjunction(indexCondition, e);
                 break;
 
             case OpTypes.SMALLER :
             case OpTypes.SMALLER_EQUAL :
-                indexEndCondition = e;
+            	indexEndCondition = makeConjunction(indexEndCondition, e);
                 break;
 
             default :
                 Error.runtimeError(ErrorCode.U_S0500, "Expression");
         }
+    }
+
+    private static Expression makeConjunction(Expression existingExpr, Expression newExpr) {
+    	return (existingExpr == null) ? newExpr : new ExpressionLogical(OpTypes.AND, existingExpr, newExpr);
     }
 
     /**
@@ -1216,19 +1263,11 @@ final class RangeVariable {
         if (isJoinIndex == true) {
             joinCond = indexCondition;
             if (indexEndCondition != null) {
-                if (joinCond != null) {
-                    joinCond = new ExpressionLogical(OpTypes.AND, joinCond, indexEndCondition);
-                } else {
-                    joinCond = indexEndCondition;
-                }
+            	joinCond = makeConjunction(joinCond, indexEndCondition);
             }
             // then go to the nonIndexJoinCondition
             if (nonIndexJoinCondition != null) {
-                if (joinCond != null) {
-                    joinCond = new ExpressionLogical(OpTypes.AND, joinCond, nonIndexJoinCondition);
-                } else {
-                    joinCond = nonIndexJoinCondition;
-                }
+            	joinCond = makeConjunction(joinCond, nonIndexJoinCondition);
             }
             // then go to the nonIndexWhereCondition
             whereCond = nonIndexWhereCondition;
@@ -1237,19 +1276,11 @@ final class RangeVariable {
 
             whereCond = indexCondition;
             if (indexEndCondition != null) {
-                if (whereCond != null) {
-                    whereCond = new ExpressionLogical(OpTypes.AND, whereCond, indexEndCondition);
-                } else {
-                    whereCond = indexEndCondition;
-                }
+            	whereCond = makeConjunction(whereCond, indexEndCondition);
             }
             // then go to the nonIndexWhereCondition
             if (nonIndexWhereCondition != null) {
-                if (whereCond != null) {
-                    whereCond = new ExpressionLogical(OpTypes.AND, whereCond, nonIndexWhereCondition);
-                } else {
-                    whereCond = nonIndexWhereCondition;
-                }
+            	whereCond = makeConjunction(whereCond, nonIndexWhereCondition);
             }
 
         }
@@ -1268,6 +1299,129 @@ final class RangeVariable {
         }
 
         return scan;
+    }
+
+
+
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + Arrays.hashCode(columnAliasNames);
+        result = prime * result + Arrays.hashCode(columnsInGroupBy);
+        result = prime * result + Arrays.hashCode(emptyData);
+        result = prime * result + (hasKeyedColumnInGroupBy ? 1231 : 1237);
+        result = prime * result + (isJoinIndex ? 1231 : 1237);
+        result = prime * result + (isLeftJoin ? 1231 : 1237);
+        result = prime * result + (isMultiFindFirst ? 1231 : 1237);
+        result = prime * result + (isRightJoin ? 1231 : 1237);
+        result = prime * result + (isVariable ? 1231 : 1237);
+        result = prime * result + level;
+        result = prime * result + multiColumnCount;
+        result = prime * result + ((namedJoinColumns == null) ? 0
+                : namedJoinColumns.hashCode());
+        result = prime * result
+                + ((rangeIndex == null) ? 0 : rangeIndex.hashCode());
+        result = prime * result + rangePosition;
+        result = prime * result
+                + ((rangeTable == null) ? 0 : rangeTable.hashCode());
+        result = prime * result
+                + ((tableAlias == null) ? 0 : tableAlias.hashCode());
+        result = prime * result + Arrays.hashCode(updatedColumns);
+        result = prime * result + Arrays.hashCode(usedColumns);
+        result = prime * result
+                + ((variables == null) ? 0 : variables.hashCode());
+        return result;
+    }
+
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null) {
+            return false;
+        }
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+        RangeVariable other = (RangeVariable) obj;
+        if (!Arrays.equals(columnAliasNames, other.columnAliasNames)) {
+            return false;
+        }
+        if (!Arrays.equals(columnsInGroupBy, other.columnsInGroupBy)) {
+            return false;
+        }
+        if (!Arrays.equals(emptyData, other.emptyData)) {
+            return false;
+        }
+        if (hasKeyedColumnInGroupBy != other.hasKeyedColumnInGroupBy) {
+            return false;
+        }
+        if (isJoinIndex != other.isJoinIndex) {
+            return false;
+        }
+        if (isLeftJoin != other.isLeftJoin) {
+            return false;
+        }
+        if (isMultiFindFirst != other.isMultiFindFirst) {
+            return false;
+        }
+        if (isRightJoin != other.isRightJoin) {
+            return false;
+        }
+        if (isVariable != other.isVariable) {
+            return false;
+        }
+        if (level != other.level) {
+            return false;
+        }
+        if (multiColumnCount != other.multiColumnCount) {
+            return false;
+        }
+        if (namedJoinColumns == null) {
+            if (other.namedJoinColumns != null) {
+                return false;
+            }
+        } else if (!namedJoinColumns.equals(other.namedJoinColumns)) {
+            return false;
+        }
+        if (rangeIndex == null) {
+            if (other.rangeIndex != null) {
+                return false;
+            }
+        } else if (!rangeIndex.equals(other.rangeIndex)) {
+            return false;
+        }
+        if (rangePosition != other.rangePosition) {
+            return false;
+        }
+        if (rangeTable == null) {
+            if (other.rangeTable != null) {
+                return false;
+            }
+        } else if (!rangeTable.equals(other.rangeTable)) {
+            return false;
+        }
+        if (tableAlias == null) {
+            if (other.tableAlias != null) {
+                return false;
+            }
+        } else if (!tableAlias.equals(other.tableAlias)) {
+            return false;
+        }
+        if (!Arrays.equals(updatedColumns, other.updatedColumns)) {
+            return false;
+        }
+        if (!Arrays.equals(usedColumns, other.usedColumns)) {
+            return false;
+        }
+        if (variables == null) {
+            if (other.variables != null) {
+                return false;
+            }
+        } else if (!variables.equals(other.variables)) {
+            return false;
+        }
+        return true;
     }
 
     /* (non-Javadoc)

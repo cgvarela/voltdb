@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -22,6 +22,8 @@ import java.nio.ByteBuffer;
 
 import org.voltcore.messaging.VoltMessage;
 import org.voltcore.utils.CoreUtils;
+import org.voltdb.iv2.TxnEgo;
+import org.voltdb.iv2.UniqueIdGenerator;
 
 /**
  * Message from a client interface to an initiator, instructing the
@@ -32,16 +34,18 @@ import org.voltcore.utils.CoreUtils;
 public class Iv2LogFaultMessage extends VoltMessage
 {
     private long m_spHandle;
+    private long m_spUniqueId;
 
     /** Empty constructor for de-serialization */
     Iv2LogFaultMessage() {
         super();
     }
 
-    public Iv2LogFaultMessage(long spHandle)
+    public Iv2LogFaultMessage(long spHandle, long spUniqueId)
     {
         super();
         m_spHandle = spHandle;
+        m_spUniqueId = spUniqueId;
     }
 
     public long getSpHandle()
@@ -49,11 +53,16 @@ public class Iv2LogFaultMessage extends VoltMessage
         return m_spHandle;
     }
 
+    public long getSpUniqueId() {
+        return m_spUniqueId;
+    }
+
     @Override
     public int getSerializedSize()
     {
         int msgsize = super.getSerializedSize();
-        msgsize += 8; // spHandle
+        msgsize += 8  // spHandle
+                 + 8; // spUniqueId
         return msgsize;
     }
 
@@ -62,6 +71,7 @@ public class Iv2LogFaultMessage extends VoltMessage
     {
         buf.put(VoltDbMessageFactory.IV2_LOG_FAULT_ID);
         buf.putLong(m_spHandle);
+        buf.putLong(m_spUniqueId);
 
         assert(buf.capacity() == buf.position());
         buf.limit(buf.position());
@@ -70,6 +80,7 @@ public class Iv2LogFaultMessage extends VoltMessage
     @Override
     public void initFromBuffer(ByteBuffer buf) throws IOException {
         m_spHandle = buf.getLong();
+        m_spUniqueId = buf.getLong();
     }
 
     @Override
@@ -79,7 +90,9 @@ public class Iv2LogFaultMessage extends VoltMessage
         sb.append("IV2 LOG_FAULT (FROM ");
         sb.append(CoreUtils.hsIdToString(m_sourceHSId));
         sb.append(" SPHANDLE: ");
-        sb.append(m_spHandle);
+        sb.append(TxnEgo.txnIdToString(m_spHandle));
+        sb.append(" SPUNIQUEID: ");
+        sb.append(UniqueIdGenerator.toShortString(m_spUniqueId));
         return sb.toString();
     }
 }

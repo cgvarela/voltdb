@@ -17,14 +17,13 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
  * Wraps an exception that occurred during a computation.
  *
  * @author Bob Lee
- * @since 2.0 (imported from Google Collections Library)
+ * @since 2.0
  */
 @GwtCompatible
 public class ComputationException extends RuntimeException {
@@ -34,5 +33,6 @@ public class ComputationException extends RuntimeException {
   public ComputationException(@Nullable Throwable cause) {
     super(cause);
   }
+
   private static final long serialVersionUID = 0;
 }

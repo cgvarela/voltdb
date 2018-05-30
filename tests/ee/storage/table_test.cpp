@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -49,10 +49,8 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <cstdlib>
-#include <ctime>
-#include <string>
 #include "harness.h"
+
 #include "common/common.h"
 #include "common/NValue.hpp"
 #include "common/ValueFactory.hpp"
@@ -61,35 +59,46 @@
 #include "common/ThreadLocalPool.h"
 #include "common/TupleSchema.h"
 #include "common/tabletuple.h"
-#include "storage/table.h"
-#include "storage/temptable.h"
 #include "storage/persistenttable.h"
 #include "storage/tablefactory.h"
 #include "storage/tableiterator.h"
 #include "storage/tableutil.h"
-#include "storage/DRTupleStream.h"
+#include "storage/temptable.h"
+
+#include <cstdlib>
+#include <ctime>
+#include <string>
 
 using namespace std;
 using namespace voltdb;
 
-#define NUM_OF_COLUMNS 5
-#define NUM_OF_TUPLES 10000
+#define NUM_OF_COLUMNS 9
+#define NUM_OF_TUPLES 5000
 
-ValueType COLUMN_TYPES[NUM_OF_COLUMNS]  = { VALUE_TYPE_BIGINT,
-                                            VALUE_TYPE_TINYINT,
+ValueType COLUMN_TYPES[NUM_OF_COLUMNS]  = { VALUE_TYPE_TINYINT,
                                             VALUE_TYPE_SMALLINT,
                                             VALUE_TYPE_INTEGER,
-                                            VALUE_TYPE_BIGINT };
+                                            VALUE_TYPE_BIGINT,
+                                            VALUE_TYPE_DECIMAL,
+                                            VALUE_TYPE_DOUBLE,
+                                            VALUE_TYPE_TIMESTAMP,
+                                            VALUE_TYPE_VARCHAR,
+                                            VALUE_TYPE_VARBINARY };
 
 int32_t COLUMN_SIZES[NUM_OF_COLUMNS] =
     {
-        NValue::getTupleStorageSize(VALUE_TYPE_BIGINT),
-        NValue::getTupleStorageSize(VALUE_TYPE_TINYINT),
-        NValue::getTupleStorageSize(VALUE_TYPE_SMALLINT),
-        NValue::getTupleStorageSize(VALUE_TYPE_INTEGER),
-        NValue::getTupleStorageSize(VALUE_TYPE_BIGINT)
+        NValue::getTupleStorageSize(VALUE_TYPE_TINYINT),    // 1
+        NValue::getTupleStorageSize(VALUE_TYPE_SMALLINT),   // 2
+        NValue::getTupleStorageSize(VALUE_TYPE_INTEGER),    // 4
+        NValue::getTupleStorageSize(VALUE_TYPE_BIGINT),     // 8
+        NValue::getTupleStorageSize(VALUE_TYPE_DECIMAL),    // 16
+        NValue::getTupleStorageSize(VALUE_TYPE_DOUBLE),     // 8
+        NValue::getTupleStorageSize(VALUE_TYPE_TIMESTAMP),  // 8
+        10,    /* The test uses getRandomValue() to generate random value,
+                  make sure the column size not conflict with the value it generates. */
+        16     /* same as above */
     };
-bool COLUMN_ALLOW_NULLS[NUM_OF_COLUMNS] = { true, true, true, true, true };
+bool COLUMN_ALLOW_NULLS[NUM_OF_COLUMNS] = { true, true, true, true, true, true, true, true, true };
 
 class TableTest : public Test {
 public:
@@ -106,7 +115,6 @@ public:
 protected:
     void init(bool xact) {
         CatalogId database_id = 1000;
-        vector<boost::shared_ptr<const TableColumn> > columns;
         char buffer[32];
 
         vector<string> columnNames(NUM_OF_COLUMNS);
@@ -125,10 +133,14 @@ protected:
             persistent_table = TableFactory::getPersistentTable(database_id, "test_table", schema, columnNames, signature);
             m_table = persistent_table;
         } else {
-            temp_table = TableFactory::getTempTable(database_id, "test_temp_table", schema, columnNames, &limits);
+            temp_table = TableFactory::buildTempTable("test_temp_table", schema, columnNames, &limits);
             m_table = temp_table;
         }
-        assert(tableutil::addRandomTuples(m_table, NUM_OF_TUPLES));
+
+        bool addTuples = tableutil::addRandomTuples(m_table, NUM_OF_TUPLES);
+        if(!addTuples) {
+            assert(!"Failed adding random tuples");
+        }
     }
 
     Table* m_table;
@@ -155,6 +167,29 @@ TEST_F(TableTest, ValueTypes) {
     }
 }
 
+TEST_F(TableTest, TableSerialize) {
+    // Add sizeof(int32_t) to cover table size prefix
+    size_t serializeSize = m_table->getAccurateSizeToSerialize() + sizeof(int32_t);
+    char* backingCharArray = new char[serializeSize];
+    ReferenceSerializeOutput conflictSerializeOutput(backingCharArray, serializeSize);
+    m_table->serializeTo(conflictSerializeOutput);
+
+    EXPECT_EQ(serializeSize, conflictSerializeOutput.size());
+
+    delete[] backingCharArray;
+}
+
+TEST_F(TableTest, TableSerializeWithoutTotalSize) {
+    size_t serializeSize = m_table->getAccurateSizeToSerialize();
+    char* backingCharArray = new char[serializeSize];
+    ReferenceSerializeOutput conflictSerializeOutput(backingCharArray, serializeSize);
+    m_table->serializeToWithoutTotalSize(conflictSerializeOutput);
+
+    EXPECT_EQ(serializeSize, conflictSerializeOutput.size());
+
+    delete[] backingCharArray;
+}
+
 TEST_F(TableTest, TupleInsert) {
     //
     // All of the values have already been inserted, we just
@@ -167,7 +202,7 @@ TEST_F(TableTest, TupleInsert) {
         //
         // Make sure it is not deleted
         //
-        EXPECT_EQ(true, tuple.isActive());
+        EXPECT_TRUE(tuple.isActive());
     }
 
     //
@@ -177,14 +212,14 @@ TEST_F(TableTest, TupleInsert) {
     tableutil::setRandomTupleValues(m_table, &temp_tuple);
     m_table->deleteAllTuples(true);
     ASSERT_EQ(0, m_table->activeTupleCount());
-    ASSERT_EQ(true, m_table->insertTuple(temp_tuple));
+    ASSERT_TRUE(m_table->insertTuple(temp_tuple));
     ASSERT_EQ(1, m_table->activeTupleCount());
 
     //
     // Then check to make sure that it has the same value and type
     //
     iterator = m_table->iterator();
-    ASSERT_EQ(true, iterator.next(tuple));
+    ASSERT_TRUE(iterator.next(tuple));
     for (int col_ctr = 0, col_cnt = NUM_OF_COLUMNS; col_ctr < col_cnt; col_ctr++) {
         const TupleSchema::ColumnInfo *columnInfo = tuple.getSchema()->getColumnInfo(col_ctr);
         EXPECT_EQ(COLUMN_TYPES[col_ctr], columnInfo->getVoltType());
@@ -231,7 +266,7 @@ TEST_F(TableTest, TupleUpdate) {
             }
         }
         if (update) {
-            EXPECT_EQ(true, temp_table->updateTuple(tuple, temp_tuple));
+            EXPECT_TRUE(temp_table->updateTuple(tuple, temp_tuple));
         }
     }
 
@@ -305,7 +340,7 @@ TEST_F(TableTest, TupleDelete) {
     TableTuple tuple(m_table.get());
     while (iterator.next(tuple)) {
         if (tuple.get(1).getBigInt() != 0) {
-            EXPECT_EQ(true, temp_table->deleteTuple(tuple));
+            temp_table->deleteTuple(tuple);
         }
     }
 
@@ -375,7 +410,7 @@ TEST_F(TableTest, TupleDelete) {
         if (update) {
             //printf("BEFORE?: %s\n", tuple->debug(m_table.get()).c_str());
             //persistent_table->setUndoLog(undos[xact_ctr]);
-            EXPECT_EQ(true, persistent_table->updateTuple(tuple, temp_tuple, true));
+            EXPECT_TRUE(persistent_table->updateTuple(tuple, temp_tuple, true));
             //printf("UNDO: %s\n", undos[xact_ctr]->debug().c_str());
         }
         //printf("AFTER: %s\n", temp_tuple->debug(m_table.get()).c_str());
@@ -436,7 +471,7 @@ TEST_F(TableTest, TupleDelete) {
         if (xact_ctr % 2 != 0) total += 1;//tuple->get(0).castAsBigInt();
         VOLT_DEBUG("total: %d", (int)total);
         //persistent_table->setUndoLog(undos[xact_ctr]);
-        EXPECT_EQ(true, persistent_table->deleteTuple(tuple));
+        persistent_table->deleteTuple(tuple);
     }
 
     //
@@ -445,7 +480,7 @@ TEST_F(TableTest, TupleDelete) {
     int64_t new_total = 0;
     iterator = m_table->iterator();
     while ((tuple = iterator.next()) != NULL) {
-        EXPECT_EQ(true, tuple->isActive());
+        EXPECT_TRUE(tuple->isActive());
         new_total += 1;//tuple->get(0).getBigInt();
         VOLT_DEBUG("total2: %d", (int)total);
     }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -82,6 +82,7 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
      */
     private volatile boolean m_writeFailed = false;
     private volatile IOException m_writeException = null;
+    private volatile IOException m_reportedSerializationFailure = null;
 
     private volatile long m_bytesWritten = 0;
 
@@ -196,21 +197,21 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
         byte jsonBytes[] = null;
         try {
             stringer.object();
-            stringer.key("txnId").value(txnId);
-            stringer.key("hostId").value(hostId);
-            stringer.key("hostname").value(hostname);
-            stringer.key("clusterName").value(clusterName);
-            stringer.key("databaseName").value(databaseName);
-            stringer.key("tableName").value(tableName.toUpperCase());
-            stringer.key("isReplicated").value(isReplicated);
-            stringer.key("isCompressed").value(true);
-            stringer.key("checksumType").value("CRC32C");
-            stringer.key("timestamp").value(timestamp);
+            stringer.keySymbolValuePair("txnId", txnId);
+            stringer.keySymbolValuePair("hostId", hostId);
+            stringer.keySymbolValuePair("hostname", hostname);
+            stringer.keySymbolValuePair("clusterName", clusterName);
+            stringer.keySymbolValuePair("databaseName", databaseName);
+            stringer.keySymbolValuePair("tableName", tableName.toUpperCase());
+            stringer.keySymbolValuePair("isReplicated", isReplicated);
+            stringer.keySymbolValuePair("isCompressed", true);
+            stringer.keySymbolValuePair("checksumType", "CRC32C");
+            stringer.keySymbolValuePair("timestamp", timestamp);
             /*
              * The timestamp string is for human consumption, automated stuff should use
              * the actual timestamp
              */
-            stringer.key("timestampString").value(SnapshotUtil.formatHumanReadableDate(timestamp));
+            stringer.keySymbolValuePair("timestampString", SnapshotUtil.formatHumanReadableDate(timestamp));
             if (!isReplicated) {
                 stringer.key("partitionIds").array();
                 for (int partitionId : partitionIds) {
@@ -218,7 +219,7 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
                 }
                 stringer.endArray();
 
-                stringer.key("numPartitions").value(numPartitions);
+                stringer.keySymbolValuePair("numPartitions", numPartitions);
             }
             stringer.endObject();
             String jsonString = stringer.toString();
@@ -236,7 +237,8 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
         container.b().putInt(container.b().remaining() - 4);
         container.b().position(0);
 
-        final byte schemaBytes[] = PrivateVoltTableFactory.getSchemaBytes(schemaTable);
+        final byte schemaBytes[];
+        schemaBytes = PrivateVoltTableFactory.getSchemaBytes(schemaTable);
 
         final PureJavaCrc32 crc = new PureJavaCrc32();
         ByteBuffer aggregateBuffer = ByteBuffer.allocate(container.b().remaining() + schemaBytes.length);
@@ -335,6 +337,11 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
     }
 
     @Override
+    public void reportSerializationFailure(IOException ex) {
+        m_reportedSerializationFailure = ex;
+    }
+
+    @Override
     public boolean needsFinalClose()
     {
         return m_needsFinalClose;
@@ -370,7 +377,7 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
         }
         m_channel.position(8);
         ByteBuffer completed = ByteBuffer.allocate(1);
-        if (m_writeFailed) {
+        if (m_writeFailed || m_reportedSerializationFailure != null) {
             completed.put((byte)0).flip();
         } else {
             completed.put((byte)1).flip();
@@ -380,6 +387,10 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
         m_channel.close();
         if (m_onCloseHandler != null) {
             m_onCloseHandler.run();
+        }
+        if (m_reportedSerializationFailure != null) {
+            // There was an error reported by the EE during serialization
+            throw m_reportedSerializationFailure;
         }
     }
 
@@ -441,6 +452,7 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
         ListenableFuture<?> writeTask = m_es.submit(new Callable<Object>() {
             @Override
             public Object call() throws Exception {
+                int permitAcquired = 0;
                 try {
                     if (m_acceptOneWrite) {
                         m_acceptOneWrite = false;
@@ -464,7 +476,8 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
                             payloadBuffer.position(0);
 
                             ByteBuffer lengthPrefix = ByteBuffer.allocate(12);
-                            m_bytesAllowedBeforeSync.acquire(payloadBuffer.remaining());
+                            permitAcquired = payloadBuffer.remaining();
+                            m_bytesAllowedBeforeSync.acquire(permitAcquired);
                             //Length prefix does not include 4 header items, just compressd payload
                             //that follows
                             lengthPrefix.putInt(payloadBuffer.remaining() - 16);//length prefix
@@ -492,6 +505,8 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
                             payloadContainer.discard();
                         }
                     } else {
+                        permitAcquired = tupleData.remaining();
+                        m_bytesAllowedBeforeSync.acquire(permitAcquired);
                         while (tupleData.hasRemaining()) {
                             totalWritten += m_channel.write(tupleData);
                         }
@@ -499,6 +514,9 @@ public class DefaultSnapshotDataTarget implements SnapshotDataTarget {
                     m_bytesWritten += totalWritten;
                     m_bytesWrittenSinceLastSync.addAndGet(totalWritten);
                 } catch (IOException e) {
+                    if (permitAcquired > 0) {
+                        m_bytesAllowedBeforeSync.release(permitAcquired);
+                    }
                     m_writeException = e;
                     SNAP_LOG.error("Error while attempting to write snapshot data to file " + m_file, e);
                     m_writeFailed = true;

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,17 +18,20 @@
 package org.voltdb.iv2;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.messaging.VoltMessage;
 import org.voltcore.utils.CoreUtils;
 import org.voltdb.ClientResponseImpl;
+import org.voltdb.StoredProcedureInvocation;
 import org.voltdb.VoltTable;
+import org.voltdb.messaging.CompleteTransactionResponseMessage;
+import org.voltdb.messaging.DummyTransactionResponseMessage;
 import org.voltdb.messaging.FragmentResponseMessage;
+import org.voltdb.messaging.FragmentTaskMessage;
 import org.voltdb.messaging.InitiateResponseMessage;
+import org.voltdb.messaging.Iv2InitiateTaskMessage;
 
 /**
  * Track responses from each partition. This should be subsumed
@@ -39,25 +42,32 @@ public class DuplicateCounter
     static final int MISMATCH = 0;
     static final int DONE = 1;
     static final int WAITING = 2;
+    static final int ABORT = 3;
 
     protected static final VoltLogger tmLog = new VoltLogger("TM");
 
+    static final int[] ZERO_HASHES = new int[] { 0, 0, 0 };
+
     final long m_destinationId;
-    Long m_responseHash = null;
+    int[] m_responseHashes = null;
     protected VoltMessage m_lastResponse = null;
     protected VoltTable m_lastResultTables[] = null;
+    // if any response shows the transaction aborted
+    boolean m_txnSucceed = false;
     final List<Long> m_expectedHSIds;
     final long m_txnId;
-    private final String m_storedProcName;
+    final VoltMessage m_openMessage;
 
     DuplicateCounter(
             long destinationHSId,
             long realTxnId,
-            List<Long> expectedHSIds, String procName)    {
+            List<Long> expectedHSIds,
+            VoltMessage openMessage)
+    {
         m_destinationId = destinationHSId;
         m_txnId = realTxnId;
         m_expectedHSIds = new ArrayList<Long>(expectedHSIds);
-        m_storedProcName = procName;
+        m_openMessage = openMessage;
     }
 
     long getTxnId()
@@ -65,18 +75,8 @@ public class DuplicateCounter
         return m_txnId;
     }
 
-    /**
-     * Return stored procedure name for the transaction.
-     *
-     * @return
-     */
-    public String getStoredProcedureName() {
-        return m_storedProcName;
-    }
-
     int updateReplicas(List<Long> replicas) {
-        Set<Long> newSet = new HashSet<Long>(replicas);
-        m_expectedHSIds.retainAll(newSet);
+        m_expectedHSIds.retainAll(replicas);
         if (m_expectedHSIds.size() == 0) {
             return DONE;
         }
@@ -85,37 +85,87 @@ public class DuplicateCounter
         }
     }
 
-    protected int checkCommon(long hash, boolean rejoining, VoltTable resultTables[], VoltMessage message)
+    void addReplicas(long[] newReplicas) {
+        for (long replica : newReplicas) {
+            m_expectedHSIds.add(replica);
+        }
+    }
+
+    void logRelevantMismatchInformation(String reason, int[] hashes, VoltMessage recentMessage) {
+        String msg = String.format(reason + " COMPARING: %d to %d\n"
+                + "REQUEST MESSAGE: %s\n"
+                + "PREV RESPONSE MESSAGE: %s\n"
+                + "CURR RESPONSE MESSAGE: %s\n",
+                hashes[0],
+                m_responseHashes[0],
+                m_openMessage.toString(),
+                m_lastResponse.toString(),
+                recentMessage.toString());
+        tmLog.error(msg);
+    }
+
+    void logWithCollidingDuplicateCounters(DuplicateCounter other) {
+        String msg = String.format("DUPLICATE COUNTER COLLISION:\n"
+                + "REQUEST MESSAGE 1: %s\n"
+                + "REQUEST MESSAGE 2: %s\n",
+                m_openMessage.toString(),
+                other.m_openMessage.toString());
+        tmLog.error(msg);
+    }
+
+    StoredProcedureInvocation getInvocation() {
+        Iv2InitiateTaskMessage initTask = null;
+        if (m_openMessage instanceof Iv2InitiateTaskMessage) {
+            initTask = (Iv2InitiateTaskMessage) m_openMessage;
+        }
+        else if (m_openMessage instanceof FragmentTaskMessage) {
+            initTask = ((FragmentTaskMessage) m_openMessage).getInitiateTask();
+        }
+        if (initTask != null) {
+            return initTask.getStoredProcedureInvocation();
+        }
+        return null;
+    }
+
+    public VoltMessage getOpenMessage() {
+        return m_openMessage;
+    }
+
+    String getStoredProcedureName() {
+        StoredProcedureInvocation invocation = getInvocation();
+        if (invocation != null) {
+            return invocation.getProcName();
+        }
+
+        // handle other cases
+        if (m_openMessage instanceof FragmentTaskMessage) {
+            return "MP_DETERMINISM_ERROR";
+        }
+
+        return "UNKNOWN_PROCEDURE_NAME";
+    }
+
+    protected int checkCommon(int[] hashes, boolean rejoining, VoltTable resultTables[], VoltMessage message, boolean txnSucceed)
     {
         if (!rejoining) {
-            if (m_responseHash == null) {
-                m_responseHash = Long.valueOf(hash);
+            if (m_responseHashes == null) {
+                m_responseHashes = hashes;
+                m_txnSucceed = txnSucceed;
             }
-            else if (!m_responseHash.equals(hash)) {
+            else if (!DeterminismHash.compareHashes(m_responseHashes, hashes)) {
                 tmLog.fatal("Stored procedure " + getStoredProcedureName()
                         + " generated different SQL queries at different partitions."
                         + " Shutting down to preserve data integrity.");
-                String msg = String.format("HASH MISMATCH COMPARING: %d to %d\n"
-                        + "PREV MESSAGE: %s\n"
-                        + "CURR MESSAGE: %s\n",
-                        hash, m_responseHash,
-                        m_lastResponse.toString(), message.toString());
-                tmLog.error(msg);
+                logRelevantMismatchInformation("HASH MISMATCH", hashes, message);
                 return MISMATCH;
             }
-            /*
-             * Replicas will return a response to a write with no result tables
-             * always keep the local response which has the result tables
-             */
-//            if (m_lastResponse != null && resultTables != null) {
-//                if (m_lastResultTables.length < resultTables.length) {
-//                    m_lastResponse = message;
-//                    m_lastResultTables = resultTables;
-//                }
-//            } else {
-//                m_lastResponse = message;
-//                m_lastResultTables = resultTables;
-//            }
+            else if (m_txnSucceed != txnSucceed) {
+                tmLog.fatal("Stored procedure " + getStoredProcedureName()
+                        + " succeeded on one partition but failed on another partition."
+                        + " Shutting down to preserve data integrity.");
+                logRelevantMismatchInformation("PARTIAL ROLLBACK/ABORT", hashes, message);
+                return ABORT;
+            }
             m_lastResponse = message;
             m_lastResultTables = resultTables;
         }
@@ -144,17 +194,30 @@ public class DuplicateCounter
     {
         ClientResponseImpl r = message.getClientResponseData();
         // get the hash of sql run
-        long hash = 0;
-        Integer sqlHash = r.getHash();
-        if (sqlHash != null) {
-            hash = sqlHash.intValue();
+        int[] hashes = r.getHashes();
+
+        boolean txnAbort = true;
+        if (ClientResponseImpl.isTransactionallySuccessful(message.getClientResponseData().getStatus())) {
+            txnAbort = false;
         }
-        return checkCommon(hash, message.isRecovering(), r.getResults(), message);
+
+        return checkCommon(hashes, message.isRecovering(), r.getResults(), message, txnAbort);
     }
 
     int offer(FragmentResponseMessage message)
     {
-        return checkCommon(0, message.isRecovering(), null, message);
+        // No check on fragment message
+        return checkCommon(ZERO_HASHES, message.isRecovering(), null, message, false);
+    }
+
+    int offer(CompleteTransactionResponseMessage message)
+    {
+        return checkCommon(ZERO_HASHES, message.isRecovering(), null, message, false);
+    }
+
+    int offer(DummyTransactionResponseMessage message)
+    {
+        return checkCommon(ZERO_HASHES, false, null, message, false);
     }
 
     VoltMessage getLastResponse()
@@ -165,7 +228,8 @@ public class DuplicateCounter
     @Override
     public String toString()
     {
-        String msg = String.format("DuplicateCounter: txnId: %s, outstanding HSIds: %s\n", m_txnId,
+        String msg = String.format("DuplicateCounter: txnId: %s, outstanding HSIds: %s\n",
+               TxnEgo.txnIdToString(m_txnId),
                CoreUtils.hsIdCollectionToString(m_expectedHSIds));
         return msg;
     }

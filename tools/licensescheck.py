@@ -24,7 +24,9 @@ prunelist = ('hsqldb19b3',
              'helloworld',
              'jaxb',
              'pmsg',
-             'customer-workloads')
+             'customer-workloads',
+             'metrics_pb2.py',
+             'ee_auto_generated_unit_tests' )
 
 def licenseStartsHere(content, approvedLicenses):
     for license in approvedLicenses:
@@ -33,7 +35,9 @@ def licenseStartsHere(content, approvedLicenses):
     return 0
 
 def verifyLicense(f, content, approvedLicensesJavaC, approvedLicensesPython):
-    if f.endswith('.py'):
+    if f.endswith('.py') \
+       or f.endswith('.cmake') \
+       or f.endswith("CMakeLists.txt"):
         if not content.startswith("#"):
             if content.lstrip().startswith("#"):
                 print "ERROR: \"%s\" contains whitespace before initial comment." % f
@@ -57,6 +61,11 @@ def verifyLicense(f, content, approvedLicensesJavaC, approvedLicensesPython):
             return 0
         print "ERROR: \"%s\" does not start with an approved license." % f
     else:
+        # skip hashbang, Groovy case
+        if content.startswith("#!") and f.endswith('.groovy'):
+            (ignore, content) = content.split("\n", 1)
+            content = content.lstrip()
+
         if not content.startswith("/*"):
             if content.lstrip().startswith("/*"):
                 print "ERROR: \"%s\" contains whitespace before initial comment." % f
@@ -281,7 +290,7 @@ def fixTrailingNewline(f, content):
 FIX_LICENSES_LEVEL = 2
 
 def processFile(f, fix, approvedLicensesJavaC, approvedLicensesPython):
-    for suffix in ('.java', '.cpp', '.cc', '.h', '.hpp', '.py'):
+    for suffix in ('.java', '.cpp', '.cc', '.h', '.hpp', '.py', '.groovy', '.cmake', 'CMakeLists.txt'):
         if f.endswith(suffix):
             break
     else:
@@ -298,7 +307,9 @@ def processFile(f, fix, approvedLicensesJavaC, approvedLicensesPython):
     if retval != 0:
         if fix > FIX_LICENSES_LEVEL:
             fixed += retval
-            if f.endswith('.py'):
+            if f.endswith('.py') \
+               or f.endswith('.cmake') \
+               or f == "CMakeLists.txt":
                 content = fixLicensePython(f, content, approvedLicensesPython)
             else:
                 content = fixLicenseJavaC(f, content, approvedLicensesJavaC)
@@ -352,6 +363,7 @@ def processAllFiles(d, fix, approvedLicensesJavaC, approvedLicensesPython):
     (fixcount, errcount) = (0, 0)
     for f in [f for f in files if not f.startswith('.') and f not in prunelist]:
         fullpath = os.path.join(d,f)
+        # print fullpath
         if os.path.isdir(fullpath):
             (fixinc, errinc) = processAllFiles(fullpath, fix, approvedLicensesJavaC, approvedLicensesPython)
         else:
@@ -397,6 +409,11 @@ srcLicensesPy =  [basepath + 'tools/approved_licenses/gpl3_voltdb_python.txt']
     tuple([readFile(f) for f in srcLicensesPy]))
 fixcount += fixinc
 errcount += errinc
+(fixinc, errinc) = processAllFiles(basepath + "lib/python", fix,
+    tuple([readFile(f) for f in srcLicenses]),
+    tuple([readFile(f) for f in srcLicensesPy]))
+fixcount += fixinc
+errcount += errinc
 (fixinc, errinc) = processAllFiles(basepath + "tests", fix,
     tuple([readFile(f) for f in testLicenses]),
     tuple([readFile(f) for f in testLicensesPy]))
@@ -419,6 +436,7 @@ else:
 # assumes a single valid license in $repo/tools/approved_licenses/license.txt
 # "${voltpro}" is the build.xml property - can be seen as a literal if the
 # property is not set.
+(profixcount, proerrcount) = (0, 0)
 if not ascommithook:
     for arg in sys.argv[1:]:
         if parsing_options and arg[0:2] == "--":
@@ -433,24 +451,25 @@ if not ascommithook:
                 pathprefix = os.path.join("..", arg)
             proLicenses = [pathprefix + '/tools/approved_licenses/license.txt']
             proLicensesPy = [pathprefix + '/tools/approved_licenses/license_python.txt']
-            (fixcount, errcount) = (0, 0)
             (fixinc, errinc) = processAllFiles(pathprefix + "/src/", fix,
                 tuple([readFile(f) for f in proLicenses]),
                 tuple([readFile(f) for f in proLicensesPy]))
-            fixcount += fixinc
-            errcount += errinc
+            profixcount += fixinc
+            proerrcount += errinc
 
             (fixinc, errinc) = processAllFiles(pathprefix + "/tests/", fix,
                 tuple([readFile(f) for f in proLicenses]),
                 tuple([readFile(f) for f in proLicensesPy]))
-            fixcount += fixinc
-            errcount += errinc
+            profixcount += fixinc
+            proerrcount += errinc
 
-            if errcount == 0:
+            if proerrcount == 0:
                 print "SUCCESS. Found 0 license text errors, 0 files containing tabs or trailing whitespace."
             else:
-                print "FAILURE (%s). Found %d license text or whitespace errors." % (arg, errcount)
+                print "FAILURE (%s). Found %d license text or whitespace errors." % (arg, proerrcount)
 
 
-
-sys.exit(errcount)
+if (errcount + proerrcount) == 0:
+    sys.exit(0)
+else:
+    sys.exit(1)

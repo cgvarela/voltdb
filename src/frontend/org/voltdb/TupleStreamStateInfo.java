@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,25 +18,20 @@
 package org.voltdb;
 
 public class TupleStreamStateInfo {
-    public final long partitionSequenceNumber;
-    public final long partitionUniqueId;
+    public final DRLogSegmentId partitionInfo;
     public final boolean containsReplicatedStreamInfo;
-    public final long replicatedSequenceNumber;
-    public final long replicatedUniqueId;
+    public final DRLogSegmentId replicatedInfo;
+    public final int drVersion;
 
-    public TupleStreamStateInfo(long partitionSequenceNumber,
-                                long partitionUniqueId) {
-        this(partitionSequenceNumber, partitionUniqueId, Long.MIN_VALUE, Long.MIN_VALUE);
+    public TupleStreamStateInfo(DRLogSegmentId partitionInfo, int drVersion) {
+        this(partitionInfo, new DRLogSegmentId(Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE), drVersion);
     }
 
-    public TupleStreamStateInfo(long partitionSequenceNumber,
-                                long partitionUniqueId,
-                                long replicatedSequenceNumber,
-                                long replicatedUniqueId) {
-        this.partitionSequenceNumber = partitionSequenceNumber;
-        this.partitionUniqueId = partitionUniqueId;
-        this.replicatedSequenceNumber = replicatedSequenceNumber;
-        this.replicatedUniqueId = replicatedUniqueId;
-        this.containsReplicatedStreamInfo = (this.replicatedSequenceNumber > Long.MIN_VALUE);
+    public TupleStreamStateInfo(DRLogSegmentId partitionInfo,
+            DRLogSegmentId replicatedInfo, int drVersion) {
+        this.partitionInfo = partitionInfo;
+        this.replicatedInfo = replicatedInfo;
+        this.containsReplicatedStreamInfo = (this.replicatedInfo.drId > Long.MIN_VALUE);
+        this.drVersion = drVersion;
     }
 }

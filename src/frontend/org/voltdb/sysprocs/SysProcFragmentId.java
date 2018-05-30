@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -174,12 +174,64 @@ public class SysProcFragmentId
     public static final long PF_balancePartitionsClearIndex = 233;
     public static final long PF_balancePartitionsClearIndexAggregate = 234;
 
+    // @ValidatePartitioning
     public static final long PF_validatePartitioning = 240;
     public static final long PF_validatePartitioningResults = 241;
 
+    // @MatchesHashinator
     public static final long PF_matchesHashinator = 250;
     public static final long PF_matchesHashinatorResults = 251;
 
+    // @ApplyBinaryLog
     public static final long PF_applyBinaryLog = 260;
     public static final long PF_applyBinaryLogAggregate = 261;
+
+    // @LoadVoltTable
+    public static final long PF_loadVoltTable = 270;
+    public static final long PF_loadVoltTableAggregate = 271;
+
+    // @ResetDR
+    public static final long PF_resetDR = 280;
+    public static final long PF_resetDRAggregate = 281;
+
+    // @ResetDRSingle
+    public static final long PF_preResetDRSingle = 282;
+    public static final long PF_preResetDRSingleAggregate = 283;
+    public static final long PF_postResetDRSingle = 284;
+    public static final long PF_postResetDRSingleAggregate = 285;
+
+    // @DropDRSelf
+    public static final long PF_DropDRSelf = 286;
+    public static final long PF_DropDRSelfAggregate = 287;
+
+    // @ExecuteTask
+    public static final long PF_executeTask = 290;
+    public static final long PF_executeTaskAggregate = 291;
+
+    // @UpdatedSettings
+    public static final long PF_updateSettingsBarrier = 300;
+    public static final long PF_updateSettingsBarrierAggregate = 301;
+    public static final long PF_updateSettings = 302;
+    public static final long PF_updateSettingsAggregate = 303;
+
+    // @PrepareShutdown
+    public static final long PF_prepareShutdown = 310;
+    public static final long PF_prepareShutdownAggregate = 311;
+
+    // @SwapTables
+    public static final long PF_swapTables = 320;
+    public static final long PF_swapTablesAggregate = 321;
+
+    // @PingPartitions
+    public static final long PF_pingPartitions = 330;
+    public static final long PF_pingPartitionsAggregate = 331;
+    public static final long PF_enableScoreboard = 332;
+    public static final long PF_enableScoreboardAggregate = 333;
+
+
+    public static boolean isEnableScoreboardFragment(byte[] planHash) {
+        long fragId = VoltSystemProcedure.hashToFragId(planHash);
+
+        return (fragId == PF_enableScoreboard);
+    }
 }

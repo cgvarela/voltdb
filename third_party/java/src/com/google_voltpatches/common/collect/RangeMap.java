@@ -17,9 +17,8 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.Beta;
-
+import com.google_voltpatches.common.annotations.GwtIncompatible;
 import java.util.Map;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -33,6 +32,7 @@ import javax.annotation_voltpatches.Nullable;
  * @since 14.0
  */
 @Beta
+@GwtIncompatible
 public interface RangeMap<K extends Comparable, V> {
   /**
    * Returns the value associated with the specified key, or {@code null} if there is no
@@ -93,15 +93,31 @@ public interface RangeMap<K extends Comparable, V> {
    * Returns a view of this range map as an unmodifiable {@code Map<Range<K>, V>}.
    * Modifications to this range map are guaranteed to read through to the returned {@code Map}.
    *
+   * <p>The returned {@code Map} iterates over entries in ascending order of the bounds of the
+   * {@code Range} entries.
+   *
    * <p>It is guaranteed that no empty ranges will be in the returned {@code Map}.
    */
   Map<Range<K>, V> asMapOfRanges();
   
   /**
+   * Returns a view of this range map as an unmodifiable {@code Map<Range<K>, V>}.
+   * Modifications to this range map are guaranteed to read through to the returned {@code Map}.
+   *
+   * <p>The returned {@code Map} iterates over entries in descending order of the bounds of the
+   * {@code Range} entries.
+   *
+   * <p>It is guaranteed that no empty ranges will be in the returned {@code Map}.
+   *
+   * @since 19.0
+   */
+  Map<Range<K>, V> asDescendingMapOfRanges();
+
+  /**
    * Returns a view of the part of this range map that intersects with {@code range}.
    * 
    * <p>For example, if {@code rangeMap} had the entries 
-   * {@code [1, 5] => "foo", (6, 8) => "bar", (10, \u2025) => "baz"}
+   * {@code [1, 5] => "foo", (6, 8) => "bar", (10, ∞) => "baz"}
    * then {@code rangeMap.subRangeMap(Range.open(3, 12))} would return a range map
    * with the entries {@code (3, 5) => "foo", (6, 8) => "bar", (10, 12) => "baz"}.
    * 

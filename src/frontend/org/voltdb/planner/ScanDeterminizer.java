@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -90,8 +90,8 @@ public class ScanDeterminizer {
         }
         SeqScanPlanNode scanNode = (SeqScanPlanNode) plan;
 
-        if (scanNode.isSubQuery()) {
-            // This is a sub-query and can't have indexes
+        if (! scanNode.isPersistentTableScan()) {
+            // This is a subquery or common table and can't have indexes
             return plan;
         }
 
@@ -116,18 +116,12 @@ public class ScanDeterminizer {
                 continue;
             }
             // skip partial indexes
-            else if (!index.getPredicatejson().isEmpty()) {
+            else if ( ! index.getPredicatejson().isEmpty()) {
                 continue;
             }
-            else {
-                if (indexToScan == null) {
-                    indexToScan = index;
-                }
-                else {
-                    if (CatalogUtil.getCatalogIndexSize(indexToScan) > CatalogUtil.getCatalogIndexSize(index)) {
-                        indexToScan = index;
-                    }
-                }
+            else if (indexToScan == null ||
+                    CatalogUtil.getCatalogIndexSize(indexToScan) > CatalogUtil.getCatalogIndexSize(index)) {
+                indexToScan = index;
             }
         }
 
@@ -136,9 +130,9 @@ public class ScanDeterminizer {
         }
 
         // make an index node from the scan node
-        IndexScanPlanNode indexScanNode = new IndexScanPlanNode(scanNode, null, indexToScan, SortDirectionType.ASC);
+        IndexScanPlanNode indexScanNode =
+                new IndexScanPlanNode(scanNode, null, indexToScan, SortDirectionType.ASC);
         indexScanNode.setForDeterminismOnly();
-
         return indexScanNode;
     }
 

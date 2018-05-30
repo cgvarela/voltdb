@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -25,12 +25,15 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-import org.voltdb.VoltType;
 import org.voltdb.expressions.AbstractExpression;
+import org.voltdb.expressions.ConstantValueExpression;
 import org.voltdb.expressions.ExpressionUtil;
-import org.voltdb.planner.PlanningErrorException;
+import org.voltdb.planner.StmtEphemeralTableScan;
 import org.voltdb.types.JoinType;
 
+/**
+ * A BranchNode is an interior node of a join tree.
+ */
 public class BranchNode extends JoinNode {
     // Join type
     private JoinType m_joinType;
@@ -52,6 +55,8 @@ public class BranchNode extends JoinNode {
         m_joinType = joinType;
         m_leftNode = leftNode;
         m_rightNode = rightNode;
+        updateContentDeterminismMessage(leftNode.getContentDeterminismMessage());
+        updateContentDeterminismMessage(rightNode.getContentDeterminismMessage());
     }
 
     /**
@@ -66,10 +71,10 @@ public class BranchNode extends JoinNode {
         BranchNode newNode = new BranchNode(m_id, m_joinType, leftNode, rightNode);
 
         if (m_joinExpr != null) {
-            newNode.m_joinExpr = (AbstractExpression) m_joinExpr.clone();
+            newNode.m_joinExpr = m_joinExpr.clone();
         }
         if (m_whereExpr != null) {
-            newNode.m_whereExpr = (AbstractExpression) m_whereExpr.clone();
+            newNode.m_whereExpr = m_whereExpr.clone();
         }
         return newNode;
     }
@@ -96,28 +101,28 @@ public class BranchNode extends JoinNode {
 
     @Override
     public void analyzeJoinExpressions(List<AbstractExpression> noneList) {
-        getLeftNode().analyzeJoinExpressions(noneList);
-        getRightNode().analyzeJoinExpressions(noneList);
+        JoinNode leftChild = getLeftNode();
+        JoinNode rightChild = getRightNode();
+        leftChild.analyzeJoinExpressions(noneList);
+        rightChild.analyzeJoinExpressions(noneList);
 
         // At this moment all RIGHT joins are already converted to the LEFT ones
-        assert (getJoinType() == JoinType.LEFT || getJoinType() == JoinType.INNER);
+        assert (getJoinType() != JoinType.RIGHT);
 
-        ArrayList<AbstractExpression> joinList = new ArrayList<AbstractExpression>();
-        ArrayList<AbstractExpression> whereList = new ArrayList<AbstractExpression>();
+        ArrayList<AbstractExpression> joinList = new ArrayList<>();
+        ArrayList<AbstractExpression> whereList = new ArrayList<>();
 
         // Collect node's own join and where expressions
         joinList.addAll(ExpressionUtil.uncombineAny(getJoinExpression()));
         whereList.addAll(ExpressionUtil.uncombineAny(getWhereExpression()));
 
         // Collect children expressions only if a child is a leaf. They are not classified yet
-        JoinNode leftChild = getLeftNode();
         if ( ! (leftChild instanceof BranchNode)) {
             joinList.addAll(leftChild.m_joinInnerList);
             leftChild.m_joinInnerList.clear();
             whereList.addAll(leftChild.m_whereInnerList);
             leftChild.m_whereInnerList.clear();
         }
-        JoinNode rightChild = getRightNode();
         if ( ! (rightChild instanceof BranchNode)) {
             joinList.addAll(rightChild.m_joinInnerList);
             rightChild.m_joinInnerList.clear();
@@ -134,13 +139,14 @@ public class BranchNode extends JoinNode {
         // without even considering the inner table). Testing the outer-only conditions
         // COULD be considered as an optimal first step to processing each outer tuple
         // 2. The INNER-only join conditions apply to the inner tuples (even prior to considering any outer tuple).
-        // if true for a given inner tuple, the condition has no effect, if false,
-        // it prevents the inner tuple from matching ANY outer tuple,
+        // if true for a given inner tuple, the condition has no effect,
+        // if false, it prevents the inner tuple from matching ANY outer tuple,
         // In case of multi-tables join, they could be pushed down to a child node if this node is a join itself
         // 3. The two-sided expressions that get evaluated on each combination of outer and inner tuple
         // and either accept or reject that particular combination.
         // 4. The TVE expressions where neither inner nor outer tables are involved. This is not possible
-        // for the currently supported two table joins but could change if number of tables > 2
+        // for the currently supported two table joins but could change if number of tables > 2.
+        // Constant Value Expression may fall into this category.
         classifyJoinExpressions(joinList, outerTables, innerTables,  m_joinOuterList,
                 m_joinInnerList, m_joinInnerOuterList, noneList);
 
@@ -171,8 +177,17 @@ public class BranchNode extends JoinNode {
         Iterator<AbstractExpression> iter = noneList.iterator();
         while (iter.hasNext()) {
             AbstractExpression noneExpr = iter.next();
-            // Allow CVE(TRUE/FALSE)
-            if (VoltType.BOOLEAN == noneExpr.getValueType()) {
+            // Allow only CVE(TRUE/FALSE) for now.
+            // Though it does seem strange to be adding a constant TRUE or FALSE
+            // to a list of conjunctions rather than replacing it with an empty
+            // list or a single FALSE element.
+            // TODO: there may be other use cases that can be handled the same way
+            // as CVEs like predicates based on non-correlated subqueries or predicates
+            // based on correlation parameters from parent queries. These would require
+            // additional testing to be enabled here.
+            // TODO: it seems like there are at least some cases that would perform
+            // better with these predicates pushed down to the inner child node.
+            if (noneExpr instanceof ConstantValueExpression) {
                 m_whereInnerOuterList.add(noneExpr);
                 iter.remove();
             }
@@ -186,16 +201,21 @@ public class BranchNode extends JoinNode {
      *  1. The OUTER WHERE expressions can be pushed down to the outer (left) child for all joins
      *    (INNER and LEFT).
      *  2. The INNER WHERE expressions can be pushed down to the inner (right) child for the INNER joins.
+     *  3. The WHERE expressions must be preserved for the FULL join type.
      * @param joinNode JoinNode
      */
     protected void pushDownExpressions(List<AbstractExpression> noneList)
     {
+        JoinType joinType = getJoinType();
+        if (joinType == JoinType.FULL) {
+            return;
+        }
         JoinNode outerNode = getLeftNode();
         if (outerNode instanceof BranchNode) {
             ((BranchNode)outerNode).pushDownExpressionsRecursively(m_whereOuterList, noneList);
         }
         JoinNode innerNode = getRightNode();
-        if (innerNode instanceof BranchNode && getJoinType() == JoinType.INNER) {
+        if (innerNode instanceof BranchNode && joinType == JoinType.INNER) {
             ((BranchNode)innerNode).pushDownExpressionsRecursively(m_whereInnerList, noneList);
         }
     }
@@ -255,6 +275,7 @@ public class BranchNode extends JoinNode {
     protected void collectEquivalenceFilters(
             HashMap<AbstractExpression, Set<AbstractExpression>> equivalenceSet,
             ArrayDeque<JoinNode> joinNodes) {
+        //* enable to debug */ System.out.println("DEBUG: Branch cEF in  " + this + " nodes:" + joinNodes.size() + " filters:" + equivalenceSet.size());
         if ( ! m_whereInnerList.isEmpty()) {
             ExpressionUtil.collectPartitioningFilters(m_whereInnerList,
                                                       equivalenceSet);
@@ -271,11 +292,10 @@ public class BranchNode extends JoinNode {
             ExpressionUtil.collectPartitioningFilters(m_joinInnerOuterList,
                                                       equivalenceSet);
         }
+        // One-sided join criteria can not be used to infer single partitioining for a
+        // non-inner query. In general, they do not prevent results from being generated
+        // on the partitions that don't have partition-key-qualified rows.
         if (m_joinType == JoinType.INNER) {
-            // HSQL sometimes tags single-table filters in inner joins as join clauses
-            // rather than where clauses? OR does analyzeJoinExpressions correct for this?
-            // If so, these CAN contain constant equivalences that get used as the basis for equivalence
-            // conditions that determine partitioning, so process them as where clauses.
             if ( ! m_joinInnerList.isEmpty()) {
                 ExpressionUtil.collectPartitioningFilters(m_joinInnerList,
                                                           equivalenceSet);
@@ -285,12 +305,14 @@ public class BranchNode extends JoinNode {
                                                           equivalenceSet);
             }
         }
+
         if (m_leftNode != null) {
             joinNodes.add(m_leftNode);
         }
         if (m_rightNode != null) {
             joinNodes.add(m_rightNode);
         }
+        //* enable to debug */ System.out.println("DEBUG: Branch cEF out " + this + " nodes:" + joinNodes.size() + " filters:" + equivalenceSet.size());
     }
 
     /**
@@ -373,13 +395,21 @@ public class BranchNode extends JoinNode {
      * @return List<AbstractParsedStmt> - list of sub-queries from this query
      */
     @Override
-    public void extractSubQueries(List<StmtSubqueryScan> subQueries) {
+    public void extractEphemeralTableQueries(List<StmtEphemeralTableScan> scans) {
         if (m_leftNode != null) {
-            m_leftNode.extractSubQueries(subQueries);
+            m_leftNode.extractEphemeralTableQueries(scans);
         }
         if (m_rightNode != null) {
-            m_rightNode.extractSubQueries(subQueries);
+            m_rightNode.extractEphemeralTableQueries(scans);
         }
+    }
+
+    @Override
+    public boolean hasSubqueryScans() {
+        if ((m_leftNode != null) && m_leftNode.hasSubqueryScans()) {
+            return true;
+        }
+        return (m_rightNode != null && m_rightNode.hasSubqueryScans());
     }
 
     @Override
@@ -417,4 +447,23 @@ public class BranchNode extends JoinNode {
         }
         return false;
     }
+
+    /**
+     * Returns if all the join operations within this join tree are inner joins.
+     * @return true or false.
+     */
+    @Override
+    public boolean allInnerJoins() {
+        return m_joinType == JoinType.INNER &&
+               (m_leftNode == null || m_leftNode.allInnerJoins()) &&
+               (m_rightNode == null || m_rightNode.allInnerJoins());
+    }
+
+    @Override
+    public void gatherJoinExpressions(List<AbstractExpression> checkExpressions) {
+        super.gatherJoinExpressions(checkExpressions);
+        m_leftNode.gatherJoinExpressions(checkExpressions);
+        m_rightNode.gatherJoinExpressions(checkExpressions);
+    }
+
 }

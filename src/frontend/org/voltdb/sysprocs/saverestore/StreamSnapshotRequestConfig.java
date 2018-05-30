@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,10 +17,11 @@
 
 package org.voltdb.sysprocs.saverestore;
 
-import com.google_voltpatches.common.collect.ArrayListMultimap;
-import com.google_voltpatches.common.collect.ImmutableList;
-import com.google_voltpatches.common.collect.ImmutableMultimap;
-import com.google_voltpatches.common.collect.Multimap;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
 import org.json_voltpatches.JSONArray;
 import org.json_voltpatches.JSONException;
 import org.json_voltpatches.JSONObject;
@@ -28,10 +29,10 @@ import org.json_voltpatches.JSONStringer;
 import org.voltdb.catalog.Database;
 import org.voltdb.catalog.Table;
 
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import com.google_voltpatches.common.collect.ArrayListMultimap;
+import com.google_voltpatches.common.collect.ImmutableList;
+import com.google_voltpatches.common.collect.ImmutableMultimap;
+import com.google_voltpatches.common.collect.Multimap;
 
 public class StreamSnapshotRequestConfig extends SnapshotRequestConfig {
 
@@ -47,15 +48,18 @@ public class StreamSnapshotRequestConfig extends SnapshotRequestConfig {
         // the partition the ranges associate to
         public final Integer newPartition;
 
+        public final Long lowestSiteSinkHSId;
+
         /**
          * @param streamPairs     src - > (dest1, dest2,...)
          * @param newPartition    New partition for this stream, if not null, will create a
          *                        post-snapshot task to increment the partition count
          */
-        public Stream(Multimap<Long, Long> streamPairs, Integer newPartition)
+        public Stream(Multimap<Long, Long> streamPairs, Integer newPartition, Long lowestSiteSinkHSId)
         {
             this.streamPairs = ImmutableMultimap.copyOf(streamPairs);
             this.newPartition = newPartition;
+            this.lowestSiteSinkHSId = lowestSiteSinkHSId;
         }
     }
 
@@ -102,7 +106,9 @@ public class StreamSnapshotRequestConfig extends SnapshotRequestConfig {
                 if (!streamObj.isNull("newPartition")) {
                     newPartition = Integer.parseInt(streamObj.getString("newPartition"));
                 }
-                Stream config = new Stream(parseStreamPairs(streamObj), newPartition);
+                Long lowestSiteSinkHSId = Long.parseLong(streamObj.getString("lowestSiteSinkHSId"));
+
+                Stream config = new Stream(parseStreamPairs(streamObj), newPartition, lowestSiteSinkHSId);
 
                 builder.add(config);
             }
@@ -120,7 +126,6 @@ public class StreamSnapshotRequestConfig extends SnapshotRequestConfig {
         if (jsData != null) {
             try {
                 JSONObject sp = jsData.getJSONObject("streamPairs");
-                @SuppressWarnings("unchecked")
                 Iterator<String> it = sp.keys();
                 while (it.hasNext()) {
                     String key = it.next();
@@ -144,15 +149,16 @@ public class StreamSnapshotRequestConfig extends SnapshotRequestConfig {
     {
         super.toJSONString(stringer);
 
-        stringer.key("shouldTruncate").value(shouldTruncate);
+        stringer.keySymbolValuePair("shouldTruncate", shouldTruncate);
         stringer.key("streams").array();
 
         for (Stream stream : streams) {
             stringer.object();
 
-            stringer.key("newPartition").value(stream.newPartition == null ?
-                                               null : Integer.toString(stream.newPartition));
+            stringer.keySymbolValuePair("newPartition", stream.newPartition == null ?
+                                                    null : Integer.toString(stream.newPartition));
 
+            stringer.keySymbolValuePair("lowestSiteSinkHSId", stream.lowestSiteSinkHSId);
             stringer.key("streamPairs").object();
             for (Map.Entry<Long, Collection<Long>> entry : stream.streamPairs.asMap().entrySet()) {
                 stringer.key(Long.toString(entry.getKey())).array();

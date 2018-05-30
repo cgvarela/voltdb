@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -67,14 +67,11 @@ public class CompiledPlan {
     public String explainedPlan = null;
 
     /** Parameters and their types in parameter index order */
-    public ParameterValueExpression[] parameters = null;
+    private ParameterValueExpression[] m_parameters = null;
     private VoltType[] m_parameterTypes = null;
 
     /** Parameter values, if the planner pulled constants out of the plan */
     private ParameterSet m_extractedParamValues = ParameterSet.emptyParameterSet();
-
-    /** Compiler generated parameters for cacheble AdHoc queries */
-    private int m_generatedParameterCount = 0;
 
     /**
      * If true, divide the number of tuples changed
@@ -96,6 +93,16 @@ public class CompiledPlan {
      */
     private boolean m_statementIsOrderDeterministic = false;
 
+    /**
+     * This string describes the reason a plan is not content deterministic.
+     * This is non-null iff the statement has some calculation which is in
+     * itself content non-deterministic. The most typical example is an
+     * aggregate of a column whose type is floating point. The floating point
+     * arithmetic may be slightly different with different plans or different
+     * row orders.
+     */
+    private String m_contentDeterminismDetail = null;
+
     /** Which extracted param is the partitioning object (assuming parameterized plans) */
     public int partitioningKeyIndex = -1;
 
@@ -103,38 +110,34 @@ public class CompiledPlan {
 
     private StatementPartitioning m_partitioning = null;
 
-    public int resetPlanNodeIds(int startId) {
-        int nextId = resetPlanNodeIds(rootPlanGraph, startId);
-        if (subPlanGraph != null) {
-            nextId = resetPlanNodeIds(subPlanGraph, nextId);
-        }
-        return nextId;
+    private List<String> m_UDFDependees = new ArrayList<>();
+
+    private final boolean m_isLargeQuery;
+
+    public CompiledPlan(boolean isLargeQuery) {
+        m_isLargeQuery = isLargeQuery;
     }
 
-    private int resetPlanNodeIds(AbstractPlanNode node, int nextId) {
-        nextId = node.overrideId(nextId);
-        for (AbstractPlanNode inNode : node.getInlinePlanNodes().values()) {
-            // Inline nodes also need their ids to be overridden to make sure
-            // the subquery node ids are also globaly unique
-            nextId = resetPlanNodeIds(inNode, nextId);
+    public int resetPlanNodeIds(int startId) {
+        int nextId = rootPlanGraph.resetPlanNodeIds(startId);
+        if (subPlanGraph != null) {
+            nextId = subPlanGraph.resetPlanNodeIds(nextId);
         }
-
-        for (int i = 0; i < node.getChildCount(); i++) {
-            AbstractPlanNode child = node.getChild(i);
-            assert(child != null);
-            nextId = resetPlanNodeIds(child, nextId);
-        }
-
         return nextId;
     }
 
     /**
-     * Mark the level of result determinism imposed by the statement,
-     * which can save us from a difficult determination based on the plan graph.
+     * Mark the level of result determinism imposed by the statement, which can
+     * save us from a difficult determination based on the plan graph.
      */
-    public void statementGuaranteesDeterminism(boolean hasLimitOrOffset, boolean order) {
+    public void statementGuaranteesDeterminism(boolean hasLimitOrOffset,
+                                               boolean order,
+                                               String contentDeterminismDetail) {
         m_statementHasLimitOrOffset = hasLimitOrOffset;
         m_statementIsOrderDeterministic = order;
+        if (contentDeterminismDetail != null) {
+            m_contentDeterminismDetail = contentDeterminismDetail;
+        }
     }
 
     /**
@@ -149,13 +152,20 @@ public class CompiledPlan {
         return rootPlanGraph.isOrderDeterministic();
     }
 
+    public boolean isContentDeterministic() {
+        return m_contentDeterminismDetail == null;
+    }
+
     /**
-     * Accessor for flag marking the original statement as guaranteeing an identical result/effect
-     * when "replayed" against the same database state, such as during replication or CL recovery.
+     * Accessor for flag marking the original statement as guaranteeing an
+     * identical result/effect when "replayed" against the same database state,
+     * such as during replication or CL recovery. If
+     * m_statementIsContentDeterministic is false we want to check this. This is
+     * the one area in which content and limit-order determinism interact.
      */
     public boolean hasDeterministicStatement()
     {
-        return m_statementIsOrderDeterministic;
+        return m_statementIsOrderDeterministic && isContentDeterministic();
     }
 
     /**
@@ -168,10 +178,15 @@ public class CompiledPlan {
     }
 
     /**
-     * Accessor for description of plan non-determinism.
+     * Accessor for description of plan non-determinism. Note that we prefer the
+     * content determinism message to the rootPlanGraph's message.
+     *
      * @return the corresponding value from the first fragment
      */
     public String nondeterminismDetail() {
+        if (!isContentDeterministic()) {
+            return m_contentDeterminismDetail;
+        }
         return rootPlanGraph.nondeterminismDetail();
     }
 
@@ -201,12 +216,12 @@ public class CompiledPlan {
         return m_partitioningValue;
     }
 
-    public static byte[] bytesForPlan(AbstractPlanNode planGraph) {
+    public static byte[] bytesForPlan(AbstractPlanNode planGraph, boolean isLargeQuery) {
         if (planGraph == null) {
             return null;
         }
 
-        PlanNodeList planList = new PlanNodeList(planGraph);
+        PlanNodeList planList = new PlanNodeList(planGraph, isLargeQuery);
         return planList.toJSONString().getBytes(Constants.UTF8ENCODING);
     }
 
@@ -241,7 +256,7 @@ public class CompiledPlan {
 
     /// Extract a sorted de-duped vector of all the bound parameter indexes in a plan. Or null if none.
     public int[] boundParamIndexes() {
-        if (parameters.length == 0) {
+        if (getParameters().length == 0) {
             return null;
         }
 
@@ -271,9 +286,9 @@ public class CompiledPlan {
     // This is assumed to be called only after parameters has been fully initialized.
     public VoltType[] parameterTypes() {
         if (m_parameterTypes == null) {
-            m_parameterTypes = new VoltType[parameters.length];
+            m_parameterTypes = new VoltType[getParameters().length];
             int ii = 0;
-            for (ParameterValueExpression param : parameters) {
+            for (ParameterValueExpression param : getParameters()) {
                 m_parameterTypes[ii++] = param.getValueType();
             }
         }
@@ -284,9 +299,6 @@ public class CompiledPlan {
         VoltType[] paramTypes = parameterTypes();
         if (paramTypes.length > MAX_PARAM_COUNT) {
             return false;
-        }
-        if (paramzInfo.paramLiteralValues != null) {
-            m_generatedParameterCount = paramzInfo.paramLiteralValues.length;
         }
 
         m_extractedParamValues = paramzInfo.extractedParamValues(paramTypes);
@@ -313,6 +325,10 @@ public class CompiledPlan {
         return m_partitioning;
     }
 
+    public boolean getIsLargeQuery() {
+        return m_isLargeQuery;
+    }
+
     @Override
     public String toString() {
         if (rootPlanGraph != null) {
@@ -321,5 +337,21 @@ public class CompiledPlan {
         else {
             return "CompiledPlan: [null plan graph]";
         }
+    }
+
+    public void setNondeterminismDetail(String contentDeterminismMessage) {
+        m_contentDeterminismDetail = contentDeterminismMessage;
+    }
+
+    public ParameterValueExpression[] getParameters() {
+        return m_parameters;
+    }
+
+    public void setParameters(ParameterValueExpression[] parameters) {
+        m_parameters = parameters;
+    }
+
+    public List<String> getUDFDependees() {
+        return m_UDFDependees;
     }
 }

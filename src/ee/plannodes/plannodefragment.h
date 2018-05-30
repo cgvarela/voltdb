@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -109,21 +109,19 @@ class PlanNodeFragment {
     // as part of the horrible ENG-1333 hack.
     bool hasDelete() const;
 
+    bool isLargeQuery() const {
+        return m_isLargeQuery;
+    }
+
     // produce a string describing pnf's content
     std::string debug();
-
-    // Get the list of parameters used to execute this plan fragment
-    std::vector<std::pair< int, voltdb::ValueType> > getParameters() { return m_parameters; }
 
   private:
 
     // construct a new fragment from a serialized json object
     static PlanNodeFragment* fromJSONObject(PlannerDomValue planNodesArray);
     // read node list for a given sub statement
-    static void nodeListFromJSONObject(PlanNodeFragment *pnf, PlannerDomValue planNodesList, PlannerDomValue executeList, int stmtId);
-
-    // reads parameters from json objects
-    static void loadParamsFromJSONObject(PlanNodeFragment *pnf, PlannerDomValue obj);
+    void nodeListFromJSONObject(PlannerDomValue planNodesList, PlannerDomValue executeList, int stmtId);
 
     // serialized java type: org.voltdb.plannodes.PlanNode[List|Tree]
     std::string m_serializedType;
@@ -132,8 +130,8 @@ class PlanNodeFragment {
     // Pointers to nodes in execution order grouped by substatement
     // The statement id is the key. The top statement (parent) always has id = 0
     std::map<int, std::vector<AbstractPlanNode*>* > m_stmtExecutionListMap;
-    // Pairs of argument index and type for parameters to the fragment
-    std::vector<std::pair< int, voltdb::ValueType> > m_parameters;
+
+    bool m_isLargeQuery;
 };
 
 

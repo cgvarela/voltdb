@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,6 +23,7 @@
 
 package org.voltdb.planner;
 
+import org.json_voltpatches.JSONException;
 import org.voltdb.expressions.AbstractExpression;
 import org.voltdb.expressions.TupleValueExpression;
 import org.voltdb.plannodes.AbstractPlanNode;
@@ -36,6 +37,7 @@ import org.voltdb.plannodes.SeqScanPlanNode;
 import org.voltdb.plannodes.UnionPlanNode;
 import org.voltdb.types.ExpressionType;
 import org.voltdb.types.PlanNodeType;
+import org.voltdb.types.SortDirectionType;
 
 public class TestUnion extends PlannerTestCase {
 
@@ -56,6 +58,14 @@ public class TestUnion extends PlannerTestCase {
         assertTrue(unionPN.getUnionType() == ParsedUnionStmt.UnionType.UNION);
         assertTrue(unionPN.getChildCount() == 3);
    }
+
+    public void testUnionWithExpressionSubquery() {
+        AbstractPlanNode pn = compile("select B from T2 union select A from T1 where A in (select B from T2 where T1.A > B)");
+        assertTrue(pn.getChild(0) instanceof UnionPlanNode);
+        UnionPlanNode unionPN = (UnionPlanNode) pn.getChild(0);
+        assertTrue(unionPN.getUnionType() == ParsedUnionStmt.UnionType.UNION);
+        assertTrue(unionPN.getChildCount() == 2);
+    }
 
     public void testPartitioningMixes() {
         // Sides are identically single-partitioned.
@@ -206,6 +216,11 @@ public class TestUnion extends PlannerTestCase {
         // nonsense syntax in place of union ops (trying various internal symbol names meaning n/a)
         failToCompile("select A from T1 NOUNION select B from T2");
         failToCompile("select A from T1 TERM select B from T2");
+        // invalid syntax - the WHERE clause is illegal
+        failToCompile("(select A from T1 UNION select B from T2) where A in (select A from T2)");
+
+        // Union with a child having an invalid subquery expression (T1 is distributed)
+        failToCompile("select B from T2 where B in (select A from T1 where T1.A > T2.B) UNION select B from T2", PlanAssembler.IN_EXISTS_SCALAR_ERROR_MESSAGE);
     }
 
     public void testSelfUnion() {
@@ -217,7 +232,7 @@ public class TestUnion extends PlannerTestCase {
         assertTrue(pn.getChild(1) instanceof SeqScanPlanNode);
 
         // The same table/alias is repeated twice in the union but in the different selects
-        pn = compile("select B from T2 A1, T2 A2 WHERE A1.B = A2.B UNION select B from T2 A1");
+        pn = compile("select A1.B from T2 A1, T2 A2 WHERE A1.B = A2.B UNION select B from T2 A1");
         assertTrue(pn.getChild(0) instanceof UnionPlanNode);
         pn = pn.getChild(0);
         assertTrue(pn.getChildCount() == 2);
@@ -311,7 +326,16 @@ public class TestUnion extends PlannerTestCase {
             AbstractPlanNode pn = compile("(select B as B1, B as B2 from T2 UNION select B as B1, B as B2 from T2) order by B1 asc, B2 desc");
             pn = pn.getChild(0);
             String[] columnNames = {"B1", "B2"};
-            int[] idxs = {1, 1};
+            // We are selecting the same column twice from both sides of the union,
+            // so it doesn't matter if the column indices are 0 or 1 here.
+            int[] idxs = {0, 0};
+            checkOrderByNode(pn, columnNames, idxs);
+        }
+        {
+            AbstractPlanNode pn = compile("(select B as B1, B * -1 as B2 from T2 UNION select B as B1, B * -1 as B2 from T2) order by B1 asc, B2 desc");
+            pn = pn.getChild(0);
+            String[] columnNames = {"B1", "B2"};
+            int[] idxs = {0, 1};
             checkOrderByNode(pn, columnNames, idxs);
         }
         {
@@ -324,22 +348,94 @@ public class TestUnion extends PlannerTestCase {
         }
     }
 
+    private boolean stmtIsDeterministic(String stmt) {
+        CompiledPlan plan = compileAdHocPlan(stmt);
+        return plan.isOrderDeterministic();
+    }
+
+    private void assertIsDeterministic(String stmt) {
+        assertTrue("Expected stmt\n"
+                + "   " + stmt + "\n"
+                + "to be deterministic, but it was not.", stmtIsDeterministic(stmt));
+    }
+
+    private void assertIsNonDeterministic(String stmt) {
+        assertFalse("Expected stmt\n"
+                + "    " + stmt + "\n"
+                + "to be non-deterministic, but it was."
+                ,stmtIsDeterministic(stmt));
+    }
+
     public void testUnionDeterminism() {
-        {
-            CompiledPlan plan = compileAdHocPlan("select B, DESC from T2 UNION select A, DESC from T1");
-            boolean isDeterministic = plan.isOrderDeterministic();
-            assertEquals(false, isDeterministic);
-        }
-        {
-            CompiledPlan plan = compileAdHocPlan("(select B, DESC from T2 UNION select A, DESC from T1) order by B asc");
-            boolean isDeterministic = plan.isOrderDeterministic();
-            assertEquals(false, isDeterministic);
-        }
-        {
-            CompiledPlan plan = compileAdHocPlan("(select B, DESC from T2 UNION select A, DESC from T1) order by B asc, DESC desc");
-            boolean isDeterministic = plan.isOrderDeterministic();
-            assertEquals(true, isDeterministic);
-        }
+
+        // Not deterministic because no ordering on either statement.
+        assertIsNonDeterministic("select B, DESC from T2 UNION select A, DESC from T1");
+
+        // Not deterministic because ordering by just one column is not sufficient.
+        assertIsNonDeterministic("(select B, DESC from T2 UNION select A, DESC from T1) order by B asc");
+
+        // Ordering by all columns should be deterministic.
+        assertIsDeterministic("(select B, DESC from T2 UNION select A, DESC from T1) order by B asc, DESC desc");
+
+        // Should not be deterministic:
+        //   Ordering by (a, b) makes a deterministic order on LHS, but
+        //   RHS cannot be said to be deterministic
+        assertIsNonDeterministic("(select a, b, c from t7 union  select a, b, c from t8) order by a, b");
+
+        // This is deterministic: primary key on T7 (a, b) makes both sides of union deterministic.
+        assertIsDeterministic("((select a, b, c from t7 order by a, b) union (select a, b, c from t7 order by a, b))");
+
+        // As above, but add a non-deterministic sort to the top of the plan: no longer deterministic.
+        assertIsNonDeterministic("((select a, b, c from t7 order by a, b) union (select a, b, c from t7 order by a, b)) order by a");
+
+        // This is deterministic since the primary key on T7 (a, b) defines order on both sides,
+        // And both sides are identical.  But our planner is not yet smart enough to figure this out.
+        assertIsNonDeterministic("((select a, b, c from t7) union (select a, b, c from t7)) order by a, b");
+
+        // This is query is correctly marked as non-deterministic even though there is a PK on
+        // both sides that we are ordering by, because the third item on the select list is different.
+        assertIsNonDeterministic("((select a, b, cast(c as bigint) from t7) union (select a, b, c + 1 from t7)) order by a, b");
+    }
+
+    public void testOtherSetOpDeterminism()
+    {
+        // Output of non-union set ops is considered to be non-deterministic,
+        // since they use boost unordered containers in the EE.
+        // This is true even if sub-selects are sorted.
+
+        assertIsNonDeterministic("(select a from t1 order by a) intersect select b from t2");
+        assertIsNonDeterministic("(select a from t1 order by a) intersect all select b from t2");
+        assertIsNonDeterministic("(select a from t1 order by a) except select b from t2");
+        assertIsNonDeterministic("(select a from t1 order by a) except all select b from t2");
+
+        // A statement-level order by clause will the above statements deterministic.
+        assertIsDeterministic("(select a from t1 intersect     select b from t2) order by a");
+        assertIsDeterministic("(select a from t1 intersect all select b from t2) order by a");
+        assertIsDeterministic("(select a from t1 except        select b from t2) order by a");
+        assertIsDeterministic("(select a from t1 except all    select b from t2) order by a");
+
+        // More examples composing the various set operators.
+
+        // union on LHS of intersect
+        assertIsNonDeterministic("((select a from t1 order by a) union (select b from t2 order by b)) "
+                + "intersect select b from t2");
+
+        assertIsDeterministic("(((select a from t1) union (select b from t2 order by b)) "
+                + "intersect select b from t2) order by a");
+
+        // Not deterministic, because outer ORDER BY does not make LHS of interestect
+        // (the UNION) deterministic.
+        assertIsNonDeterministic("(((select a, desc from t1) union (select b, desc from t2 order by b)) "
+                + "intersect select b, desc from t2) order by a");
+
+        // intersect on LHS of union
+        // Not deterministic because LHS of union is not determinstic.
+        assertIsNonDeterministic("((select a from t1) intersect (select b from t2)) "
+                + "union (select b from t2 order by b)");
+
+        // Deterministic because both sides of union are deterministic.
+        assertIsDeterministic("((select a from t1) intersect (select b from t2) order by a) "
+                + "union (select b from t2 order by b)");
     }
 
     public void testInvalidOrderBy() {
@@ -372,7 +468,10 @@ public class TestUnion extends PlannerTestCase {
           assertTrue(pn instanceof UnionPlanNode);
           assertEquals(2, pn.getChildCount());
           // Left branch - SELECT FRM T1
-          assertTrue(pn.getChild(0).getChild(0) instanceof ReceivePlanNode);
+          if (pn instanceof ProjectionPlanNode) {
+              pn = pn.getChild(0);
+          }
+          assertTrue(pn.getChild(0) instanceof ReceivePlanNode);
           // Right branch - union with order by
           assertTrue(pn.getChild(1) instanceof OrderByPlanNode);
           pn = pn.getChild(1);
@@ -384,7 +483,10 @@ public class TestUnion extends PlannerTestCase {
           assertTrue(pn instanceof UnionPlanNode);
           assertEquals(2, pn.getChildCount());
           // Left branch - SELECT FRM T1
-          assertTrue(pn.getChild(0).getChild(0) instanceof ReceivePlanNode);
+          if (pn.getChild(0) instanceof ProjectionPlanNode) {
+              pn = pn.getChild(0);
+          }
+          assertTrue(pn.getChild(0) instanceof ReceivePlanNode);
           // Right branch - union with limit
           assertTrue(pn.getChild(1) instanceof LimitPlanNode);
           pn = pn.getChild(1);
@@ -396,7 +498,10 @@ public class TestUnion extends PlannerTestCase {
           assertTrue(pn instanceof UnionPlanNode);
           assertEquals(2, pn.getChildCount());
           // Left branch - SELECT FRM T1
-          assertTrue(pn.getChild(0).getChild(0) instanceof ReceivePlanNode);
+          if (pn.getChild(0) instanceof ProjectionPlanNode) {
+              pn = pn.getChild(0);
+          }
+          assertTrue(pn.getChild(0) instanceof ReceivePlanNode);
           // Right branch - union with limit
           assertTrue(pn.getChild(1) instanceof LimitPlanNode);
           pn = pn.getChild(1);
@@ -519,13 +624,43 @@ public class TestUnion extends PlannerTestCase {
         assertTrue(pn.toExplainPlanString().contains("LIMIT with parameter"));
     }
 
+    public void testENG13536() throws JSONException {
+        String SQL = "( (SELECT * FROM T3 ORDER BY C LIMIT 1) "
+                   + "UNION ALL "
+                   + "( SELECT * FROM T3 ) ) "
+                   + "ORDER BY C DESC";
+        validatePlan(SQL,
+                     fragSpec(PlanNodeType.SEND,
+                              PlanNodeType.ORDERBY,
+                              PlanNodeType.UNION,
+                              allOf(planWithInlineNodes(PlanNodeType.ORDERBY,
+                                                        PlanNodeType.LIMIT),
+                                      // This is an order by node.  We know this
+                                      // already from the test above.  This is an
+                                      // example of using a lambda to test a node.
+                                      // One could add any computation here.  Of
+                                      // course, a tastier way to do this would be
+                                      // to have the lambda be statically defined
+                                      // in PlannerTestCase.  But this works better
+                                      // as an example.
+                                    (node) -> {
+                                        OrderByPlanNode obpn = (OrderByPlanNode)node;
+                                        if (obpn.getSortDirections().get(0) != SortDirectionType.ASC) {
+                                            return "Expected ascending order by node.";
+                                        }
+                                        return null;
+                                    }),
+                              planWithInlineNodes(PlanNodeType.SEQSCAN,
+                                                  PlanNodeType.PROJECTION)));
+    }
+
     private void checkOrderByNode(AbstractPlanNode pn, String columns[], int[] idxs) {
         assertTrue(pn != null);
         assertTrue(pn instanceof OrderByPlanNode);
         OrderByPlanNode opn = (OrderByPlanNode) pn;
         assertEquals(columns.length, opn.getOutputSchema().size());
         for(int i = 0; i < columns.length; ++i) {
-            SchemaColumn col = opn.getOutputSchema().getColumns().get(i);
+            SchemaColumn col = opn.getOutputSchema().getColumn(i);
             assertEquals(columns[i], col.getColumnAlias());
             AbstractExpression colExpr = col.getExpression();
             assertEquals(ExpressionType.VALUE_TUPLE, colExpr.getExpressionType());

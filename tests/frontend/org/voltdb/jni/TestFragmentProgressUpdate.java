@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -29,14 +29,11 @@ import static org.mockito.Mockito.verify;
 
 import java.util.Arrays;
 
-import junit.framework.TestCase;
-
 import org.mockito.Mockito;
 import org.voltcore.logging.VoltLogger;
-import org.voltdb.LegacyHashinator;
+import org.voltdb.ElasticHashinator;
 import org.voltdb.ParameterSet;
 import org.voltdb.TheHashinator.HashinatorConfig;
-import org.voltdb.TheHashinator.HashinatorType;
 import org.voltdb.VoltDB;
 import org.voltdb.VoltTable;
 import org.voltdb.VoltType;
@@ -49,7 +46,9 @@ import org.voltdb.catalog.Procedure;
 import org.voltdb.catalog.Statement;
 import org.voltdb.planner.ActivePlanRepository;
 import org.voltdb.utils.CatalogUtil;
-import org.voltdb.utils.Encoder;
+import org.voltdb.utils.CompressionService;
+
+import junit.framework.TestCase;
 
 public class TestFragmentProgressUpdate extends TestCase {
 
@@ -73,12 +72,12 @@ public class TestFragmentProgressUpdate extends TestCase {
         private final long m_origInitialLogDuration;
 
         AutoEngineSettings() {
-            m_origTimeoutLatency = m_ee.getTimeoutLatency();
+            m_origTimeoutLatency = m_ee.getBatchTimeout();
             m_origInitialLogDuration = m_ee.getInitialLogDurationForTest();
         }
 
         public void setTimeoutLatency(int timeoutLatency) {
-            m_ee.setTimeoutLatency(timeoutLatency);
+            m_ee.setBatchTimeout(timeoutLatency);
         }
 
         public void setInitialLogDuration(long initialLogDuration) {
@@ -88,7 +87,7 @@ public class TestFragmentProgressUpdate extends TestCase {
         // Sets execution engine settings back to what they were.
         @Override
         public void close() throws Exception {
-            m_ee.setTimeoutLatency(m_origTimeoutLatency);
+            m_ee.setBatchTimeout(m_origTimeoutLatency);
             m_ee.setInitialLogDurationForTest(m_origInitialLogDuration);
         }
 
@@ -123,7 +122,7 @@ public class TestFragmentProgressUpdate extends TestCase {
         ActivePlanRepository.clear();
         ActivePlanRepository.addFragmentForTest(
                 CatalogUtil.getUniqueIdForFragment(selectBottomFrag),
-                Encoder.decodeBase64AndDecompressToBytes(selectBottomFrag.getPlannodetree()),
+                CompressionService.decodeBase64AndDecompressToBytes(selectBottomFrag.getPlannodetree()),
                 selectStmt.getSqltext());
         ParameterSet params = ParameterSet.emptyParameterSet();
 
@@ -132,8 +131,11 @@ public class TestFragmentProgressUpdate extends TestCase {
                 new long[] { CatalogUtil.getUniqueIdForFragment(selectBottomFrag) },
                 null,
                 new ParameterSet[] { params },
+                null,
                 new String[] { selectStmt.getSqltext() },
-                3, 3, 2, 42, Long.MAX_VALUE);
+                null,
+                null,
+                3, 3, 2, 42, Long.MAX_VALUE, false);
         // Like many fully successful operations, a single row fetch counts as 2 logical row operations,
         // one for locating the row and one for retrieving it.
         assertEquals(1, m_ee.m_callsFromEE);
@@ -176,7 +178,7 @@ public class TestFragmentProgressUpdate extends TestCase {
         ActivePlanRepository.clear();
         ActivePlanRepository.addFragmentForTest(
                 CatalogUtil.getUniqueIdForFragment(selectBottomFrag),
-                Encoder.decodeBase64AndDecompressToBytes(selectBottomFrag.getPlannodetree()),
+                CompressionService.decodeBase64AndDecompressToBytes(selectBottomFrag.getPlannodetree()),
                 selectStmt.getSqltext());
         ParameterSet params = ParameterSet.emptyParameterSet();
 
@@ -185,8 +187,11 @@ public class TestFragmentProgressUpdate extends TestCase {
                 new long[] { CatalogUtil.getUniqueIdForFragment(selectBottomFrag) },
                 null,
                 new ParameterSet[] { params },
+                null,
                 new String[] { selectStmt.getSqltext() },
-                3, 3, 2, 42, Long.MAX_VALUE);
+                null,
+                null,
+                3, 3, 2, 42, Long.MAX_VALUE, false);
 
         // Like many fully successful operations, a single row fetch counts as 2 logical row operations,
         // one for locating the row and one for retrieving it.
@@ -213,7 +218,7 @@ public class TestFragmentProgressUpdate extends TestCase {
         ActivePlanRepository.clear();
         ActivePlanRepository.addFragmentForTest(
                 CatalogUtil.getUniqueIdForFragment(deleteBottomFrag),
-                Encoder.decodeBase64AndDecompressToBytes(deleteBottomFrag.getPlannodetree()),
+                CompressionService.decodeBase64AndDecompressToBytes(deleteBottomFrag.getPlannodetree()),
                 deleteStmt.getSqltext());
         params = ParameterSet.emptyParameterSet();
         m_ee.executePlanFragments(
@@ -221,14 +226,17 @@ public class TestFragmentProgressUpdate extends TestCase {
                 new long[] { CatalogUtil.getUniqueIdForFragment(deleteBottomFrag) },
                 null,
                 new ParameterSet[] { params },
-                new String[] { deleteStmt.getSqltext() },
-                3, 3, 2, 42, WRITE_TOKEN);
+                null,
+                new String[] { selectStmt.getSqltext() },
+                null,
+                null,
+                3, 3, 2, 42, WRITE_TOKEN, false);
 
         // populate plan cache
         ActivePlanRepository.clear();
         ActivePlanRepository.addFragmentForTest(
                 CatalogUtil.getUniqueIdForFragment(selectBottomFrag),
-                Encoder.decodeBase64AndDecompressToBytes(selectBottomFrag.getPlannodetree()),
+                CompressionService.decodeBase64AndDecompressToBytes(selectBottomFrag.getPlannodetree()),
                 selectStmt.getSqltext());
         params = ParameterSet.emptyParameterSet();
         m_ee.executePlanFragments(
@@ -236,8 +244,11 @@ public class TestFragmentProgressUpdate extends TestCase {
                 new long[] { CatalogUtil.getUniqueIdForFragment(selectBottomFrag) },
                 null,
                 new ParameterSet[] { params },
+                null,
                 new String[] { selectStmt.getSqltext() },
-                3, 3, 2, 42, Long.MAX_VALUE);
+                null,
+                null,
+                3, 3, 2, 42, Long.MAX_VALUE, false);
         assertTrue(m_ee.m_callsFromEE > 2);
         // here the m_lastTuplesAccessed is just the same as threshold, since we start a new fragment
         assertEquals(longOpthreshold, m_ee.m_lastTuplesAccessed);
@@ -282,7 +293,7 @@ public class TestFragmentProgressUpdate extends TestCase {
         ActivePlanRepository.clear();
         ActivePlanRepository.addFragmentForTest(
                 CatalogUtil.getUniqueIdForFragment(selectBottomFrag),
-                Encoder.decodeBase64AndDecompressToBytes(selectBottomFrag.getPlannodetree()),
+                CompressionService.decodeBase64AndDecompressToBytes(selectBottomFrag.getPlannodetree()),
                 selectStmt.getSqltext());
         ParameterSet params = ParameterSet.emptyParameterSet();
 
@@ -291,8 +302,11 @@ public class TestFragmentProgressUpdate extends TestCase {
                 new long[] { CatalogUtil.getUniqueIdForFragment(selectBottomFrag) },
                 null,
                 new ParameterSet[] { params },
+                null,
                 new String[] { selectStmt.getSqltext() },
-                3, 3, 2, 42, READ_ONLY_TOKEN);
+                null,
+                null,
+                3, 3, 2, 42, READ_ONLY_TOKEN, false);
 
         // If want to see the stats, please uncomment the following line.
         // It is '8 393216 262144' on my machine.
@@ -354,7 +368,7 @@ public class TestFragmentProgressUpdate extends TestCase {
 
             ActivePlanRepository.addFragmentForTest(
                     fragId,
-                    Encoder.decodeBase64AndDecompressToBytes(frag.getPlannodetree()),
+                    CompressionService.decodeBase64AndDecompressToBytes(frag.getPlannodetree()),
                     sqlText);
         }
 
@@ -429,6 +443,8 @@ public class TestFragmentProgressUpdate extends TestCase {
         long[] fragIds = new long[numFragsToExecute];
         ParameterSet[] paramSets = new ParameterSet[numFragsToExecute];
         String[] sqlTexts = new String[numFragsToExecute];
+        boolean[] writeFrags = new boolean[numFragsToExecute];
+        for (boolean writeFrag : writeFrags) { writeFrag = false; }
         createExecutionEngineInputs(stmtName, fragIds, paramSets, sqlTexts);
 
         // Replace the normal logger with a mocked one, so we can verify the message
@@ -468,18 +484,21 @@ public class TestFragmentProgressUpdate extends TestCase {
                     fragIds,
                     null,
                     paramSets,
+                    null,
                     sqlTexts,
+                    writeFrags,
+                    null,
                     3, 3, 2, 42,
-                    readOnly ? READ_ONLY_TOKEN : WRITE_TOKEN);
+                    readOnly ? READ_ONLY_TOKEN : WRITE_TOKEN, false);
             if (readOnly && timeout > 0) {
                 // only time out read queries
                 fail();
             }
         } catch (Exception ex) {
-            String msg = String.format("A SQL query was terminated after %.2f seconds "
-                    + "because it exceeded the query timeout period.",
+            String msg = String.format("A SQL query was terminated after %.03f seconds "
+                    + "because it exceeded",
                     timeout/1000.0);
-            assertEquals(msg, ex.getMessage());
+            assertTrue(ex.getMessage().contains(msg));
         }
 
         String expectedSqlTextMsg = null;
@@ -493,7 +512,7 @@ public class TestFragmentProgressUpdate extends TestCase {
             break;
         case STATEMENT_LIST:
             expectedSqlTextMsg = "Unable to report specific SQL statement text "
-                    + "for fragment task message index " + (numFragsToExecute - 1) + ".  "
+                    + "for fragment task message index " + (numFragsToExecute - 1) + ". "
                     + "It MAY be one of these " + (numFragsToExecute - 1) + " items: "
                     + "\"SELECT W_ID FROM WAREHOUSE LIMIT 1;\", ";
             break;
@@ -579,8 +598,7 @@ public class TestFragmentProgressUpdate extends TestCase {
                 new VoltTable.ColumnInfo("I_PRICE", VoltType.FLOAT),
                 new VoltTable.ColumnInfo("I_DATA", VoltType.STRING)
                 );
-        TPCCProjectBuilder builder = new TPCCProjectBuilder();
-        m_catalog = builder.createTPCCSchemaCatalog();
+        m_catalog = TPCCProjectBuilder.getTPCCSchemaCatalog();
         Cluster cluster = m_catalog.getClusters().get("cluster");
         WAREHOUSE_TABLEID = m_catalog.getClusters().get("cluster").getDatabases().
                 get("database").getTables().get("WAREHOUSE").getRelativeIndex();
@@ -592,13 +610,16 @@ public class TestFragmentProgressUpdate extends TestCase {
                 CLUSTER_ID,
                 NODE_ID,
                 0,
+                1,
                 0,
                 "",
+                0,
+                64*1024,
                 100,
-                new HashinatorConfig(HashinatorType.LEGACY,
-                                     LegacyHashinator.getConfigureBytes(1),
+                new HashinatorConfig(ElasticHashinator.getConfigureBytes(1),
                                      0,
-                                     0), false);
+                                     0),
+                true);
     }
 
     @Override

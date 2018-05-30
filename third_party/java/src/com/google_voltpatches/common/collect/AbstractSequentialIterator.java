@@ -17,9 +17,7 @@
 package com.google_voltpatches.common.collect;
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
 import java.util.NoSuchElementException;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -41,8 +39,7 @@ import javax.annotation_voltpatches.Nullable;
  * @since 12.0 (in Guava as {@code AbstractLinkedIterator} since 8.0)
  */
 @GwtCompatible
-public abstract class AbstractSequentialIterator<T>
-    extends UnmodifiableIterator<T> {
+public abstract class AbstractSequentialIterator<T> extends UnmodifiableIterator<T> {
   private T nextOrNull;
 
   /**

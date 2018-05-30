@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -67,6 +67,7 @@ class CompactingTreeMultiMapIndex : public TableIndex
     typedef typename MapType::iterator MapIterator;
     typedef std::pair<MapIterator, MapIterator> MapRange;
 
+
     ~CompactingTreeMultiMapIndex() {};
 
     static MapIterator& castToIter(IndexCursor& cursor) {
@@ -77,10 +78,10 @@ class CompactingTreeMultiMapIndex : public TableIndex
         return *reinterpret_cast<MapIterator*> (cursor.m_keyEndIter);
     }
 
-    bool addEntryDo(const TableTuple *tuple)
+    void addEntryDo(const TableTuple *tuple, TableTuple *conflictTuple)
     {
         ++m_inserts;
-        return m_entries.insert(setKeyFromTuple(tuple), tuple->address());
+        m_entries.insert(setKeyFromTuple(tuple), tuple->address());
     }
 
     bool deleteEntryDo(const TableTuple *tuple)
@@ -95,6 +96,7 @@ class CompactingTreeMultiMapIndex : public TableIndex
 
     /**
      * Update in place an index entry with a new tuple address
+     * (e.g., due to table compaction)
      */
     bool replaceEntryNoKeyChangeDo(const TableTuple &destinationTuple, const TableTuple &originalTuple)
     {
@@ -103,7 +105,8 @@ class CompactingTreeMultiMapIndex : public TableIndex
         if ( ! CompactingTreeMultiMapIndex::deleteEntry(&originalTuple)) {
             return false;
         }
-        return CompactingTreeMultiMapIndex::addEntry(&destinationTuple);
+        CompactingTreeMultiMapIndex::addEntry(&destinationTuple, NULL);
+        return true;
     }
 
     bool keyUsesNonInlinedMemory() const { return KeyType::keyUsesNonInlinedMemory(); }
@@ -122,6 +125,26 @@ class CompactingTreeMultiMapIndex : public TableIndex
     {
         cursor.m_forward = true;
         MapRange iter_pair = m_entries.equalRange(KeyType(searchKey));
+
+        MapIterator &mapIter = castToIter(cursor);
+        MapIterator &mapEndIter = castToEndIter(cursor);
+
+        mapIter = iter_pair.first;
+        mapEndIter = iter_pair.second;
+
+        if (mapIter.equals(mapEndIter)) {
+            cursor.m_match.move(NULL);
+            return false;
+        }
+        cursor.m_match.move(const_cast<void*>(mapIter.value()));
+
+        return true;
+    }
+
+    bool moveToKeyByTuple(const TableTuple *persistentTuple, IndexCursor &cursor) const
+    {
+        cursor.m_forward = true;
+        MapRange iter_pair = m_entries.equalRange(setKeyFromTuple(persistentTuple));
 
         MapIterator &mapIter = castToIter(cursor);
         MapIterator &mapEndIter = castToEndIter(cursor);
@@ -288,7 +311,7 @@ class CompactingTreeMultiMapIndex : public TableIndex
         if (isUpper) {
             return m_entries.rankUpper(mapIter.key());
         } else {
-            return m_entries.rankAsc(mapIter.key());
+            return m_entries.rankLower(mapIter.key());
         }
     }
 
@@ -316,8 +339,21 @@ class CompactingTreeMultiMapIndex : public TableIndex
         if (isUpper) {
             return m_entries.rankUpper(mapIter.key());
         } else {
-            return m_entries.rankAsc(mapIter.key());
+            return m_entries.rankLower(mapIter.key());
         }
+    }
+
+    bool moveToRankTuple(int64_t denseRank, bool forward, IndexCursor& cursor) const {
+        cursor.m_forward = forward;
+        MapIterator &mapConstIter = castToIter(cursor);
+        mapConstIter = m_entries.findRank(denseRank);
+
+        if (mapConstIter.isEnd()) {
+            cursor.m_match.move(NULL);
+            return false;
+        }
+        cursor.m_match.move(const_cast<void*>(mapConstIter.value()));
+        return true;
     }
 
     size_t getSize() const { return m_entries.size(); }

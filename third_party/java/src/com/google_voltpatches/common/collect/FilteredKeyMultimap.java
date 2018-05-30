@@ -19,7 +19,8 @@ import static com.google_voltpatches.common.base.Preconditions.checkPositionInde
 
 import com.google_voltpatches.common.annotations.GwtCompatible;
 import com.google_voltpatches.common.base.Predicate;
-
+import com.google_voltpatches.errorprone.annotations.CanIgnoreReturnValue;
+import com.google_voltpatches.j2objc.annotations.WeakOuter;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -27,7 +28,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-
 import javax.annotation_voltpatches.Nullable;
 
 /**
@@ -157,6 +157,7 @@ class FilteredKeyMultimap<K, V> extends AbstractMultimap<K, V> implements Filter
       throw new IllegalArgumentException("Key does not satisfy predicate: " + key);
     }
 
+    @CanIgnoreReturnValue
     @Override
     public boolean addAll(int index, Collection<? extends V> elements) {
       checkNotNull(elements);
@@ -180,6 +181,7 @@ class FilteredKeyMultimap<K, V> extends AbstractMultimap<K, V> implements Filter
     return new Entries();
   }
 
+  @WeakOuter
   class Entries extends ForwardingCollection<Entry<K, V>> {
     @Override
     protected Collection<Entry<K, V>> delegate() {

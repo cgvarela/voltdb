@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -23,6 +23,7 @@ import java.util.Map.Entry;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
+import org.voltcore.logging.Level;
 import org.voltcore.logging.VoltLogger;
 
 /**
@@ -35,8 +36,8 @@ public class ShutdownHooks
     /**
      * Provide some initial constants for shutdown order
      */
-    public static int FIRST = 1;
-    public static int MIDDLE = 50;
+    public static final int FIRST = 1;
+    public static final int MIDDLE = 50;
     // There is only 1 final action allowed after VoltLogger shuts down.
     private Runnable m_finalAction;
 
@@ -54,6 +55,7 @@ public class ShutdownHooks
     }
 
     private static final ShutdownHooks m_instance = new ShutdownHooks();
+    private static boolean m_crashMessage = false;
 
     /**
      * Register an action to be run when the JVM exits.
@@ -65,6 +67,8 @@ public class ShutdownHooks
     public static void registerShutdownHook(int priority, boolean runOnCrash, Runnable action)
     {
         m_instance.addHook(priority, runOnCrash, action);
+        //Any hook registered lets print crash messsage.
+        ShutdownHooks.m_crashMessage = true;
     }
 
     /**
@@ -125,8 +129,10 @@ public class ShutdownHooks
 
     private synchronized void runHooks()
     {
-        if (m_iAmAServer && !m_crashing) {
-            new VoltLogger("CONSOLE").warn("The VoltDB server will shut down due to a control-C or other JVM exit.");
+        if (m_iAmAServer && !m_crashing && ShutdownHooks.m_crashMessage) {
+            VoltLogger voltLogger = new VoltLogger("CONSOLE");
+            String msg = "The VoltDB server will shut down due to a control-C or other JVM exit.";
+            CoreUtils.printAsciiArtLog(voltLogger, msg, Level.INFO);
         }
         for (Entry<Integer, List<ShutdownTask>> tasks : m_shutdownTasks.entrySet()) {
             for (ShutdownTask task : tasks.getValue()) {

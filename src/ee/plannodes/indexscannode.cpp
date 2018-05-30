@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -44,9 +44,6 @@
  */
 #include "indexscannode.h"
 
-#include "common/debuglog.h"
-#include "expressions/abstractexpression.h"
-
 #include <sstream>
 
 namespace voltdb {
@@ -68,6 +65,11 @@ std::string IndexScanPlanNode::debugInfo(const std::string &spacer) const
     buffer << spacer << "SearchKey Expressions:\n";
     for (int ctr = 0, cnt = (int)m_searchkey_expressions.size(); ctr < cnt; ctr++) {
         buffer << m_searchkey_expressions[ctr]->debug(spacer);
+    }
+
+    buffer << spacer << "Ignore null candidate value flags for search keys:\n";
+    for (int ctr = 0, cnt = (int)m_compare_not_distinct.size(); ctr < cnt; ctr++) {
+        buffer << spacer << (m_compare_not_distinct[ctr] ? "true" : "false");
     }
 
     buffer << spacer << "End Expression: ";
@@ -100,6 +102,10 @@ void IndexScanPlanNode::loadFromJSONObject(PlannerDomValue obj)
     std::string lookupTypeString = obj.valueForKey("LOOKUP_TYPE").asStr();
     m_lookup_type = stringToIndexLookup(lookupTypeString);
 
+    if (obj.hasKey("HAS_OFFSET_RANK")) {
+        m_hasOffsetRank = obj.valueForKey("HAS_OFFSET_RANK").asBool();
+    }
+
     std::string sortDirectionString = obj.valueForKey("SORT_DIRECTION").asStr();
     m_sort_direction = stringToSortDirection(sortDirectionString);
 
@@ -110,6 +116,7 @@ void IndexScanPlanNode::loadFromJSONObject(PlannerDomValue obj)
     m_skip_null_predicate.reset(loadExpressionFromJSONObject("SKIP_NULL_PREDICATE", obj));
 
     m_searchkey_expressions.loadExpressionArrayFromJSONObject("SEARCHKEY_EXPRESSIONS", obj);
+    loadBooleanArrayFromJSONObject("COMPARE_NOTDISTINCT", obj, m_compare_not_distinct);
 }
 
 } // namespace voltdb

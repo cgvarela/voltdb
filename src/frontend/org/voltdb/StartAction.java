@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,23 +18,26 @@
 package org.voltdb;
 
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
+
+import com.google_voltpatches.common.collect.ImmutableMap;
 
 public enum StartAction {
 
     CREATE("create", false, null),
-    RECOVER("recover", true, "Command Log Recovery"),
+    RECOVER("recover", false, "Command Log Recovery"),
     SAFE_RECOVER("recover safemode", true, "Command Log Recovery"),
-    REJOIN("rejoin", true, "K-Safety / Node Rejoin"),
-    LIVE_REJOIN("live rejoin", true, "K-Safety / Node Rejoin"),
-    JOIN("add", true, "Elastic Cluster Sizing");
+    REJOIN("rejoin", false, "K-Safety / Node Rejoin"),
+    LIVE_REJOIN("live rejoin", false, "K-Safety / Node Rejoin"),
+    JOIN("add", true, "Elastic Cluster Sizing"),
+    INITIALIZE("initialize", false, "Layout and prime voltdbroot"),
+    PROBE("probe", false, "Determine start action"),
+    GET("get", false, "Get Configuration");
 
     final static Pattern spaces = Pattern.compile("\\s+");
 
-    final static Map<String, StartAction> verbMoniker =
-            new HashMap<String, StartAction>();
+    final static Map<String, StartAction> verbMoniker;
 
     final static EnumSet<StartAction> recoverSet =
             EnumSet.of(RECOVER,SAFE_RECOVER);
@@ -45,14 +48,22 @@ public enum StartAction {
     final static EnumSet<StartAction> joinSet =
             EnumSet.of(REJOIN,LIVE_REJOIN,JOIN);
 
+    final static EnumSet<StartAction> requireEmptyDirsSet =
+            EnumSet.of(CREATE);
+
+    final static EnumSet<StartAction> legacySet =
+            EnumSet.complementOf(EnumSet.of(INITIALIZE,PROBE,GET));
+
     final String m_verb;
     final boolean m_enterpriseOnly;
     final String m_featureNameForErrorString;
 
     static {
+        ImmutableMap.Builder<String, StartAction> mb = ImmutableMap.builder();
         for (StartAction action: StartAction.values()) {
-            verbMoniker.put(action.m_verb, action);
+            mb.put(action.m_verb, action);
         }
+        verbMoniker = mb.build();
     }
 
     StartAction(String verb, boolean enterpriseOnly, String featureNameForErrorString) {
@@ -89,5 +100,13 @@ public enum StartAction {
 
     public boolean doesJoin() {
         return joinSet.contains(this);
+    }
+
+    public boolean isLegacy() {
+        return legacySet.contains(this);
+    }
+
+    public boolean doesRequireEmptyDirectories() {
+        return requireEmptyDirsSet.contains(this);
     }
 }

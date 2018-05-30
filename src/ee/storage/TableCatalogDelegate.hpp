@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,10 +18,10 @@
 #ifndef TABLECATALOGDELEGATE_HPP
 #define TABLECATALOGDELEGATE_HPP
 
-#include "common/CatalogDelegate.hpp"
 #include "catalog/table.h"
 #include "catalog/index.h"
 #include "storage/persistenttable.h"
+#include "storage/streamedtable.h"
 
 namespace catalog {
 class Database;
@@ -30,11 +30,13 @@ class Database;
 namespace voltdb {
 class Table;
 class PersistentTable;
+class StreamedTable;
 class Pool;
 class ExecutorContext;
 class TupleSchema;
 struct TableIndexScheme;
 class DRTupleStream;
+class VoltDBEngine;
 
 // There might be a better place for this, but current callers happen to have this header in common.
 template<typename K, typename V> V findInMapOrNull(const K& key, std::map<K, V> const &the_map)
@@ -46,34 +48,48 @@ template<typename K, typename V> V findInMapOrNull(const K& key, std::map<K, V> 
     return (V)NULL;
 }
 
+template<typename K, typename V> V findInMapOrNull(const K& key, std::unordered_map<K, V> const &the_map)
+{
+    typename std::unordered_map<K, V>::const_iterator lookup = the_map.find(key);
+    if (lookup != the_map.end()) {
+        return lookup->second;
+    }
+    return (V)NULL;
+}
+
 /*
  * Implementation of CatalogDelgate for Table
  */
 
-class TableCatalogDelegate : public CatalogDelegate {
+class TableCatalogDelegate {
   public:
-    TableCatalogDelegate(int32_t catalogId, std::string path, std::string signature, int32_t compactionThreshold);
-    virtual ~TableCatalogDelegate();
+    TableCatalogDelegate(const std::string& signature, int32_t compactionThreshold, VoltDBEngine* engine)
+        : m_table(NULL)
+        , m_exportEnabled(false)
+        , m_signature(signature)
+        , m_compactionThreshold(compactionThreshold)
+//        , m_engine(engine)
+    {}
 
+    ~TableCatalogDelegate();
 
-    // Delegate interface
-    virtual void deleteCommand();
+    void deleteCommand();
 
-    // table specific
-    int init(catalog::Database const &catalogDatabase,
-             catalog::Table const &catalogTable);
-    bool evaluateExport(catalog::Database const &catalogDatabase,
-             catalog::Table const &catalogTable);
+    void init(catalog::Database const &catalogDatabase,
+              catalog::Table const &catalogTable,
+              bool isXDCR);
+    PersistentTable *createDeltaTable(catalog::Database const &catalogDatabase,
+            catalog::Table const &catalogTable);
+    void evaluateExport(catalog::Database const &catalogDatabase,
+            catalog::Table const &catalogTable);
 
     void processSchemaChanges(catalog::Database const &catalogDatabase,
                              catalog::Table const &catalogTable,
-                             std::map<std::string, CatalogDelegate*> const &tablesByName);
+                              std::map<std::string, TableCatalogDelegate*> const &tablesByName,
+                              bool isXDCR);
 
-    static void migrateChangedTuples(catalog::Table const &catalogTable,
-                                     voltdb::PersistentTable* existingTable,
-                                     voltdb::PersistentTable* newTable);
-
-    static TupleSchema *createTupleSchema(catalog::Table const &catalogTable);
+    static TupleSchema *createTupleSchema(catalog::Table const &catalogTable,
+                                          bool isXDCR);
 
     static bool getIndexScheme(catalog::Table const &catalogTable,
                                catalog::Index const &catalogIndex,
@@ -102,50 +118,47 @@ class TableCatalogDelegate : public CatalogDelegate {
                                     TableTuple& tbTuple,
                                     std::vector<int>& nowFields);
 
-    // ADXXX: should be const
-    Table *getTable() {
-        return m_table;
-    }
+    Table *getTable() const;
 
     PersistentTable *getPersistentTable() {
-        return dynamic_cast<PersistentTable *> (m_table);
+        return dynamic_cast<PersistentTable*>(m_table);
+    }
+
+    StreamedTable *getStreamedTable() {
+        return dynamic_cast<StreamedTable *> (m_table);
     }
 
     void setTable(Table * tb) {
         m_table = tb;
     }
 
-    bool exportEnabled() {
-        return m_exportEnabled;
-    }
+    bool exportEnabled() { return m_exportEnabled; }
 
-    std::string signature() {
-        return m_signature;
-    }
+    const std::string& signature() { return m_signature; }
 
-    const char* signatureHash() {
-        return m_signatureHash;
-    }
+    const char* signatureHash() { return m_signatureHash; }
 
     /*
      * Returns true if this table is a materialized view
      */
-    bool materialized() {
-        return m_materialized;
-    }
+    bool materialized() { return m_materialized; }
   private:
-    static Table *constructTableFromCatalog(catalog::Database const &catalogDatabase,
-                                            catalog::Table const &catalogTable,
-                                            const int32_t compactionThreshold,
-                                            bool &materialized,
-                                            char *signatureHash);
+    Table *constructTableFromCatalog(catalog::Database const &catalogDatabase,
+                                     catalog::Table const &catalogTable,
+                                     bool isXDCR,
+                                     int tableAllocationTargetSize = 0,
+                                     /* indicates whether the constructed table should inherit isDRed attributed from
+                                      * the provided catalog table or set isDRed to false forcefully. Currently, only
+                                      * delta tables for joins in materialized views use the second option */
+                                     bool forceNoDR = false);
 
     voltdb::Table *m_table;
     bool m_exportEnabled;
     bool m_materialized;
-    std::string m_signature;
+    const std::string m_signature;
     const int32_t m_compactionThreshold;
     char m_signatureHash[20];
+//    voltdb::VoltDBEngine *m_engine;
 };
 
 }

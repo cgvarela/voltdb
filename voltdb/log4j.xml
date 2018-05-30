@@ -36,6 +36,10 @@
         </layout>
     </appender>
 
+    <logger name="kafka.consumer.SimpleConsumer" additivity="false">
+        <level value="ERROR"/>
+    </logger>
+
     <!-- logger name="AUTH">
         <level value="INFO"/>
     </logger -->
@@ -83,6 +87,10 @@
     <!-- logger name="REJOIN">
         <level value="INFO"/>
     </logger -->
+
+	<!-- logger name="JOIN">
+		<level value="INFO"/>
+	</logger -->
 
     <!-- logger name="SNAPSHOT">
         <level value="INFO"/>

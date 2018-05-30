@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,18 +19,16 @@
 #define TABLESTATS_H_
 
 #include "stats/StatsSource.h"
-#include "common/TupleSchema.h"
-#include "common/ids.h"
-#include "storage/table.h"
-#include <vector>
-#include <string>
 
 namespace voltdb {
+class Table;
+class TableTuple;
+class TempTable;
 
 /**
  * StatsSource extension for tables.
  */
-class TableStats : public voltdb::StatsSource {
+class TableStats : public StatsSource {
 public:
     /**
      * Static method to generate the column names for the tables which
@@ -50,7 +48,7 @@ public:
     /**
      * Return an empty TableStats table
      */
-    static Table* generateEmptyTableStatsTable();
+    static TempTable* generateEmptyTableStatsTable();
 
     /*
      * Constructor caches reference to the table that will be generating the statistics
@@ -61,15 +59,8 @@ public:
      * Configure a StatsSource superclass for a set of statistics. Since this class is only used in the EE it can be assumed that
      * it is part of an Execution Site and that there is a site Id.
      * @parameter name Name of this set of statistics
-     * @parameter hostId id of the host this partition is on
-     * @parameter hostname name of the host this partition is on
-     * @parameter siteId this stat source is associated with
-     * @parameter partitionId this stat source is associated with
-     * @parameter databaseId Database this source is associated with
      */
-    void configure(
-            std::string name,
-            voltdb::CatalogId databaseId);
+    void configure(std::string name);
 
 protected:
 
@@ -98,9 +89,7 @@ private:
     /**
      * Table whose stats are being collected.
      */
-    voltdb::Table * m_table;
-
-    voltdb::NValue m_tableName;
+    voltdb::Table* m_table;
 
     voltdb::NValue m_tableType;
 

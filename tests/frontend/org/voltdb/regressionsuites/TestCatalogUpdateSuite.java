@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -34,16 +34,16 @@ import java.util.HashSet;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import junit.framework.Test;
-
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.zookeeper_voltpatches.CreateMode;
 import org.apache.zookeeper_voltpatches.ZooDefs;
 import org.apache.zookeeper_voltpatches.ZooKeeper;
 import org.voltcore.zk.ZKUtil;
 import org.voltdb.BackendTarget;
+import org.voltdb.ProcedurePartitionData;
 import org.voltdb.TheHashinator;
 import org.voltdb.VoltDB.Configuration;
+import org.voltdb.VoltProcedure;
 import org.voltdb.VoltTable;
 import org.voltdb.VoltType;
 import org.voltdb.VoltZK;
@@ -51,14 +51,20 @@ import org.voltdb.benchmark.tpcc.TPCCProjectBuilder;
 import org.voltdb.benchmark.tpcc.procedures.InsertNewOrder;
 import org.voltdb.client.Client;
 import org.voltdb.client.ClientResponse;
+import org.voltdb.client.NoConnectionsException;
 import org.voltdb.client.ProcCallException;
 import org.voltdb.client.ProcedureCallback;
 import org.voltdb.client.SyncCallback;
-import org.voltdb.compiler.VoltProjectBuilder.RoleInfo;
+import org.voltdb.compiler.VoltCompiler;
+import org.voltdb.compiler.VoltProjectBuilder;
 import org.voltdb.compiler.VoltProjectBuilder.ProcedureInfo;
+import org.voltdb.compiler.VoltProjectBuilder.RoleInfo;
 import org.voltdb.compiler.VoltProjectBuilder.UserInfo;
 import org.voltdb.types.TimestampType;
+import org.voltdb.utils.InMemoryJarfile;
 import org.voltdb.utils.MiscUtils;
+
+import junit.framework.Test;
 
 /**
  * Tests a mix of multi-partition and single partition procedures on a
@@ -71,36 +77,6 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
     static final int SITES_PER_HOST = 2;
     static final int HOSTS = 2;
     static final int K = MiscUtils.isPro() ? 1 : 0;
-
-    // procedures used by these tests
-    static Class<?>[] BASEPROCS = { org.voltdb.benchmark.tpcc.procedures.InsertNewOrder.class,
-                                    org.voltdb.benchmark.tpcc.procedures.SelectAll.class,
-                                    org.voltdb.benchmark.tpcc.procedures.delivery.class };
-
-    static Class<?>[] BASEPROCS_OPROCS =  { org.voltdb.benchmark.tpcc.procedures.InsertNewOrder.class,
-                                            org.voltdb.benchmark.tpcc.procedures.SelectAll.class,
-                                            org.voltdb.benchmark.tpcc.procedures.delivery.class,
-                                            org.voltdb_testprocs.regressionsuites.orderbyprocs.InsertO1.class};
-
-
-    static Class<?>[] EXPANDEDPROCS = { org.voltdb.benchmark.tpcc.procedures.InsertNewOrder.class,
-                                        org.voltdb.benchmark.tpcc.procedures.SelectAll.class,
-                                        org.voltdb.benchmark.tpcc.procedures.delivery.class,
-                                        org.voltdb.benchmark.tpcc.procedures.InsertOrderLineBatched.class };
-
-    static Class<?>[] CONFLICTPROCS = { org.voltdb.catalog.InsertNewOrder.class,
-                                        org.voltdb.benchmark.tpcc.procedures.SelectAll.class,
-                                        org.voltdb.benchmark.tpcc.procedures.delivery.class };
-
-    static Class<?>[] SOMANYPROCS =   { org.voltdb.benchmark.tpcc.procedures.InsertNewOrder.class,
-                                        org.voltdb.benchmark.tpcc.procedures.SelectAll.class,
-                                        org.voltdb.benchmark.tpcc.procedures.neworder.class,
-                                        org.voltdb.benchmark.tpcc.procedures.ostatByCustomerId.class,
-                                        org.voltdb.benchmark.tpcc.procedures.ostatByCustomerName.class,
-                                        org.voltdb.benchmark.tpcc.procedures.paymentByCustomerId.class,
-                                        org.voltdb.benchmark.tpcc.procedures.paymentByCustomerName.class,
-                                        org.voltdb.benchmark.tpcc.procedures.slev.class,
-                                        org.voltdb.benchmark.tpcc.procedures.delivery.class };
 
     // testUpdateHonkingBigCatalog constants and statistics. 100/100/40 makes a ~2MB jar.
     private static final int HUGE_TABLES = 100;
@@ -136,8 +112,9 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         public void clientCallback(ClientResponse clientResponse) {
             m_outstandingCalls.decrementAndGet();
             if (m_expectedStatus != clientResponse.getStatus()) {
-                if (clientResponse.getStatusString() != null)
+                if (clientResponse.getStatusString() != null) {
                     System.err.println(clientResponse.getStatusString());
+                }
                 callbackSuccess = false;
             }
         }
@@ -150,15 +127,14 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         CatTestCallback callback;
 
         loadSomeData(client, 0, 25);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         negativeTests(client);
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // asynchronously call some random inserts
         loadSomeData(client, 25, 25);
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // add a procedure "InsertOrderLineBatched"
         newCatalogURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-expanded.jar");
@@ -178,8 +154,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         cb.waitForResponse();
 
         // make sure the previous catalog change has completed
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // now calling the new proc better work
         x = 2;
@@ -189,6 +164,11 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
                 new double[] {x}, new String[] {"a"});
 
         loadSomeData(client, 50, 5);
+        assertCallbackSuccess(client);
+    }
+
+    private void assertCallbackSuccess(Client client) throws NoConnectionsException, InterruptedException {
+        client.drain();
         assertTrue(callbackSuccess);
     }
 
@@ -322,6 +302,58 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         }
     }
 
+    public void testPauseMode() throws Exception {
+        Client adminClient = getAdminClient();
+        ClientResponse resp = adminClient.callProcedure("@Pause");
+        assertEquals(ClientResponse.SUCCESS, resp.getStatus());
+
+        Client client = getClient();
+        String newCatalogURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-expanded.jar");
+        String deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-expanded.xml");
+        try {
+            client.updateApplicationCatalog(new File(newCatalogURL), new File(deploymentURL));
+            fail("Update catalog with procs from class should fail in PAUSE mode");
+        } catch(ProcCallException e) {
+            assertEquals(ClientResponse.SERVER_UNAVAILABLE, e.getClientResponse().getStatus());
+        }
+
+        newCatalogURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-adhocproc.jar");
+        deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-adhocproc.xml");
+        try {
+            client.updateApplicationCatalog(new File(newCatalogURL), new File(deploymentURL));
+            fail("Update catalog with adhoc procs should fail in PAUSE mode");
+        } catch(ProcCallException e) {
+            assertEquals(ClientResponse.SERVER_UNAVAILABLE, e.getClientResponse().getStatus());
+        }
+
+        newCatalogURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-adhocschema.jar");
+        deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-adhocschema.xml");
+        try {
+            client.updateApplicationCatalog(new File(newCatalogURL), new File(deploymentURL));
+            fail("Update catalog with adhoc schema change should fail in PAUSE mode");
+        } catch(ProcCallException e) {
+            assertEquals(ClientResponse.SERVER_UNAVAILABLE, e.getClientResponse().getStatus());
+        }
+
+        InMemoryJarfile jarfile = new InMemoryJarfile();
+        VoltCompiler comp = new VoltCompiler(false);
+        comp.addClassToJar(jarfile, TestProc.class);
+
+        try {
+            resp = client.callProcedure("@UpdateClasses", jarfile.getFullJarBytes(), null);
+            fail("Update classes should fail in PAUSE mode");
+        } catch(ProcCallException e) {
+            assertEquals(ClientResponse.SERVER_UNAVAILABLE, e.getClientResponse().getStatus());
+        }
+
+        // admin should pass
+        resp = adminClient.updateApplicationCatalog(new File(newCatalogURL), new File(deploymentURL));
+        assertEquals(ClientResponse.SUCCESS, resp.getStatus());
+
+        resp = adminClient.callProcedure("@Resume");
+        assertEquals(ClientResponse.SUCCESS, resp.getStatus());
+    }
+
     public void testUpdate() throws Exception {
         Client client = getClient();
         String newCatalogURL;
@@ -330,15 +362,14 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         CatTestCallback callback;
 
         loadSomeData(client, 0, 25);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         negativeTests(client);
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // asynchronously call some random inserts
         loadSomeData(client, 25, 25);
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // add a procedure "InsertOrderLineBatched"
         newCatalogURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-expanded.jar");
@@ -359,8 +390,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         cb.waitForResponse();
 
         // make sure the previous catalog change has completed
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // now calling the new proc better work
         x = 2;
@@ -370,15 +400,14 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
                 new double[] {x}, new String[] {"a"});
 
         loadSomeData(client, 50, 5);
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // this is a do nothing change... shouldn't affect anything
         newCatalogURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-expanded.jar");
         deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-expanded.xml");
         results = client.updateApplicationCatalog(new File(newCatalogURL), new File(deploymentURL)).getResults();
         assertTrue(results.length == 1);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // now calling the new proc better work
         x = 4;
@@ -406,8 +435,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         cb.waitForResponse();
 
         // make sure the previous catalog change has completed
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // now calling the new proc better fail
         x = 5;
@@ -444,10 +472,11 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         //Check that if a catalog update blocker exists the catalog update fails
         ZooKeeper zk = ZKUtil.getClient(((LocalCluster) m_config).zkinterface(0), 10000, new HashSet<Long>());
         final String catalogUpdateBlockerPath = zk.create(
-                VoltZK.elasticJoinActiveBlocker,
+                VoltZK.rejoinInProgress,
                 null,
                 ZooDefs.Ids.OPEN_ACL_UNSAFE,
-                CreateMode.EPHEMERAL_SEQUENTIAL );
+                CreateMode.EPHEMERAL);
+
         try {
             /*
              * Update the catalog and expect failure
@@ -470,8 +499,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         //Expect success
         client.updateApplicationCatalog(new File(newCatalogURL), new File(deploymentURL));
 
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
         assertTrue(true);
     }
 
@@ -481,8 +509,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         System.out.println("\n\n-----\n testEnabledSecurity \n-----\n\n");
         Client client = getClient();
         loadSomeData(client, 0, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         String newCatalogURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-base-secure.jar");
         String deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-base-secure.xml");
@@ -504,15 +531,19 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         Client client3 = getClient();
         loadSomeData(client3, 50, 10);
         client3.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client3);
 
         // the old client should not work because the user has been removed.
         loadSomeData(client, 100, 10);
-        client.drain();
-        assertFalse(callbackSuccess);
+        assertCallbackFailure(client);
         callbackSuccess = true;
 
         checkDeploymentPropertyValue(client3, "heartbeattimeout", "6000");
+    }
+
+    private void assertCallbackFailure(Client client) throws NoConnectionsException, InterruptedException {
+        client.drain();
+        assertFalse(callbackSuccess);
     }
 
     private void loadSomeData(Client client, int start, int count) throws IOException, ProcCallException {
@@ -533,7 +564,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
             fail();
         }
         catch (Exception e) {
-            assertTrue(e.getMessage().startsWith("Database catalog not found"));
+            assertTrue(e.getMessage().contains("Database catalog not found"));
         }
     }
 
@@ -559,8 +590,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
 
         Client client = getClient();
         loadSomeData(client, 0, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // check that no index was used by checking the plan itself
         callProcedure = client.callProcedure("@Explain", "select * from NEW_ORDER where NO_O_ID = 5;");
@@ -599,8 +629,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
 
         // tables can still be accessed
         loadSomeData(client, 20, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // check table for the right number of tuples
         callProcedure = client.callProcedure("@AdHoc", "select count(*) from NEW_ORDER;");
@@ -632,8 +661,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
 
         // and loading still succeeds
         loadSomeData(client, 30, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
     }
 
     public void testAddDropExpressionIndex() throws Exception
@@ -643,9 +671,6 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         VoltTable result;
 
         Client client = getClient();
-        loadSomeData(client, 0, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
 
         // check that no index was used by checking the plan itself
         callProcedure = client.callProcedure("@Explain", "select * from NEW_ORDER where (NO_O_ID+NO_O_ID)-NO_O_ID = 5;");
@@ -658,8 +683,10 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         VoltTable[] results = client.updateApplicationCatalog(new File(newCatalogURL), new File(deploymentURL)).getResults();
         assertTrue(results.length == 1);
 
-        // check the index for non-zero size
+        loadSomeData(client, 0, 10);
+        assertCallbackSuccess(client);
 
+        // check the index for non-zero size
         long tupleCount = -1;
         while (tupleCount <= 0) {
             tupleCount = indexEntryCountFromStats(client, "NEW_ORDER", "NEWEXPRESSINDEX");
@@ -684,8 +711,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
 
         // tables can still be accessed
         loadSomeData(client, 20, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
 
         // check table for the right number of tuples
@@ -718,16 +744,14 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
 
         // and loading still succeeds
         loadSomeData(client, 30, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
     }
 
     public void testAddDropTable() throws IOException, ProcCallException, InterruptedException
     {
         Client client = getClient();
         loadSomeData(client, 0, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // verify that an insert w/o a table fails.
         try {
@@ -767,8 +791,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
 
         // old tables can still be accessed
         loadSomeData(client, 20, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // and this new procedure is happy like clams
         callProcedure = client.callProcedure("InsertO1", new Integer(100), new Integer(200), "foo", "bar");
@@ -798,15 +821,13 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
 
         // and other requests still succeed
         loadSomeData(client, 30, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
     }
 
     public void testAddTableWithMatView() throws IOException, ProcCallException, InterruptedException {
         Client client = getClient();
         loadSomeData(client, 0, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         // add new tables and materialized view
         String newCatalogURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-addtableswithmatview.jar");
@@ -844,8 +865,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
     public void testAddDropTableRepeat() throws Exception {
         Client client = getClient();
         loadSomeData(client, 0, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         /*
          * Reduced from 100 to 30 so that it doesn't take quite as long
@@ -879,8 +899,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         long t = System.currentTimeMillis();
         Client client = getClient();
         loadSomeData(client, 0, 10);
-        client.drain();
-        assertTrue(callbackSuccess);
+        assertCallbackSuccess(client);
 
         try {
             VoltTable[] results = client.updateApplicationCatalog(new File(hugeCatalogJarPath), new File(hugeCatalogXMLPath)).getResults();
@@ -901,7 +920,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
 
         // check the catalog update with query timeout
         String key = "querytimeout";
-        checkDeploymentPropertyValue(client, key, "0"); // check default value
+        checkDeploymentPropertyValue(client, key, "10000"); // check default value
 
         newCatalogURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-timeout-1000.jar");
         deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-timeout-1000.xml");
@@ -925,7 +944,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         deploymentURL = Configuration.getPathToCatalogForTest("catalogupdate-cluster-base.xml");
         results = client.updateApplicationCatalog(new File(newCatalogURL), new File(deploymentURL)).getResults();
         assertTrue(results.length == 1);
-        checkDeploymentPropertyValue(client, key, "0"); // check default value
+        checkDeploymentPropertyValue(client, key, "10000"); // check default value
 
         // check the catalog update with elastic duration and throughput
         String duration = "elasticduration", throughput = "elasticthroughput";
@@ -978,6 +997,60 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         return URLEncoder.encode(temp.getAbsolutePath(), "UTF-8");
     }
 
+    // procedures used by these tests
+    static Class<?>[] SOMANYPROCS =   { org.voltdb.benchmark.tpcc.procedures.InsertNewOrder.class,
+                                        org.voltdb.benchmark.tpcc.procedures.SelectAll.class,
+                                        org.voltdb.benchmark.tpcc.procedures.neworder.class,
+                                        org.voltdb.benchmark.tpcc.procedures.ostatByCustomerId.class,
+                                        org.voltdb.benchmark.tpcc.procedures.ostatByCustomerName.class,
+                                        org.voltdb.benchmark.tpcc.procedures.paymentByCustomerId.class,
+                                        org.voltdb.benchmark.tpcc.procedures.paymentByCustomerName.class,
+                                        org.voltdb.benchmark.tpcc.procedures.slev.class,
+                                        org.voltdb.benchmark.tpcc.procedures.delivery.class };
+
+    static void addProcedures_BASE(VoltProjectBuilder project) {
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.InsertNewOrder.class,
+                new ProcedurePartitionData("NEW_ORDER", "NO_W_ID", "2"));
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.SelectAll.class);
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.delivery.class,
+                new ProcedurePartitionData("WAREHOUSE", "W_ID"));
+    }
+
+    static void addProcedures_OPROCS(VoltProjectBuilder project) {
+        addProcedures_BASE(project);
+        project.addProcedure(org.voltdb_testprocs.regressionsuites.orderbyprocs.InsertO1.class,
+                new ProcedurePartitionData("O1", "PKEY", "0"));
+    }
+
+    static void addProcedures_EXPANDED(VoltProjectBuilder project) {
+        addProcedures_BASE(project);
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.InsertOrderLineBatched.class,
+                new ProcedurePartitionData("ORDER_LINE", "OL_W_ID", "2"));
+    }
+
+    static void addProcedures_CONFLICT(VoltProjectBuilder project) {
+        project.addProcedure(org.voltdb.catalog.InsertNewOrder.class,
+                new ProcedurePartitionData("HISTORY", "H_W_ID", "4"));
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.SelectAll.class);
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.delivery.class,
+                new ProcedurePartitionData("WAREHOUSE", "W_ID"));
+    }
+
+    static void addProcedures_SOMANY(VoltProjectBuilder project) {
+        addProcedures_BASE(project);
+
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.neworder.class,
+                new ProcedurePartitionData("WAREHOUSE", "W_ID", "0"));
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.ostatByCustomerId.class,
+                new ProcedurePartitionData("WAREHOUSE", "W_ID", "0"));
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.ostatByCustomerName.class,
+                new ProcedurePartitionData("WAREHOUSE", "W_ID", "0"));
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.paymentByCustomerId.class);
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.paymentByCustomerName.class);
+        project.addProcedure(org.voltdb.benchmark.tpcc.procedures.slev.class,
+                new ProcedurePartitionData("WAREHOUSE", "W_ID", "0"));
+    }
+
     /**
      * Build a list of the tests that will be run when TestTPCCSuite gets run by JUnit.
      * Use helper classes that are part of the RegressionSuite framework.
@@ -1008,14 +1081,14 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         TPCCProjectBuilder project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addProcedures_BASE(project);
         // build the jarfile
         boolean basecompile = config.compile(project);
         assertTrue(basecompile);
         MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-base.xml"));
 
         // add this config to the set of tests to run
-        builder.addServerConfig(config);
+        builder.addServerConfig(config, false);
 
         /////////////////////////////////////////////////////////////
         // DELTA CATALOGS FOR TESTING
@@ -1025,7 +1098,8 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         // We piggy-back the heartbeat change here.
         RoleInfo groups[] = new RoleInfo[] {new RoleInfo("group1", false, false, true, false, false, false)};
         UserInfo users[] = new UserInfo[] {new UserInfo("user1", "userpass1", new String[] {"group1"})};
-        ProcedureInfo procInfo = new ProcedureInfo(new String[] {"group1"}, InsertNewOrder.class);
+        ProcedureInfo procInfo = new ProcedureInfo(InsertNewOrder.class,
+                new ProcedurePartitionData("NEW_ORDER", "NO_W_ID", "2"), new String[] {"group1"});
 
         config = new LocalCluster("catalogupdate-cluster-base-secure.jar", SITES_PER_HOST, HOSTS, K, BackendTarget.NATIVE_EE_JNI);
         project = new TPCCProjectBuilder();
@@ -1046,7 +1120,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         project.addDefaultSchema();
         project.addSchema(TestCatalogUpdateSuite.class.getResource("testorderby-ddl.sql").getPath());
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS_OPROCS);
+        addProcedures_OPROCS(project);
         project.setElasticDuration(100);
         project.setElasticThroughput(50);
         compile = config.compile(project);
@@ -1061,7 +1135,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
             project.addSchema(TestCatalogUpdateSuite.class.getResource("testorderby-ddl.sql").getPath());
             project.addLiteralSchema("CREATE VIEW MATVIEW_O1(C1, C2, NUM) AS SELECT A_INT, PKEY, COUNT(*) FROM O1 GROUP BY A_INT, PKEY;");
             project.addDefaultPartitioning();
-            project.addProcedures(BASEPROCS_OPROCS);
+            addProcedures_OPROCS(project);
             compile = config.compile(project);
             assertTrue(compile);
             MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-addtableswithmatview.xml"));
@@ -1079,7 +1153,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         project.addLiteralSchema("CREATE UNIQUE INDEX NEWINDEX3 ON STOCK (S_I_ID, S_W_ID, S_QUANTITY);");
 
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addProcedures_BASE(project);
         compile = config.compile(project);
         assertTrue(compile);
         MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-addindex.xml"));
@@ -1096,7 +1170,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         //TODO: project.addLiteralSchema("CREATE UNIQUE INDEX NEWEXPRESSINDEX3 ON STOCK (S_I_ID, S_W_ID, S_QUANTITY+S_QUANTITY-S_QUANTITY);");
 
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addProcedures_BASE(project);
         compile = config.compile(project);
         assertTrue(compile);
         MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-addexpressindex.xml"));
@@ -1106,17 +1180,35 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(EXPANDEDPROCS);
+        addProcedures_EXPANDED(project);
         compile = config.compile(project);
         assertTrue(compile);
         MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-expanded.xml"));
+
+        config = new LocalCluster("catalogupdate-cluster-adhocproc.jar", SITES_PER_HOST, HOSTS, K, BackendTarget.NATIVE_EE_JNI);
+        project = new TPCCProjectBuilder();
+        project.addDefaultSchema();
+        project.addDefaultPartitioning();
+        project.addStmtProcedure("adhocproc1", "SELECT * from WAREHOUSE");
+        compile = config.compile(project);
+        assertTrue(compile);
+        MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-adhocproc.xml"));
+
+        config = new LocalCluster("catalogupdate-cluster-adhocschema.jar", SITES_PER_HOST, HOSTS, K, BackendTarget.NATIVE_EE_JNI);
+        project = new TPCCProjectBuilder();
+        project.addDefaultSchema();
+        project.addDefaultPartitioning();
+        project.addLiteralSchema("CREATE TABLE CATALOG_MODE_DDL_TEST (fld1 INTEGER NOT NULL);");
+        compile = config.compile(project);
+        assertTrue(compile);
+        MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-adhocschema.xml"));
 
         //config = new LocalSingleProcessServer("catalogupdate-local-conflict.jar", 2, BackendTarget.NATIVE_EE_JNI);
         config = new LocalCluster("catalogupdate-cluster-conflict.jar", SITES_PER_HOST, HOSTS, K, BackendTarget.NATIVE_EE_JNI);
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(CONFLICTPROCS);
+        addProcedures_CONFLICT(project);
         compile = config.compile(project);
         assertTrue(compile);
         MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-conflict.xml"));
@@ -1126,7 +1218,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(SOMANYPROCS);
+        addProcedures_SOMANY(project);
         compile = config.compile(project);
         assertTrue(compile);
         MiscUtils.copyFile(project.getPathToDeployment(), Configuration.getPathToCatalogForTest("catalogupdate-cluster-many.xml"));
@@ -1137,7 +1229,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addProcedures_BASE(project);
         project.setSnapshotSettings( "1s", 3, "/tmp/snapshotdir1", "foo1");
         // build the jarfile
         compile = config.compile(project);
@@ -1149,7 +1241,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addProcedures_BASE(project);
         project.setSnapshotSettings( "1s", 3, "/tmp/snapshotdir2", "foo2");
         // build the jarfile
         compile = config.compile(project);
@@ -1161,7 +1253,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addProcedures_BASE(project);
         project.setSnapshotSettings( "1s", 3, "/tmp/snapshotdirasda2", "foo2");
         // build the jarfile
         compile = config.compile(project);
@@ -1177,7 +1269,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         project.addDefaultSchema();
         project.addDefaultPartitioning();
         project.addSchema(hugeSchemaURL);
-        project.addProcedures(BASEPROCS);
+        addProcedures_BASE(project);
         compile = config.compile(project);
         assertTrue(compile);
         hugeCompileElapsed = (System.currentTimeMillis() - t) / 1000.0;
@@ -1189,7 +1281,7 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
         project = new TPCCProjectBuilder();
         project.addDefaultSchema();
         project.addDefaultPartitioning();
-        project.addProcedures(BASEPROCS);
+        addProcedures_BASE(project);
         project.setSnapshotSettings( "1s", 3, "/tmp/snapshotdirasda2", "foo2");
         // build the jarfile
         compile = config.compile(project);
@@ -1246,5 +1338,14 @@ public class TestCatalogUpdateSuite extends RegressionSuite {
     public void setUp() throws Exception {
         super.setUp();
         callbackSuccess = true;
+    }
+
+    public class TestProc extends VoltProcedure {
+
+        public long run()
+        {
+            // do nothing
+            return 0;
+        }
     }
 }

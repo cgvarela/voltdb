@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,19 +20,21 @@ package org.voltdb;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.google_voltpatches.common.base.*;
-import com.google_voltpatches.common.collect.MapMaker;
 import org.apache.hadoop_voltpatches.util.PureJavaCrc32C;
 import org.voltcore.logging.VoltLogger;
 import org.voltcore.utils.Pair;
 import org.voltdb.dtxn.UndoAction;
 import org.voltdb.sysprocs.saverestore.HashinatorSnapshotData;
+
+import com.google_voltpatches.common.base.Supplier;
+import com.google_voltpatches.common.base.Suppliers;
+import com.google_voltpatches.common.base.Throwables;
+import com.google_voltpatches.common.collect.MapMaker;
 
 /**
  * Class that maps object values to partitions. It's rather simple
@@ -40,28 +42,11 @@ import org.voltdb.sysprocs.saverestore.HashinatorSnapshotData;
  */
 public abstract class TheHashinator {
 
-    public static enum HashinatorType {
-        LEGACY(0, LegacyHashinator.class)
-        , ELASTIC(1, ElasticHashinator.class);
-
-        public final int typeId;
-        public final Class<? extends TheHashinator> hashinatorClass;
-        private HashinatorType(int typeId, Class<? extends TheHashinator> hashinatorClass) {
-            this.typeId = typeId;
-            this.hashinatorClass = hashinatorClass;
-        }
-        public int typeId() {
-            return typeId;
-        }
-    };
-
     public static class HashinatorConfig {
-        public final HashinatorType type;
         public final byte configBytes[];
         public final long configPtr;
         public final int numTokens;
-        public HashinatorConfig(HashinatorType type, byte configBytes[], long configPtr, int numTokens) {
-            this.type = type;
+        public HashinatorConfig(byte configBytes[], long configPtr, int numTokens) {
             this.configBytes = configBytes;
             this.configPtr = configPtr;
             this.numTokens = numTokens;
@@ -73,6 +58,21 @@ public abstract class TheHashinator {
      * @return configuration data bytes
      */
     public abstract byte[] getConfigBytes();
+
+    /**
+     * Uncompressed configuration data accessor in JSONString.
+     * @return configuration data JSONString
+     */
+    public abstract String getConfigJSON();
+
+    /**
+     * Compressed configuration data accessor in JSONString.
+     * Default to providing raw bytes, e.g. for legacy
+     * @return configuration data in Compressed JSONString
+     */
+    public byte[] getConfigJSONCompressed(){
+        return getConfigBytes();
+    }
 
     /**
      * A map to store hashinators, including older versions of hashinators.
@@ -102,18 +102,24 @@ public abstract class TheHashinator {
     private static final AtomicReference<Pair<Long, ? extends TheHashinator>> instance =
             new AtomicReference<Pair<Long, ? extends TheHashinator>>();
 
+    // Set true once the current Hashinator does not match m_pristineHashinator
+    private static boolean m_elasticallyModified = false;
+    // The initial Hashinator based strictly on the initial cluster partition count
+    protected static TheHashinator m_pristineHashinator;
+
     /**
      * Initialize TheHashinator with the specified implementation class and configuration.
      * The starting version number will be 0.
      */
     public static void initialize(Class<? extends TheHashinator> hashinatorImplementation, byte config[]) {
         TheHashinator hashinator = constructHashinator( hashinatorImplementation, config, false);
+        m_pristineHashinator = hashinator;
         m_cachedHashinators.put(0L, hashinator);
         instance.set(Pair.of(0L, hashinator));
     }
 
     /**
-     * Get TheHashinator instanced based on knwon implementation and configuration.
+     * Get TheHashinator instanced based on known implementation and configuration.
      * Used by client after asking server what it is running.
      *
      * @param hashinatorImplementation
@@ -162,9 +168,21 @@ public abstract class TheHashinator {
     abstract public Map<Integer, Integer> pPredecessors(int partition);
     abstract public Pair<Integer, Integer> pPredecessor(int partition, int token);
     abstract public Map<Integer, Integer> pGetRanges(int partition);
-    public abstract HashinatorType getConfigurationType();
-    abstract public int pHashToPartition(VoltType type, Object obj);
+    // This method is only called within this class,
+    // {@see getHashedPartitionForParameter}
+    // but it must be declared protected to allow the required overriding.
+    abstract protected int pHashToPartition(VoltType type, Object obj);
     abstract protected Set<Integer> pGetPartitions();
+    abstract protected boolean pIsPristine();
+    abstract public int getPartitionFromHashedToken(int hashedToken);
+
+    static public void resetElasticallyModifiedForTest() {
+        m_elasticallyModified = false;
+    }
+
+    static public int getPartitionFromToken(int hashedToken) {
+        return instance.get().getSecond().getPartitionFromHashedToken(hashedToken);
+    }
 
     /**
      * Returns the configuration signature
@@ -198,83 +216,6 @@ public abstract class TheHashinator {
             return 0;
         } else {
             return pHashinateBytes(bytes);
-        }
-    }
-
-    /**
-     * Given an object, map it to a partition. DON'T EVER MAKE ME PUBLIC
-     */
-    private static int hashToPartition(TheHashinator hashinator, VoltType type, Object obj) {
-        return hashinator.pHashToPartition(type, obj);
-
-    }
-
-    /**
-     * Converts the object into bytes for hashing.
-     * @param obj
-     * @return null if the obj is null or is a Volt null type.
-     */
-    public static byte[] valueToBytes(Object obj) {
-        long value = 0;
-        byte[] retval = null;
-
-        if (VoltType.isNullVoltType(obj)) {
-            return null;
-        } else if (obj instanceof Long) {
-            value = ((Long) obj).longValue();
-        } else if (obj instanceof String ) {
-            retval = ((String) obj).getBytes(Charsets.UTF_8);
-        } else if (obj instanceof Integer) {
-            value = ((Integer)obj).intValue();
-        } else if (obj instanceof Short) {
-            value = ((Short)obj).shortValue();
-        } else if (obj instanceof Byte) {
-            value = ((Byte)obj).byteValue();
-        } else if (obj instanceof byte[]) {
-            retval = (byte[]) obj;
-        }
-
-        if (retval == null) {
-            ByteBuffer buf = ByteBuffer.allocate(8);
-            buf.order(ByteOrder.LITTLE_ENDIAN);
-            buf.putLong(value);
-            retval = buf.array();
-        }
-
-        return retval;
-    }
-
-    /**
-     * Converts a byte array with type back to the original partition value.
-     * This is the inverse of {@see TheHashinator#valueToBytes(Object)}.
-     * @param type VoltType of partition parameter.
-     * @param value Byte array representation of partition parameter.
-     * @return Java object of the correct type.
-     */
-    protected static Object bytesToValue(VoltType type, byte[] value) {
-        if ((type == VoltType.NULL) || (value == null)) {
-            return null;
-        }
-
-        ByteBuffer buf = ByteBuffer.wrap(value);
-        buf.order(ByteOrder.LITTLE_ENDIAN);
-
-        switch (type) {
-        case BIGINT:
-            return buf.getLong();
-        case STRING:
-            return new String(value, Charsets.UTF_8);
-        case INTEGER:
-            return buf.getInt();
-        case SMALLINT:
-            return buf.getShort();
-        case TINYINT:
-            return buf.get();
-        case VARBINARY:
-            return value;
-        default:
-            throw new RuntimeException(
-                    "TheHashinator#bytesToValue failed to convert a non-partitionable type.");
         }
     }
 
@@ -342,24 +283,25 @@ public abstract class TheHashinator {
         // requiring the loader to know precise the schema.
         // 2) For legacy hashinators, if we have a numeric column but the param is in a byte
         // array, convert the byte array back to the numeric value
-        if (partitionValue != null && partitionParamType.isPartitionableNumber()) {
+        if (partitionValue != null && partitionParamType.isAnyIntegerType()) {
             if (partitionValue.getClass() == String.class) {
-                {
-                    Object tempParam = ParameterConverter.stringToLong(
-                            partitionValue,
-                            partitionParamType.classFromType());
-                    // Just in case someone managed to feed us a non integer
-                    if (tempParam != null) {
-                        partitionValue = tempParam;
-                    }
+                try {
+                    partitionValue = Long.parseLong((String) partitionValue);
+                }
+                catch (NumberFormatException nfe) {
+                    throw new VoltTypeException(
+                            "getHashedPartitionForParameter: Unable to convert string " +
+                                    ((String) partitionValue) + " to "  +
+                                    partitionParamType.getMostCompatibleJavaTypeName() +
+                                    " target parameter ");
                 }
             }
             else if (partitionValue.getClass() == byte[].class) {
-                partitionValue = bytesToValue(partitionParamType, (byte[]) partitionValue);
+                partitionValue = partitionParamType.bytesToValue((byte[]) partitionValue);
             }
         }
 
-        return hashToPartition(this, partitionParamType, partitionValue);
+        return pHashToPartition(partitionParamType, partitionValue);
     }
 
     /**
@@ -393,6 +335,16 @@ public abstract class TheHashinator {
                 final Pair<Long, ? extends TheHashinator> update =
                         Pair.of(version, existingHashinator);
                 if (instance.compareAndSet(snapshot, update)) {
+                    if (!m_elasticallyModified) {
+                        if (!update.getSecond().pIsPristine()) {
+                            // This is not a lock protected (atomic) but it should be fine because
+                            // release() should only be called by the one thread that successfully
+                            // updated the hashinator
+                            hostLogger.debug("The Hashinator has been elastically modified.");
+                            m_elasticallyModified = true;
+                        }
+                    }
+                    // Note: Only undo is ever called and only from a failure in @BalancePartitions
                     return Pair.of(new UndoAction() {
                         @Override
                         public void release() {}
@@ -420,69 +372,15 @@ public abstract class TheHashinator {
         }
     }
 
-    /**
-     * By default returns LegacyHashinator.class, but for development another hashinator
-     * can be specified using the environment variable HASHINATOR
-     */
     public static Class<? extends TheHashinator> getConfiguredHashinatorClass() {
-        HashinatorType type = getConfiguredHashinatorType();
-        switch (type) {
-        case LEGACY:
-            return LegacyHashinator.class;
-        case ELASTIC:
-            return ElasticHashinator.class;
-        }
-        throw new RuntimeException("Should not reach here");
-    }
-
-    private static volatile HashinatorType configuredHashinatorType = null;
-
-    /**
-     * By default returns HashinatorType.LEGACY, but for development another hashinator
-     * can be specified using the environment variable or the Java property HASHINATOR
-     */
-    public static HashinatorType getConfiguredHashinatorType() {
-        if (configuredHashinatorType != null) {
-            return configuredHashinatorType;
-        }
-        String hashinatorType = System.getenv("HASHINATOR");
-        if (hashinatorType == null) {
-            hashinatorType = System.getProperty("HASHINATOR", HashinatorType.ELASTIC.name());
-        }
-        if (hostLogger.isDebugEnabled()) {
-            hostLogger.debug("Overriding hashinator to use " + hashinatorType);
-        }
-        configuredHashinatorType = HashinatorType.valueOf(hashinatorType.trim().toUpperCase());
-        return configuredHashinatorType;
+        return ElasticHashinator.class;
     }
 
     /**
-     * This is only called by server client should never call this.
-     *
-     * @param type
-     */
-    public static void setConfiguredHashinatorType(HashinatorType type) {
-        if (System.getenv("HASHINATOR") == null && System.getProperty("HASHINATOR") == null) {
-            configuredHashinatorType = type;
-        } else {
-            hostLogger.info("Ignoring manually specified hashinator type " + type +
-                            " in favor of environment/property type " + getConfiguredHashinatorType());
-        }
-    }
-
-    /**
-     * Get a basic configuration for the currently selected hashinator type based
-     * on the current partition count. If Elastic is in play
+     * Get a basic configuration for the current hashinator
      */
     public static byte[] getConfigureBytes(int partitionCount) {
-        HashinatorType type = getConfiguredHashinatorType();
-        switch (type) {
-        case LEGACY:
-            return LegacyHashinator.getConfigureBytes(partitionCount);
-        case ELASTIC:
-            return ElasticHashinator.getConfigureBytes(partitionCount, ElasticHashinator.DEFAULT_TOTAL_TOKENS);
-        }
-        throw new RuntimeException("Should not reach here");
+        return ElasticHashinator.getConfigureBytes(partitionCount, ElasticHashinator.DEFAULT_TOTAL_TOKENS);
     }
 
     public static HashinatorConfig getCurrentConfig() {
@@ -520,18 +418,9 @@ public abstract class TheHashinator {
     public static HashinatorSnapshotData serializeConfiguredHashinator()
             throws IOException
     {
-        HashinatorSnapshotData hashData = null;
         Pair<Long, ? extends TheHashinator> currentInstance = instance.get();
-        switch (getConfiguredHashinatorType()) {
-          case LEGACY:
-            break;
-          case ELASTIC: {
-            byte[] cookedData = currentInstance.getSecond().getCookedBytes();
-            hashData = new HashinatorSnapshotData(cookedData, currentInstance.getFirst());
-            break;
-          }
-        }
-        return hashData;
+        byte[] cookedData = currentInstance.getSecond().getCookedBytes();
+        return new HashinatorSnapshotData(cookedData, currentInstance.getFirst());
     }
 
     /**
@@ -566,9 +455,9 @@ public abstract class TheHashinator {
     public static final String CNAME_PARTITION_KEY = "PARTITION_KEY";
 
     private Supplier<VoltTable> getSupplierForType(final VoltType type) {
-        return new Supplier() {
+        return new Supplier<VoltTable>() {
             @Override
-            public Object get() {
+            public VoltTable get() {
                 VoltTable vt = new VoltTable(new VoltTable.ColumnInfo[] {
                         new VoltTable.ColumnInfo(
                                 VoltSystemProcedure.CNAME_PARTITION_ID,
@@ -600,25 +489,49 @@ public abstract class TheHashinator {
     private final Supplier<VoltTable> m_varbinaryPartitionKeys = Suppliers.memoize(getSupplierForType(VoltType.VARBINARY));
 
     /**
-     * Get a VoltTable containing the partition keys for each partition that can be found.
+     * Get a VoltTable containing the partition keys for each partition that can be found for the current hashinator.
      * May be missing some partitions during elastic rebalance when the partitions don't own
      * enough of the ring to be probed
      *
      * If the type is not supported returns null
-     * @param type
-     * @return
+     * @param type key type
+     * @return a VoltTable containing the partition keys
      */
     public static VoltTable getPartitionKeys(VoltType type) {
-        TheHashinator hashinator = instance.get().getSecond();
+        return getPartitionKeys(instance.get().getSecond(), type);
+    }
+
+    /**
+     * Get a VoltTable containing the partition keys for each partition that can be found for the given hashinator.
+     * May be missing some partitions during elastic rebalance when the partitions don't own
+     * enough of the ring to be probed
+     *
+     * If the type is not supported returns null
+     * @param hashinator a particular hashinator to get partition keys
+     * @param type key type
+     * @return a VoltTable containing the partition keys
+     */
+    public static VoltTable getPartitionKeys(TheHashinator hashinator, VoltType type) {
+        // get partitionKeys response table so we can copy it
+        final VoltTable partitionKeys;
+
         switch (type) {
             case INTEGER:
-                return hashinator.m_integerPartitionKeys.get();
+                partitionKeys = hashinator.m_integerPartitionKeys.get();
+                break;
             case STRING:
-                return hashinator.m_stringPartitionKeys.get();
+                partitionKeys = hashinator.m_stringPartitionKeys.get();
+                break;
             case VARBINARY:
-                return hashinator.m_varbinaryPartitionKeys.get();
+                partitionKeys = hashinator.m_varbinaryPartitionKeys.get();
+                break;
             default:
                 return null;
         }
+
+        // return a clone because if the table is used at all in the voltdb process,
+        // (like by an NT procedure),
+        // you can corrupt the various offsets and positions in the underlying buffer
+        return partitionKeys.semiDeepCopy();
     }
 }

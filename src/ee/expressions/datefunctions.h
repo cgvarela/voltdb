@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -15,48 +15,83 @@
  * along with VoltDB.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "boost/date_time/gregorian/greg_date.hpp"
-#include "boost/date_time/posix_time/posix_time_types.hpp"
-#include "boost/date_time/posix_time/posix_time_duration.hpp"
-#include "boost/date_time/posix_time/ptime.hpp"
-#include "boost/date_time/posix_time/conversion.hpp"
+#ifndef SRC_EE_EXPRESSIONS_DATEFUNCTIONS_H
+#define SRC_EE_EXPRESSIONS_DATEFUNCTIONS_H
+
 #include <ctime>
 #include "common/SQLException.h"
 #include "common/executorcontext.hpp"
 #include "common/NValue.hpp"
+#include "expressions/dateconstants.h"
 
-static const boost::posix_time::ptime EPOCH(boost::gregorian::date(1970,1,1));
-static const int64_t GREGORIAN_EPOCH = -12212553600000000;  // 1583-01-01 00:00:00
 static const int8_t QUARTER_START_MONTH_BY_MONTH[] = {
         /*[0] not used*/-1,  1, 1, 1,  4, 4, 4,  7, 7, 7,  10, 10, 10 };
 
+static const int64_t PTIME_MAX_YEARS = 10000;
+static const int64_t PTIME_MIN_YEARS = boost::gregorian::date(boost::gregorian::min_date_time).year();
+static const int64_t PTIME_MAX_YEAR_INTERVAL = PTIME_MAX_YEARS - PTIME_MIN_YEARS;
+static const int64_t PTIME_MIN_YEAR_INTERVAL = -PTIME_MAX_YEAR_INTERVAL;
+static const int64_t PTIME_MAX_QUARTER_INTERVAL = PTIME_MAX_YEAR_INTERVAL * 4;
+static const int64_t PTIME_MIN_QUARTER_INTERVAL = -PTIME_MAX_QUARTER_INTERVAL;
+static const int64_t PTIME_MAX_MONTH_INTERVAL = PTIME_MAX_YEAR_INTERVAL * 12;
+static const int64_t PTIME_MIN_MONTH_INTERVAL = -PTIME_MAX_MONTH_INTERVAL;
+static const int64_t PTIME_MAX_DAY_INTERVAL =  PTIME_MAX_YEAR_INTERVAL * 365 + (PTIME_MAX_YEARS / 4);
+static const int64_t PTIME_MIN_DAY_INTERVAL = -PTIME_MAX_DAY_INTERVAL;
+static const int64_t PTIME_MAX_HOUR_INTERVAL = PTIME_MAX_DAY_INTERVAL * 24;
+static const int64_t PTIME_MIN_HOUR_INTERVAL = -PTIME_MAX_HOUR_INTERVAL;
+static const int64_t PTIME_MAX_MINUTE_INTERVAL = PTIME_MAX_HOUR_INTERVAL * 60;
+static const int64_t PTIME_MIN_MINUTE_INTERVAL = -PTIME_MAX_MINUTE_INTERVAL;
+static const int64_t PTIME_MAX_SECOND_INTERVAL = PTIME_MAX_MINUTE_INTERVAL * 60;
+static const int64_t PTIME_MIN_SECOND_INTERVAL =  -PTIME_MAX_SECOND_INTERVAL;
+static const int64_t PTIME_MAX_MILLISECOND_INTERVAL = PTIME_MAX_SECOND_INTERVAL * 1000;
+static const int64_t PTIME_MIN_MILLISECOND_INTERVAL = -PTIME_MAX_MILLISECOND_INTERVAL;
+static const int64_t PTIME_MAX_MICROSECOND_INTERVAL = PTIME_MAX_MILLISECOND_INTERVAL * 1000;
+static const int64_t PTIME_MIN_MICROSECOND_INTERVAL = -PTIME_MAX_MICROSECOND_INTERVAL;
+
+static inline bool epochMicrosOutOfRange(int64_t epochMicros) {
+    return (epochMicros < GREGORIAN_EPOCH || epochMicros > NYE9999);
+}
+
+static inline void throwOutOfRangeTimestampInput(const std::string& func) {
+    std::ostringstream oss;
+
+    oss << "Input to SQL function " << func << " is outside of the supported range (years 1583 to 9999, inclusive).";
+
+    throw voltdb::SQLException(voltdb::SQLException::data_exception_numeric_value_out_of_range,
+                               oss.str().c_str());
+}
+
+static inline void throwOutOfRangeTimestampOutput(const std::string& func) {
+    std::ostringstream oss;
+
+    oss << "SQL function " << func << " would produce a value outside of the supported range (years 1583 to 9999, inclusive).";
+
+    throw voltdb::SQLException(voltdb::SQLException::data_exception_numeric_value_out_of_range,
+                               oss.str().c_str());
+}
+
+
+
 /** Convert from epoch_micros to date **/
 static inline void micros_to_date(int64_t epoch_micros_in, boost::gregorian::date& date_out) {
-    if (epoch_micros_in < GREGORIAN_EPOCH) {
-        throw voltdb::SQLException(voltdb::SQLException::data_exception_numeric_value_out_of_range,
-                "Value out of range. Cannot convert dates prior to the year 1583");
-    }
     boost::posix_time::ptime input_ptime = EPOCH + boost::posix_time::microseconds(epoch_micros_in);
     date_out = input_ptime.date();
 }
 
 /** Convert from epoch_micros to time **/
 static inline void micros_to_time(int64_t epoch_micros_in, boost::posix_time::time_duration& time_out) {
-    if (epoch_micros_in < GREGORIAN_EPOCH) {
-        throw voltdb::SQLException(voltdb::SQLException::data_exception_numeric_value_out_of_range,
-                "Value out of range. Cannot convert dates prior to the year 1583");
-    }
     boost::posix_time::ptime input_ptime = EPOCH + boost::posix_time::microseconds(epoch_micros_in);
     time_out = input_ptime.time_of_day();
 }
 
+/** Convert from epoch_micros to ptime **/
+static inline void micros_to_ptime(int64_t epoch_micros_in, boost::posix_time::ptime& ptime_out) {
+    ptime_out = EPOCH + boost::posix_time::microseconds(epoch_micros_in);
+}
+
 /** Convert from epoch_micros to date and time **/
 static inline void micros_to_date_and_time(int64_t epoch_micros_in, boost::gregorian::date& date_out,
-        boost::posix_time::time_duration& time_out) {
-    if (epoch_micros_in < GREGORIAN_EPOCH) {
-        throw voltdb::SQLException(voltdb::SQLException::data_exception_numeric_value_out_of_range,
-                "Value out of range. Cannot convert dates prior to the year 1583");
-    }
+                                           boost::posix_time::time_duration& time_out) {
     boost::posix_time::ptime input_ptime = EPOCH + boost::posix_time::microseconds(epoch_micros_in);
     date_out = input_ptime.date();
     time_out = input_ptime.time_of_day();
@@ -74,6 +109,19 @@ static inline int64_t epoch_microseconds_from_components(unsigned short int year
     return epoch_seconds * 1000000;
 }
 
+static inline int64_t addMonths(int64_t epoch_micros, int64_t months) {
+    boost::posix_time::ptime ts;
+    micros_to_ptime(epoch_micros, ts);
+
+    try {
+        ts += boost::gregorian::months(static_cast<int>(months));
+    } catch (std::out_of_range &e) {
+        throw voltdb::SQLException(voltdb::SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+    boost::posix_time::time_duration td = ts - EPOCH;
+    return td.total_microseconds();
+}
+
 namespace voltdb {
 
 // REFER JAVA class: UniqueIdGenerator.
@@ -82,14 +130,22 @@ namespace voltdb {
 
 static const long COUNTER_BITS = 9;
 static const long PARTITIONID_BITS = 14;
-static const int64_t VOLT_EPOCH = epoch_microseconds_from_components(2008);
 
 /** implement the timestamp YEAR extract function **/
 template<> inline NValue NValue::callUnary<FUNC_EXTRACT_YEAR>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("YEAR");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     return getIntegerValue(as_date.year());
@@ -100,7 +156,16 @@ template<> inline NValue NValue::callUnary<FUNC_EXTRACT_MONTH>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("MONTH");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     return getTinyIntValue((int8_t)as_date.month());
@@ -111,7 +176,16 @@ template<> inline NValue NValue::callUnary<FUNC_EXTRACT_DAY>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("DAY");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     return getTinyIntValue((int8_t)as_date.day());
@@ -122,7 +196,16 @@ template<> inline NValue NValue::callUnary<FUNC_EXTRACT_DAY_OF_WEEK>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("DAY_OF_WEEK");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     return getTinyIntValue((int8_t)(as_date.day_of_week() + 1)); // Have 0-based, want 1-based.
@@ -135,7 +218,16 @@ template<> inline NValue NValue::callUnary<FUNC_EXTRACT_WEEKDAY>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("WEEKDAY");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     return getTinyIntValue((int8_t)((as_date.day_of_week() + 6) % 7));
@@ -146,7 +238,16 @@ template<> inline NValue NValue::callUnary<FUNC_EXTRACT_WEEK_OF_YEAR>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("WEEK_OF_YEAR");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     return getTinyIntValue((int8_t)as_date.week_number());
@@ -157,7 +258,16 @@ template<> inline NValue NValue::callUnary<FUNC_EXTRACT_DAY_OF_YEAR>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("DAY_OF_YEAR");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     return getSmallIntValue((int16_t)as_date.day_of_year());
@@ -168,7 +278,16 @@ template<> inline NValue NValue::callUnary<FUNC_EXTRACT_QUARTER>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("QUARTER");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     return getTinyIntValue((int8_t)((as_date.month() + 2) / 3));
@@ -179,7 +298,16 @@ template<> inline NValue NValue::callUnary<FUNC_EXTRACT_HOUR>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("HOUR");
+    }
+
     boost::posix_time::time_duration as_time;
     micros_to_time(epoch_micros, as_time);
     return getTinyIntValue((int8_t)as_time.hours());
@@ -190,7 +318,16 @@ template<> inline NValue NValue::callUnary<FUNC_EXTRACT_MINUTE>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("MINUTE");
+    }
+
     boost::posix_time::time_duration as_time;
     micros_to_time(epoch_micros, as_time);
     return getTinyIntValue((int8_t)as_time.minutes());
@@ -201,7 +338,16 @@ template<> inline NValue NValue::callUnary<FUNC_EXTRACT_SECOND>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("SECOND");
+    }
+
     boost::posix_time::time_duration as_time;
     micros_to_time(epoch_micros, as_time);
     int second = as_time.seconds();
@@ -221,7 +367,16 @@ template<> inline NValue NValue::callUnary<FUNC_SINCE_EPOCH_SECOND>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("SINCE_EPOCH");
+    }
+
     int64_t epoch_seconds = epoch_micros / 1000000;
     return getBigIntValue(epoch_seconds);
 }
@@ -231,7 +386,16 @@ template<> inline NValue NValue::callUnary<FUNC_SINCE_EPOCH_MILLISECOND>() const
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("SINCE_EPOCH");
+    }
+
     int64_t epoch_milliseconds = epoch_micros / 1000;
     return getBigIntValue(epoch_milliseconds);
 }
@@ -241,27 +405,64 @@ template<> inline NValue NValue::callUnary<FUNC_SINCE_EPOCH_MICROSECOND>() const
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("SINCE_EPOCH");
+    }
+
     return getBigIntValue(epoch_micros);
 }
 
 /** implement the timestamp TO_TIMESTAMP from SECONDs function **/
 template<> inline NValue NValue::callUnary<FUNC_TO_TIMESTAMP_SECOND>() const {
+    static const int64_t MAX_SECONDS = std::numeric_limits<int64_t>::max() / 1000000;
+
     if (isNull()) {
         return *this;
     }
+
     int64_t seconds = castAsBigIntAndGetValue();
+    if (seconds > MAX_SECONDS || seconds < -MAX_SECONDS) {
+        // This would overflow the valid range of the 64-bit int storage, so decline to
+        // produce a result from this undefined behavior
+        std::string message = "Input to TO_TIMESTAMP would overflow TIMESTAMP data type";
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, message);
+    }
+
     int64_t epoch_micros = seconds * 1000000;
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampOutput("TO_TIMESTAMP");
+    }
+
     return getTimestampValue(epoch_micros);
 }
 
 /** implement the timestamp TO_TIMESTAMP from MILLISECONDs function **/
 template<> inline NValue NValue::callUnary<FUNC_TO_TIMESTAMP_MILLISECOND>() const {
+    static const int64_t MAX_MILLIS = std::numeric_limits<int64_t>::max() / 1000;
+
     if (isNull()) {
         return *this;
     }
+
     int64_t millis = castAsBigIntAndGetValue();
+    if (millis > MAX_MILLIS || millis < -MAX_MILLIS) {
+        // This would overflow the valid range of the 64-bit int storage, so decline to
+        // produce a result from this undefined behavior
+        std::string message = "Input to TO_TIMESTAMP would overflow TIMESTAMP data type";
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, message.c_str());
+    }
+
     int64_t epoch_micros = millis * 1000;
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampOutput("TO_TIMESTAMP");
+    }
+
     return getTimestampValue(epoch_micros);
 }
 
@@ -270,7 +471,12 @@ template<> inline NValue NValue::callUnary<FUNC_TO_TIMESTAMP_MICROSECOND>() cons
     if (isNull()) {
         return *this;
     }
+
     int64_t epoch_micros = castAsBigIntAndGetValue();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampOutput("TO_TIMESTAMP");
+    }
+
     return getTimestampValue(epoch_micros);
 }
 
@@ -279,7 +485,16 @@ template<> inline NValue NValue::callUnary<FUNC_TRUNCATE_YEAR>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("TRUNCATE");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     int64_t truncate_epoch_micros = epoch_microseconds_from_components(as_date.year());
@@ -291,7 +506,16 @@ template<> inline NValue NValue::callUnary<FUNC_TRUNCATE_QUARTER>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("TRUNCATE");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     int8_t quarter_start_month = QUARTER_START_MONTH_BY_MONTH[as_date.month()];
@@ -304,7 +528,16 @@ template<> inline NValue NValue::callUnary<FUNC_TRUNCATE_MONTH>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("TRUNCATE");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     int64_t truncate_epoch_micros = epoch_microseconds_from_components(as_date.year(),as_date.month());
@@ -316,7 +549,16 @@ template<> inline NValue NValue::callUnary<FUNC_TRUNCATE_DAY>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("TRUNCATE");
+    }
+
     boost::gregorian::date as_date;
     micros_to_date(epoch_micros, as_date);
     int64_t truncate_epoch_micros =
@@ -329,7 +571,16 @@ template<> inline NValue NValue::callUnary<FUNC_TRUNCATE_HOUR>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("TRUNCATE");
+    }
+
     boost::gregorian::date as_date;
     boost::posix_time::time_duration as_time;
     micros_to_date_and_time(epoch_micros, as_date, as_time);
@@ -343,7 +594,16 @@ template<> inline NValue NValue::callUnary<FUNC_TRUNCATE_MINUTE>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("TRUNCATE");
+    }
+
     boost::gregorian::date as_date;
     boost::posix_time::time_duration as_time;
     micros_to_date_and_time(epoch_micros, as_date, as_time);
@@ -357,7 +617,16 @@ template<> inline NValue NValue::callUnary<FUNC_TRUNCATE_SECOND>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("TRUNCATE");
+    }
+
     boost::gregorian::date as_date;
     boost::posix_time::time_duration as_time;
     micros_to_date_and_time(epoch_micros, as_date, as_time);
@@ -371,7 +640,16 @@ template<> inline NValue NValue::callUnary<FUNC_TRUNCATE_MILLISECOND>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("TRUNCATE");
+    }
+
     int64_t epoch_millis = static_cast<int64_t>(epoch_micros / 1000);
     if (epoch_micros < 0) {
         epoch_millis -= 1;
@@ -384,7 +662,16 @@ template<> inline NValue NValue::callUnary<FUNC_TRUNCATE_MICROSECOND>() const {
     if (isNull()) {
         return *this;
     }
+
+    if (getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
     int64_t epoch_micros = getTimestamp();
+    if (epochMicrosOutOfRange(epoch_micros)) {
+        throwOutOfRangeTimestampInput("TRUNCATE");
+    }
+
     return getTimestampValue(epoch_micros);
 }
 
@@ -394,4 +681,407 @@ template<> inline NValue NValue::callConstant<FUNC_CURRENT_TIMESTAMP>() {
     return getTimestampValue(currentTimeMillis * 1000 + VOLT_EPOCH);
 }
 
+template<> inline NValue NValue::call<FUNC_VOLT_DATEADD_YEAR>(const std::vector<NValue>& arguments) {
+    assert (arguments.size() == 2);
+
+    const NValue& number = arguments[0];
+    if (number.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    const NValue& date = arguments[1];
+    if (date.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t interval = number.castAsBigIntAndGetValue();
+    if (interval > PTIME_MAX_YEAR_INTERVAL || interval < PTIME_MIN_YEAR_INTERVAL) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+
+    if (date.getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(date.getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
+    boost::posix_time::ptime ts;
+    int64_t epochMicrosIn = date.getTimestamp();
+    if (epochMicrosOutOfRange(epochMicrosIn)) {
+        throwOutOfRangeTimestampInput("DATEADD");
+    }
+
+    micros_to_ptime(date.getTimestamp(), ts);
+
+    try {
+        ts += boost::gregorian::years(static_cast<int>(interval));
+        boost::posix_time::time_duration td = ts - EPOCH;
+        int64_t epochMicros = td.total_microseconds();
+        if (epochMicrosOutOfRange(epochMicros)) {
+            throwOutOfRangeTimestampOutput("DATEADD");
+        }
+
+        return getTimestampValue(epochMicros);
+    } catch (std::out_of_range &e) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
 }
+
+template<> inline NValue NValue::call<FUNC_VOLT_DATEADD_QUARTER>(const std::vector<NValue>& arguments) {
+    assert (arguments.size() == 2);
+
+    const NValue& number = arguments[0];
+    if (number.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    const NValue& date = arguments[1];
+    if (date.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t interval = number.castAsBigIntAndGetValue();
+    if (interval > PTIME_MAX_QUARTER_INTERVAL || interval < PTIME_MIN_QUARTER_INTERVAL) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+
+    if (date.getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(date.getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t epochMicrosIn = date.getTimestamp();
+    if (epochMicrosOutOfRange(epochMicrosIn)) {
+        throwOutOfRangeTimestampInput("DATEADD");
+    }
+
+    int64_t epochMicros = addMonths(date.getTimestamp(), 3 * interval);
+    if (epochMicrosOutOfRange(epochMicros)) {
+        throwOutOfRangeTimestampOutput("DATEADD");
+    }
+
+    return getTimestampValue(epochMicros);
+}
+
+template<> inline NValue NValue::call<FUNC_VOLT_DATEADD_MONTH>(const std::vector<NValue>& arguments) {
+    assert (arguments.size() == 2);
+
+    const NValue& number = arguments[0];
+    if (number.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    const NValue& date = arguments[1];
+    if (date.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t interval = number.castAsBigIntAndGetValue();
+    if (interval > PTIME_MAX_MONTH_INTERVAL || interval < PTIME_MIN_MONTH_INTERVAL) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+
+    if (date.getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(date.getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t epochMicrosIn = date.getTimestamp();
+    if (epochMicrosOutOfRange(epochMicrosIn)) {
+        throwOutOfRangeTimestampInput("DATEADD");
+    }
+
+    int64_t epochMicros = addMonths(date.getTimestamp(), interval);
+    if (epochMicrosOutOfRange(epochMicros)) {
+        throwOutOfRangeTimestampOutput("DATEADD");
+    }
+
+    return getTimestampValue(epochMicros);
+}
+
+template<> inline NValue NValue::call<FUNC_VOLT_DATEADD_DAY>(const std::vector<NValue>& arguments) {
+    assert (arguments.size() == 2);
+
+    const NValue& number = arguments[0];
+    if (number.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    const NValue& date = arguments[1];
+    if (date.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t interval = number.castAsBigIntAndGetValue();
+    if (interval > PTIME_MAX_DAY_INTERVAL || interval < PTIME_MIN_DAY_INTERVAL) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+
+    if (date.getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(date.getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t epochMicrosIn = date.getTimestamp();
+    if (epochMicrosOutOfRange(epochMicrosIn)) {
+        throwOutOfRangeTimestampInput("DATEADD");
+    }
+
+    boost::posix_time::ptime ts;
+    micros_to_ptime(date.getTimestamp(), ts);
+
+    try {
+        ts += boost::gregorian::days(interval);
+        boost::posix_time::time_duration td = ts - EPOCH;
+        int64_t epochMicros = td.total_microseconds();
+        if (epochMicrosOutOfRange(epochMicros)) {
+            throwOutOfRangeTimestampOutput("DATEADD");
+        }
+
+        return getTimestampValue(epochMicros);
+    } catch (std::out_of_range &e) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+}
+
+template<> inline NValue NValue::call<FUNC_VOLT_DATEADD_HOUR>(const std::vector<NValue>& arguments) {
+    assert (arguments.size() == 2);
+
+    const NValue& number = arguments[0];
+    if (number.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    const NValue& date = arguments[1];
+    if (date.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t interval = number.castAsBigIntAndGetValue();
+    if (interval > PTIME_MAX_HOUR_INTERVAL || interval < PTIME_MIN_HOUR_INTERVAL) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+
+    if (date.getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(date.getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t epochMicrosIn = date.getTimestamp();
+    if (epochMicrosOutOfRange(epochMicrosIn)) {
+        throwOutOfRangeTimestampInput("DATEADD");
+    }
+
+    boost::posix_time::ptime ts;
+    micros_to_ptime(epochMicrosIn, ts);
+
+    try {
+        ts += boost::posix_time::hours(interval);
+        boost::posix_time::time_duration td = ts - EPOCH;
+        int64_t epochMicros = td.total_microseconds();
+        if (epochMicrosOutOfRange(epochMicros)) {
+            throwOutOfRangeTimestampOutput("DATEADD");
+        }
+
+        return getTimestampValue(epochMicros);
+    } catch (std::out_of_range &e) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+}
+
+template<> inline NValue NValue::call<FUNC_VOLT_DATEADD_MINUTE>(const std::vector<NValue>& arguments) {
+    assert (arguments.size() == 2);
+
+    const NValue& number = arguments[0];
+    if (number.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    const NValue& date = arguments[1];
+    if (date.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t interval = number.castAsBigIntAndGetValue();
+    if (interval > PTIME_MAX_MINUTE_INTERVAL || interval < PTIME_MIN_MINUTE_INTERVAL) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+
+    if (date.getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(date.getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t epochMicrosIn = date.getTimestamp();
+    if (epochMicrosOutOfRange(epochMicrosIn)) {
+        throwOutOfRangeTimestampInput("DATEADD");
+    }
+
+    boost::posix_time::ptime ts;
+    micros_to_ptime(epochMicrosIn, ts);
+
+    try {
+        ts += boost::posix_time::minutes(interval);
+        boost::posix_time::time_duration td = ts - EPOCH;
+        int64_t epochMicros = td.total_microseconds();
+        if (epochMicrosOutOfRange(epochMicros)) {
+            throwOutOfRangeTimestampOutput("DATEADD");
+        }
+
+        return getTimestampValue(epochMicros);
+    } catch (std::out_of_range &e) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+}
+
+template<> inline NValue NValue::call<FUNC_VOLT_DATEADD_SECOND>(const std::vector<NValue>& arguments) {
+    assert (arguments.size() == 2);
+
+    const NValue& number = arguments[0];
+    if (number.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    const NValue& date = arguments[1];
+    if (date.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t interval = number.castAsBigIntAndGetValue();
+    if (interval > PTIME_MAX_SECOND_INTERVAL || interval < PTIME_MIN_SECOND_INTERVAL) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+
+    if (date.getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(date.getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t epochMicrosIn = date.getTimestamp();
+    if (epochMicrosOutOfRange(epochMicrosIn)) {
+        throwOutOfRangeTimestampInput("DATEADD");
+    }
+
+    boost::posix_time::ptime ts;
+    micros_to_ptime(epochMicrosIn, ts);
+
+    try {
+        ts += boost::posix_time::seconds(interval);
+        boost::posix_time::time_duration td = ts - EPOCH;
+        int64_t epochMicros = td.total_microseconds();
+        if (epochMicrosOutOfRange(epochMicros)) {
+            throwOutOfRangeTimestampOutput("DATEADD");
+        }
+
+        return getTimestampValue(epochMicros);
+    } catch (std::out_of_range &e) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large in DATEADD function");
+    }
+}
+
+template<> inline NValue NValue::call<FUNC_VOLT_DATEADD_MILLISECOND>(const std::vector<NValue>& arguments) {
+    assert (arguments.size() == 2);
+
+    const NValue& number = arguments[0];
+    if (number.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    const NValue& date = arguments[1];
+    if (date.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t interval = number.castAsBigIntAndGetValue();
+    if (interval > PTIME_MAX_MILLISECOND_INTERVAL || interval < PTIME_MIN_MILLISECOND_INTERVAL) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+
+    if (date.getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(date.getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t epochMicrosIn = date.getTimestamp();
+    if (epochMicrosOutOfRange(epochMicrosIn)) {
+        throwOutOfRangeTimestampInput("DATEADD");
+    }
+
+    boost::posix_time::ptime ts;
+    micros_to_ptime(epochMicrosIn, ts);
+
+    try {
+        ts += boost::posix_time::milliseconds(interval);
+        boost::posix_time::time_duration td = ts - EPOCH;
+        int64_t epochMicros = td.total_microseconds();
+        if (epochMicrosOutOfRange(epochMicros)) {
+            throwOutOfRangeTimestampOutput("DATEADD");
+        }
+
+        return getTimestampValue(epochMicros);
+    } catch (std::out_of_range &e) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large in DATEADD function");
+    }
+}
+
+template<> inline NValue NValue::call<FUNC_VOLT_DATEADD_MICROSECOND>(const std::vector<NValue>& arguments) {
+    assert (arguments.size() == 2);
+
+    const NValue& number = arguments[0];
+    if (number.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    const NValue& date = arguments[1];
+    if (date.isNull()) {
+        return getNullValue(VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t interval = number.castAsBigIntAndGetValue();
+    if (interval > PTIME_MAX_MICROSECOND_INTERVAL || interval < PTIME_MIN_MICROSECOND_INTERVAL) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large for DATEADD function");
+    }
+
+    if (date.getValueType() != VALUE_TYPE_TIMESTAMP) {
+        throwCastSQLException(date.getValueType(), VALUE_TYPE_TIMESTAMP);
+    }
+
+    int64_t epochMicrosIn = date.getTimestamp();
+    if (epochMicrosOutOfRange(epochMicrosIn)) {
+        throwOutOfRangeTimestampInput("DATEADD");
+    }
+
+    boost::posix_time::ptime ts;
+    micros_to_ptime(epochMicrosIn, ts);
+
+    try {
+        ts += boost::posix_time::microseconds(interval);
+        boost::posix_time::time_duration td = ts - EPOCH;
+        int64_t epochMicros = td.total_microseconds();
+        if (epochMicrosOutOfRange(epochMicros)) {
+            throwOutOfRangeTimestampOutput("DATEADD");
+        }
+
+        return getTimestampValue(epochMicros);
+    } catch (std::out_of_range &e) {
+        throw SQLException(SQLException::data_exception_numeric_value_out_of_range, "interval is too large in DATEADD function");
+    }
+}
+
+const int64_t MIN_VALID_TIMESTAMP_VALUE = GREGORIAN_EPOCH;
+const int64_t MAX_VALID_TIMESTAMP_VALUE = NYE9999;
+
+inline bool timestampIsValid(int64_t ts) {
+    return (MIN_VALID_TIMESTAMP_VALUE <= ts) && (ts <= MAX_VALID_TIMESTAMP_VALUE);
+}
+
+template<> inline NValue NValue::callConstant<FUNC_VOLT_MIN_VALID_TIMESTAMP>() {
+    return getTimestampValue(MIN_VALID_TIMESTAMP_VALUE);
+}
+
+template<> inline NValue NValue::callConstant<FUNC_VOLT_MAX_VALID_TIMESTAMP>() {
+    return getTimestampValue(MAX_VALID_TIMESTAMP_VALUE);
+}
+
+template<> inline NValue NValue::callUnary<FUNC_VOLT_IS_VALID_TIMESTAMP>() const {
+    if (isNull()) {
+        return getNullValue(VALUE_TYPE_BOOLEAN);
+    }
+    int64_t timestamp_number = castAsBigIntAndGetValue();
+    return getBooleanValue(timestampIsValid(timestamp_number));
+}
+
+
+}
+#endif /* defined(SRC_EE_EXPRESSIONS_DATEFUNCTIONS_H) */

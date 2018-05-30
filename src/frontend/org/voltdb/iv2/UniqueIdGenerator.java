@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,9 +17,10 @@
 
 package org.voltdb.iv2;
 
-import java.util.Calendar;
 import java.util.Date;
 
+import org.voltcore.TransactionIdManager;
+import org.voltcore.logging.Level;
 import org.voltcore.logging.VoltLogger;
 import org.voltdb.VoltDB;
 
@@ -50,17 +51,7 @@ public class UniqueIdGenerator {
     // VOLT_EPOCH holds the time in millis since 1/1/2008 at 12am.
     // The current time - VOLT_EPOCH should fit nicely in 40 bits
     // of memory.
-    static final long VOLT_EPOCH = getEpoch();
-    public static long getEpoch() {
-        Calendar c = Calendar.getInstance();
-        c.setTimeInMillis(0);
-        c.set(2008, 0, 1, 0, 0, 0);
-        c.set(Calendar.MILLISECOND, 0);
-        c.set(Calendar.ZONE_OFFSET, 0);
-        c.set(Calendar.DST_OFFSET, 0);
-        long retval = c.getTimeInMillis();
-        return retval;
-    }
+    static final long VOLT_EPOCH = TransactionIdManager.getEpoch();
 
     // maximum values for the fields
     // used for bit-shifts and error checking
@@ -69,7 +60,7 @@ public class UniqueIdGenerator {
     static final long PARTITIONID_MAX_VALUE = (1L << PARTITIONID_BITS) - 1L;
 
     // the local siteid
-    long partitionId;
+    int partitionId;
     // the time of the previous unique id generation
     long lastUsedTime = -1;
     // the number of unique ids generated during the same value
@@ -77,7 +68,7 @@ public class UniqueIdGenerator {
     long counterValue = 0;
 
     // remembers the last unique id generated
-    long lastUniqueId = 0;
+    long lastUniqueId;
 
 
     // salt used for testing to simulate clock skew
@@ -95,6 +86,8 @@ public class UniqueIdGenerator {
 
     private final long BACKWARD_TIME_FORGIVENESS_WINDOW_MS = VoltDB.BACKWARD_TIME_FORGIVENESS_WINDOW_MS;
 
+    static private VoltLogger log = new VoltLogger("HOST");
+
     public interface Clock {
         long get();
         void sleep(long millis) throws InterruptedException;
@@ -102,7 +95,7 @@ public class UniqueIdGenerator {
 
     private final Clock m_clock;
 
-    public UniqueIdGenerator(long partitionId, long timestampTestingSalt) {
+    public UniqueIdGenerator(int partitionId, long timestampTestingSalt) {
         this(partitionId, timestampTestingSalt, new Clock() {
             @Override
             public long get() {
@@ -121,7 +114,7 @@ public class UniqueIdGenerator {
      * @param partitionId The partitionId of the site generating ids
      * @param timestampTestingSalt Value of the salt used to skew a clock in testing.
      */
-    public UniqueIdGenerator(long partitionId, long timestampTestingSalt, Clock clock) {
+    public UniqueIdGenerator(int partitionId, long timestampTestingSalt, Clock clock) {
         this.partitionId = partitionId;
 
         m_timestampTestingSalt = timestampTestingSalt;
@@ -130,10 +123,12 @@ public class UniqueIdGenerator {
         // warn if running with a simulated clock skew
         // this should only be used for testing
         if (m_timestampTestingSalt != 0) {
-            VoltLogger log = new VoltLogger("HOST");
             log.warn(String.format("Partition (id=%d) running in test mode with non-zero timestamp testing value: %d",
                      partitionId, timestampTestingSalt));
         }
+
+        // initialize the last used unique ID to a valid value
+        lastUniqueId = makeZero(this.partitionId);
     }
 
     public void updateMostRecentlyGeneratedUniqueId(long uniqueId) {
@@ -183,16 +178,14 @@ public class UniqueIdGenerator {
                  * otherwise calculate an offset to add to the system clock in order to use it to
                  * continue moving forward
                  */
-                VoltLogger log = new VoltLogger("HOST");
                 double diffSeconds = (lastUsedTime - currentTime) / 1000.0;
-                String msg = String.format("UniqueIdGenerator time moved backwards from: %d to %d, a difference of %.2f seconds.",
-                        lastUsedTime, currentTime, diffSeconds);
-                log.error(msg);
-                System.err.println(msg);
                 // if the diff is less than some specified amount of time, wait a bit
+                StringBuilder msg = new StringBuilder(256);
                 if ((lastUsedTime - currentTime) < BACKWARD_TIME_FORGIVENESS_WINDOW_MS) {
-                    log.info("This node will delay any stored procedures sent to it.");
-                    log.info(String.format("This node will resume full operation in  %.2f seconds.", diffSeconds));
+                    msg.append("UniqueIdGenerator time moved backwards from: %d to %d, a difference of %.2f seconds.");
+                    msg.append("\nThis node will delay any stored procedures sent to it.");
+                    msg.append("\nThis node will resume full operation in  %.2f seconds.");
+                    log.rateLimitedLog(60, Level.INFO, null, msg.toString(), lastUsedTime, currentTime, diffSeconds, diffSeconds );
 
                     long count = BACKWARD_TIME_FORGIVENESS_WINDOW_MS;
                     // note, the loop should stop once lastUsedTime is PASSED, not current
@@ -217,25 +210,24 @@ public class UniqueIdGenerator {
                     currentTimePlusOffset = currentTime + m_backwardsTimeAdjustmentOffset;
                     //Should satisfy this constraint now
                     assert(currentTimePlusOffset > lastUsedTime);
-                    double offsetSeconds = m_backwardsTimeAdjustmentOffset / 1000.0;
-                    msg = String.format(
-                            "Continuing operation by adding an offset of %.2f to system time. " +
-                            "This means the time and unique IDs provided by VoltProcedure " +
-                            " (getUniqueId, getTransactionId, getTransactionTime) " +
-                            "will not correctly reflect wall clock time as reported by the system clock." +
-                            " For severe shifts you could see duplicate " +
-                            "IDs or time moving backwards when the server is" +
-                            " restarted causing the offset to be discarded.",
-                            offsetSeconds);
-                    log.error(msg);
-                    System.err.println(msg);
+                    double offsetSeconds = m_backwardsTimeAdjustmentOffset / 1000.0D;
+
+                    msg.append("UniqueIdGenerator time moved backwards from: %d to %d, a difference of %.2f seconds.");
+                    msg.append("\nContinuing operation by adding an offset of %.2f to system time. ");
+                    msg.append("This means the time and unique IDs provided by VoltProcedure ");
+                    msg.append(" (getUniqueId, getTransactionId, getTransactionTime) ");
+                    msg.append("will not correctly reflect wall clock time as reported by the system clock.");
+                    msg.append(" For severe shifts you could see duplicate ");
+                    msg.append("IDs or time moving backwards when the server is");
+                    msg.append(" restarted causing the offset to be discarded.");
+
+                    log.rateLimitedLog(60, Level.ERROR, null, msg.toString(), lastUsedTime, currentTime, diffSeconds, offsetSeconds);
                 }
             } else if (currentTime > lastUsedTime && m_backwardsTimeAdjustmentOffset != 0) {
                 //Actual wall clock time is correct, blast away the offset
                 //and switch to current time
                 m_backwardsTimeAdjustmentOffset = 0;
                 currentTimePlusOffset = currentTime;
-                VoltLogger log = new VoltLogger("HOST");
                 log.error("Host clock seems to have adjusted again to make the offset unecessary");
                 System.err.println("Host clock seems to have adjusted again to make the offset unecessary");
             }
@@ -336,7 +328,14 @@ public class UniqueIdGenerator {
         sb.append(" Date: ").append(getDateFromUniqueId(uniqueId));
         return sb.toString();
     }
-
+    public static String toShortString(long uniqueId) {
+        if (uniqueId == 0L) {
+            return "0";
+        }
+        return new String(getPartitionIdFromUniqueId(uniqueId) + ":" +
+                getTimestampFromUniqueId(uniqueId) + ":" +
+                getSequenceNumberFromUniqueId(uniqueId));
+    }
     public static String toBitString(long uniqueId) {
         String retval = "";
         long mask = 0x8000000000000000L;

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,15 +23,11 @@
 
 package org.voltdb.benchmark.tpcc.procedures;
 
-import org.voltdb.ProcInfo;
+import org.voltdb.DeprecatedProcedureAPIAccess;
 import org.voltdb.SQLStmt;
 import org.voltdb.VoltProcedure;
 import org.voltdb.VoltTable;
 
-@ProcInfo (
-    partitionInfo = "WAREHOUSE.W_ID: 0",
-    singlePartition = true
-)
 /**
  * Loads initial data into replicated TPCC tables.
  */
@@ -39,6 +35,7 @@ public class LoadWarehouseReplicated extends VoltProcedure {
 
     public final SQLStmt checkItemExists = new SQLStmt("SELECT * FROM ITEM LIMIT 1");
 
+    @SuppressWarnings("deprecation")
     public VoltTable[] run(short w_id, VoltTable items, VoltTable customerNames)
     throws VoltAbortException {
         if (items != null) {
@@ -49,9 +46,9 @@ public class LoadWarehouseReplicated extends VoltProcedure {
                 return null;
 
             // now we know the partition is not loaded yet
-            voltLoadTable("cluster", "database", "ITEM", items, false, false);
+            DeprecatedProcedureAPIAccess.voltLoadTable(this, "cluster", "database", "ITEM", items, false, false);
         }
-        voltLoadTable("cluster", "database", "CUSTOMER_NAME", customerNames, false, false);
+        DeprecatedProcedureAPIAccess.voltLoadTable(this, "cluster", "database", "CUSTOMER_NAME", customerNames, false, false);
         return null;
     }
 

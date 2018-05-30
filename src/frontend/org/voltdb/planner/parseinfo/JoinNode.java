@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -30,6 +30,7 @@ import org.voltdb.expressions.ConstantValueExpression;
 import org.voltdb.expressions.ExpressionUtil;
 import org.voltdb.expressions.TupleValueExpression;
 import org.voltdb.planner.AccessPath;
+import org.voltdb.planner.StmtEphemeralTableScan;
 import org.voltdb.types.ExpressionType;
 import org.voltdb.types.JoinType;
 
@@ -48,15 +49,15 @@ public abstract class JoinNode implements Cloneable {
     protected AbstractExpression m_whereExpr = null;
 
     // Buckets for children expression classification
-    public final ArrayList<AbstractExpression> m_joinOuterList = new ArrayList<AbstractExpression>();
-    public final ArrayList<AbstractExpression> m_joinInnerList = new ArrayList<AbstractExpression>();
-    public final ArrayList<AbstractExpression> m_joinInnerOuterList = new ArrayList<AbstractExpression>();
-    public final ArrayList<AbstractExpression> m_whereOuterList = new ArrayList<AbstractExpression>();
-    public final ArrayList<AbstractExpression> m_whereInnerList = new ArrayList<AbstractExpression>();
-    public final ArrayList<AbstractExpression> m_whereInnerOuterList = new ArrayList<AbstractExpression>();
+    public final ArrayList<AbstractExpression> m_joinOuterList = new ArrayList<>();
+    public final ArrayList<AbstractExpression> m_joinInnerList = new ArrayList<>();
+    public final ArrayList<AbstractExpression> m_joinInnerOuterList = new ArrayList<>();
+    public final ArrayList<AbstractExpression> m_whereOuterList = new ArrayList<>();
+    public final ArrayList<AbstractExpression> m_whereInnerList = new ArrayList<>();
+    public final ArrayList<AbstractExpression> m_whereInnerOuterList = new ArrayList<>();
 
     // All possible access paths for this node
-    public List<AccessPath> m_accessPaths = new ArrayList<AccessPath>();
+    public List<AccessPath> m_accessPaths = new ArrayList<>();
     // Access path under the evaluation
     public AccessPath m_currentAccessPath = null;
 
@@ -163,8 +164,8 @@ public abstract class JoinNode implements Cloneable {
     public HashMap<AbstractExpression, Set<AbstractExpression> > getAllEquivalenceFilters()
     {
         HashMap<AbstractExpression, Set<AbstractExpression> > equivalenceSet =
-                new HashMap<AbstractExpression, Set<AbstractExpression> >();
-        ArrayDeque<JoinNode> joinNodes = new ArrayDeque<JoinNode>();
+                new HashMap< >();
+        ArrayDeque<JoinNode> joinNodes = new ArrayDeque<>();
         // Iterate over the join nodes to collect their join and where equivalence filter expressions
         joinNodes.add(this);
         while ( ! joinNodes.isEmpty()) {
@@ -174,17 +175,30 @@ public abstract class JoinNode implements Cloneable {
         return equivalenceSet;
     }
 
-    protected abstract void collectEquivalenceFilters(
-            HashMap<AbstractExpression, Set<AbstractExpression>> equivalenceSet,
-            ArrayDeque<JoinNode> joinNodes);
+    protected void collectEquivalenceFilters(HashMap<AbstractExpression,
+                                                     Set<AbstractExpression>> equivalenceSet,
+                                             ArrayDeque<JoinNode> joinNodes) {
+        if ( ! m_whereInnerList.isEmpty()) {
+            ExpressionUtil.collectPartitioningFilters(m_whereInnerList,
+                                                      equivalenceSet);
+        }
+        // HSQL sometimes tags single-table filters in inner joins as join clauses
+        // rather than where clauses? OR does analyzeJoinExpressions correct for this?
+        // If so, these CAN contain constant equivalences that get used as the basis for equivalence
+        // conditions that determine partitioning, so process them as where clauses.
+        if ( ! m_joinInnerList.isEmpty()) {
+            ExpressionUtil.collectPartitioningFilters(m_joinInnerList,
+                                                      equivalenceSet);
+        }
+    }
 
     /**
      * Collect all JOIN and WHERE expressions combined with AND for the entire tree.
      */
     public AbstractExpression getAllFilters() {
-        ArrayDeque<JoinNode> joinNodes = new ArrayDeque<JoinNode>();
-        ArrayDeque<AbstractExpression> in = new ArrayDeque<AbstractExpression>();
-        ArrayDeque<AbstractExpression> out = new ArrayDeque<AbstractExpression>();
+        ArrayDeque<JoinNode> joinNodes = new ArrayDeque<>();
+        ArrayDeque<AbstractExpression> in = new ArrayDeque<>();
+        ArrayDeque<AbstractExpression> out = new ArrayDeque<>();
         // Iterate over the join nodes to collect their join and where expressions
         joinNodes.add(this);
         while (!joinNodes.isEmpty()) {
@@ -210,7 +224,7 @@ public abstract class JoinNode implements Cloneable {
                 out.add(inExpr);
             }
         }
-        return ExpressionUtil.combine(out);
+        return ExpressionUtil.combinePredicates(out);
     }
 
     protected void queueChildren(ArrayDeque<JoinNode> joinNodes) { }
@@ -233,7 +247,7 @@ public abstract class JoinNode implements Cloneable {
      * Returns tables in the order they are joined in the tree by iterating the tree depth-first
      */
     public List<JoinNode> generateLeafNodesJoinOrder() {
-        ArrayList<JoinNode> leafNodes = new ArrayList<JoinNode>();
+        ArrayList<JoinNode> leafNodes = new ArrayList<>();
         listNodesJoinOrderRecursive(leafNodes, false);
         return leafNodes;
     }
@@ -243,7 +257,7 @@ public abstract class JoinNode implements Cloneable {
      */
     public Collection<String> generateTableJoinOrder() {
         List<JoinNode> leafNodes = generateLeafNodesJoinOrder();
-        Collection<String> tables = new ArrayList<String>();
+        Collection<String> tables = new ArrayList<>();
         for (JoinNode node : leafNodes) {
             tables.add(node.getTableAlias());
         }
@@ -259,7 +273,7 @@ public abstract class JoinNode implements Cloneable {
      * Returns nodes in the order they are joined in the tree by iterating the tree depth-first
      */
     public List<JoinNode> generateAllNodesJoinOrder() {
-        ArrayList<JoinNode> nodes = new ArrayList<JoinNode>();
+        ArrayList<JoinNode> nodes = new ArrayList<>();
         listNodesJoinOrderRecursive(nodes, true);
         return nodes;
     }
@@ -278,7 +292,7 @@ public abstract class JoinNode implements Cloneable {
      * Returns a list of immediate sub-queries which are part of this query.
      * @return List<AbstractParsedStmt> - list of sub-queries from this query
      */
-    public void extractSubQueries(List<StmtSubqueryScan> subQueries) { }
+    abstract public void extractEphemeralTableQueries(List<StmtEphemeralTableScan> scans);
 
     /**
      * Split a join tree into one or more sub-trees. Each sub-tree has the same join type
@@ -288,11 +302,11 @@ public abstract class JoinNode implements Cloneable {
      * @return the list of sub-trees from the input tree
      */
     public List<JoinNode> extractSubTrees() {
-        List<JoinNode> subTrees = new ArrayList<JoinNode>();
+        List<JoinNode> subTrees = new ArrayList<>();
         // Extract the first sub-tree starting at the root
         subTrees.add(this);
 
-        List<JoinNode> leafNodes = new ArrayList<JoinNode>();
+        List<JoinNode> leafNodes = new ArrayList<>();
         extractSubTree(leafNodes);
         // Continue with the leafs
         for (JoinNode leaf : leafNodes) {
@@ -315,9 +329,10 @@ public abstract class JoinNode implements Cloneable {
      * Reconstruct a join tree from the list of tables always appending the next node to the right.
      *
      * @param tableNodes the list of tables to build the tree from.
+     * @param JoinType the join type for all the joins
      * @return The reconstructed tree
      */
-    public static JoinNode reconstructJoinTreeFromTableNodes(List<JoinNode> tableNodes) {
+    public static JoinNode reconstructJoinTreeFromTableNodes(List<JoinNode> tableNodes, JoinType joinType) {
         JoinNode root = null;
         for (JoinNode leafNode : tableNodes) {
             JoinNode node = leafNode.cloneWithoutFilters();
@@ -327,7 +342,7 @@ public abstract class JoinNode implements Cloneable {
                 // We only care about the root node id to be able to reconnect the sub-trees
                 // The intermediate node id can be anything. For the final root node its id
                 // will be set later to the original tree's root id
-                root = new BranchNode(-node.m_id, JoinType.INNER, root, node);
+                root = new BranchNode(-node.m_id, joinType, root, node);
             }
         }
         return root;
@@ -365,7 +380,10 @@ public abstract class JoinNode implements Cloneable {
         return false;
     }
 
-    public abstract void analyzeJoinExpressions(List<AbstractExpression> noneList);
+    public void analyzeJoinExpressions(List<AbstractExpression> noneList) {
+        m_joinInnerList.addAll(ExpressionUtil.uncombineAny(getJoinExpression()));
+        m_whereInnerList.addAll(ExpressionUtil.uncombineAny(getWhereExpression()));
+    }
 
     /**
      * Apply implied transitive constant filter to join expressions
@@ -389,13 +407,13 @@ public abstract class JoinNode implements Cloneable {
     applyTransitiveEquivalence(List<AbstractExpression> singleTableExprs,
                                List<AbstractExpression> twoTableExprs)
     {
-        ArrayList<AbstractExpression> simplifiedExprs = new ArrayList<AbstractExpression>();
+        ArrayList<AbstractExpression> simplifiedExprs = new ArrayList<>();
         HashMap<AbstractExpression, Set<AbstractExpression> > eqMap1 =
-                new HashMap<AbstractExpression, Set<AbstractExpression> >();
+                new HashMap< >();
         ExpressionUtil.collectPartitioningFilters(singleTableExprs, eqMap1);
 
         for (AbstractExpression expr : twoTableExprs) {
-            if (! ExpressionUtil.isColumnEquivalenceFilter(expr)) {
+            if (! expr.isColumnEquivalenceFilter()) {
                 continue;
             }
             AbstractExpression leftExpr = expr.getLeft();
@@ -450,9 +468,9 @@ public abstract class JoinNode implements Cloneable {
             List<AbstractExpression> outerList, List<AbstractExpression> innerList,
             List<AbstractExpression> innerOuterList, List<AbstractExpression> noneList)
     {
-        HashSet<String> tableAliasSet = new HashSet<String>();
-        HashSet<String> outerSet = new HashSet<String>(outerTables);
-        HashSet<String> innerSet = new HashSet<String>(innerTables);
+        HashSet<String> tableAliasSet = new HashSet<>();
+        HashSet<String> outerSet = new HashSet<>(outerTables);
+        HashSet<String> innerSet = new HashSet<>(innerTables);
         for (AbstractExpression expr : exprList) {
             tableAliasSet.clear();
             getTablesForExpression(expr, tableAliasSet);
@@ -494,4 +512,34 @@ public abstract class JoinNode implements Cloneable {
         return null;
     }
 
+    private String m_contentDeterminismMessage = null;
+
+    public String getContentDeterminismMessage() {
+        return m_contentDeterminismMessage;
+    }
+
+    public void updateContentDeterminismMessage(String msg) {
+        if (m_contentDeterminismMessage == null) {
+            m_contentDeterminismMessage = msg;
+        }
+    }
+
+    /**
+     * Returns if all the join operations within this join tree are inner joins.
+     * @return true or false.
+     */
+    public boolean allInnerJoins() {
+        return true;
+    }
+
+    public void gatherJoinExpressions(List<AbstractExpression> checkExpressions) {
+        if (m_joinExpr != null) {
+            checkExpressions.add(m_joinExpr);
+        }
+        if (m_whereExpr != null) {
+            checkExpressions.addAll(checkExpressions);
+        }
+    }
+
+    abstract public boolean hasSubqueryScans();
 }

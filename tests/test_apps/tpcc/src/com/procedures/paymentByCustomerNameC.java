@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -50,10 +50,8 @@
 
 package com.procedures;
 
-import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
 
-import org.voltdb.ProcInfo;
 import org.voltdb.SQLStmt;
 import org.voltdb.VoltProcedure;
 import org.voltdb.VoltTable;
@@ -67,10 +65,6 @@ import org.voltdb.types.TimestampType;
  * Customer related queries. See deps.pdf for dependencies between the queries
  * in original paymentByCustomerName.
  */
-@ProcInfo (
-    partitionInfo = "CUSTOMER.C_W_ID: 3", // partition on C_W_ID, not W_ID
-    singlePartition = true
-)
 public class paymentByCustomerNameC extends VoltProcedure {
 
     final int misc_expected_string_len = 32 + 2 + 32 + 32 + 32 + 32 + 2 + 9 + 32 + 2 + 500;
@@ -180,18 +174,12 @@ public class paymentByCustomerNameC extends VoltProcedure {
         return new VoltTable[]{misc};
     }
 
-    public VoltTable[] run(short w_id, byte d_id, double h_amount, short c_w_id, byte c_d_id, byte[] c_last, TimestampType timestamp) throws VoltAbortException {
+    public VoltTable[] run(short w_id, byte d_id, double h_amount, short c_w_id, byte c_d_id, String c_last, TimestampType timestamp) throws VoltAbortException {
         voltQueueSQL(getCustomersByLastName, c_last, c_d_id, c_w_id);
         final VoltTable customers = voltExecuteSQL()[0];
         final int namecnt = customers.getRowCount();
         if (namecnt == 0) {
-            String c_lastString = null;
-            try {
-                c_lastString = new String(c_last, "UTF-8");
-            } catch (UnsupportedEncodingException e) {
-                throw new RuntimeException(e);
-            }
-            throw new VoltAbortException("paymentByCustomerNameC: no customers with last name: " + c_lastString +
+            throw new VoltAbortException("paymentByCustomerNameC: no customers with last name: " + c_last +
                     " in warehouse: "
                     + c_w_id + " and in district " + c_d_id);
         }

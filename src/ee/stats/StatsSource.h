@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,6 +20,7 @@
 
 #include "common/tabletuple.h"
 #include "common/ids.h"
+
 #include "boost/scoped_ptr.hpp"
 
 #include <string>
@@ -67,15 +68,10 @@ public:
      * Configure a StatsSource superclass for a set of statistics. Since this class is only used in the EE it can be assumed that
      * it is part of an Execution Site and that there is a site Id.
      * @parameter name Name of this set of statistics
-     * @parameter hostId id of the host this partition is on
-     * @parameter hostname name of the host this partition is on
-     * @parameter siteId this stat source is associated with
-     * @parameter partitionId this stat source is associated with
-     * @parameter databaseId Database this source is associated with
      */
-    void configure(
-            std::string name,
-            voltdb::CatalogId databaseId);
+    void configure(std::string name);
+
+    void updateTableName(const std::string& tableName);
 
     /*
      * Destructor that frees tupleSchema_, and statsTable_
@@ -89,28 +85,31 @@ public:
      * @param now Timestamp to return with each row
      * @return Pointer to a table containing the statistics.
      */
-    voltdb::Table* getStatsTable(bool interval, int64_t now);
+    voltdb::Table* getStatsTable(int64_t siteId, int32_t partitionId, bool interval, int64_t now);
 
     /*
      * Retrieve tuple containing the latest statistics available. An updated stat is requested from the derived class by calling
      * StatsSource::updateStatsTuple
+     * @param siteId for the generated tuple
+     * @param partitionId for the generated tuple
      * @param interval Whether to return counters since the beginning or since the last time this was called
      * @param Timestamp to embed in each row
      * @return Pointer to a table tuple containing the latest version of the statistics.
      */
-    voltdb::TableTuple* getStatsTuple(bool interval, int64_t now);
+    voltdb::TableTuple* getStatsTuple(int64_t siteId, int32_t partitionId, bool interval, int64_t now);
 
     /**
-     * Retrieve the name of this set of statistics
-     * @return Name of statistics
+     * Retrieve the name of the table that this set of statistics is associated with.
+     * @return Table name.
      */
-    std::string getName();
+    const string getTableName();
 
     /**
      * String representation of the statistics. Default implementation is to print the stats table.
      * @return String representation
      */
     virtual std::string toString();
+
 protected:
     /**
      * Update the stats tuple with the latest statistics available to this StatsSource. Implemented by derived classes.
@@ -138,9 +137,11 @@ protected:
      */
     std::map<std::string, int> m_columnName2Index;
 
-    bool interval() { return m_interval; }
-private:
+    NValue m_tableName;
 
+    bool interval() { return m_interval; }
+
+private:
     /**
      * Table containing the stat information. Shared pointer used as a substitute for scoped_ptr due to forward
      * declaration.
@@ -152,17 +153,6 @@ private:
      */
     voltdb::TableTuple m_statsTuple;
 
-    /**
-     * Name of this set of statistics.
-     */
-    std::string m_name;
-
-    /**
-     * CatalogId of the partition this StatsSource is associated with.
-     */
-    voltdb::CatalogId m_partitionId;
-
-    int64_t m_siteId;
     voltdb::CatalogId m_hostId;
 
     voltdb::NValue m_hostname;

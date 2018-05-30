@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -64,7 +64,10 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <memory>
 #include "harness.h"
+#include "common/FatalException.hpp"
+#include "common/SerializableEEException.h"
 
 using std::string;
 
@@ -143,7 +146,7 @@ int TestSuite::runAll() {
     const char* last_suite = NULL;
     for (size_t i = 0; i < test_factories_.size(); ++i) {
         // Create the test
-        Test* test = test_factories_[i]();
+        std::unique_ptr<Test> test{test_factories_[i]()};
         assert(test != NULL);
 
         // Print the suite name if it is new
@@ -158,11 +161,19 @@ int TestSuite::runAll() {
         fflush(stdout);
 
         // run the test and check the result
-        test->run();
-        if (test->testSuccess()) {
-            printf("PASSED.\n");
-        } else {
-            printf("FAILED.\n");
+        try {
+            test->run();
+            if (test->testSuccess()) {
+                printf("PASSED.\n");
+            } else {
+                printf("FAILED.\n");
+                test->printErrors();
+                printf("\n");
+                failed_tests++;
+            }
+        }
+        catch (voltdb::SerializableEEException& eeExc) {
+            printf("Uncaught SerializableEEException: %s\n", eeExc.message().c_str());
             test->printErrors();
             printf("\n");
             failed_tests++;
@@ -195,9 +206,6 @@ int TestSuite::runAll() {
             size_t bytes = write(json_output, json.data(), json.size());
             assert(bytes == json.size());
         }
-
-        // Clean up the test
-        delete test;
     }
 
     if (json_output != -1) {
@@ -310,8 +318,8 @@ ChTempDir::~ChTempDir() {
 ExpectDeathStatus expectDeath() {
     // Skip expectDeath in non-debug builds because overwriting memory doesn't
     // always cause release builds to crash.
-#ifndef DEBUG
-    printf("SKIPPED: expectDeath test due to non-debug build.\n");
+#if not(defined(DEBUG)) || defined(MEMCHECK)
+    printf("SKIPPED: expectDeath test due to non-debug build or memcheck build.\n");
     return SUCCESS;
 #endif
 

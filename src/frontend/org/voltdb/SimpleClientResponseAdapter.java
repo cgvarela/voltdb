@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,9 +17,18 @@
 
 package org.voltdb;
 
-import com.google_voltpatches.common.base.Supplier;
-import com.google_voltpatches.common.util.concurrent.ListenableFuture;
-import com.google_voltpatches.common.util.concurrent.SettableFuture;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
+
 import org.voltcore.network.Connection;
 import org.voltcore.network.NIOReadStream;
 import org.voltcore.network.WriteStream;
@@ -27,14 +36,9 @@ import org.voltcore.utils.DeferredSerialization;
 import org.voltcore.utils.Pair;
 import org.voltdb.client.ClientResponse;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicLong;
+import com.google_voltpatches.common.base.Supplier;
+import com.google_voltpatches.common.util.concurrent.ListenableFuture;
+import com.google_voltpatches.common.util.concurrent.SettableFuture;
 
 /**
  * A very simple adapter that deserializes bytes into client responses. It calls
@@ -70,6 +74,10 @@ public class SimpleClientResponseAdapter implements Connection, WriteStream {
         public void handleResponse(ClientResponse response)
         {
             m_responseFuture.set(response);
+        }
+
+        public ListenableFuture<ClientResponse> getResponseFuture() {
+            return m_responseFuture;
         }
     }
 
@@ -256,6 +264,16 @@ public class SimpleClientResponseAdapter implements Connection, WriteStream {
     }
 
     @Override
+    public void disableWriteSelection() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void enableWriteSelection() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public String getHostnameAndIPAndPort() {
         return m_name;
     }
@@ -263,6 +281,11 @@ public class SimpleClientResponseAdapter implements Connection, WriteStream {
     @Override
     public String getHostnameOrIP() {
         return m_name;
+    }
+
+    @Override
+    public String getHostnameOrIP(long clientHandle) {
+        return getHostnameOrIP();
     }
 
     @Override
@@ -278,6 +301,11 @@ public class SimpleClientResponseAdapter implements Connection, WriteStream {
     @Override
     public long connectionId() {
         return m_connectionId;
+    }
+
+    @Override
+    public long connectionId(long clientHandle) {
+        return connectionId();
     }
 
     @Override

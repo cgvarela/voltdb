@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,9 +19,8 @@ package org.voltdb.importer;
 
 import java.util.Map;
 import java.util.Properties;
-import org.voltcore.messaging.HostMessenger;
 
-import org.voltdb.CatalogContext;
+import org.voltdb.utils.CatalogUtil.ImportConfiguration;
 
 /**
  * Interface ImportDataProcessor imposes on processors.
@@ -30,14 +29,22 @@ import org.voltdb.CatalogContext;
 public interface ImportDataProcessor  {
 
     public static final String IMPORT_MODULE = "__IMPORT_MODULE__";
+    public static final String IMPORT_FORMATTER = "__IMPORT_FORMATTER__";
+    public static final String IMPORT_PROCEDURE = "procedure";
     public static final String IMPORTER_CLASS = "impl";
     public static final String IMPORTER_SERVICE_CLASS = "org.voltdb.importer.ImportHandlerProxy";
+
+    //used for kafka 10
+    static final String KAFKA10_PROCEDURES = "import_kafka_procedures";
+    static final String KAFKA10_FORMATTERS = "import_kafka_formatters";
+    static final String VOLTDB_HOST_COUNT = "voltdb.host.count";
+    static final String KAFKA10_CONSUMER_COUNT = "kafka.consumer.count";
+    static final String POLL_TIMEOUT_MS = "poll.timeout.ms";
+
     /**
      * Inform the processor that initialization is complete; commence work.
-     * @param context
-     * @param messenger to get handle to zookeeper
      */
-    public void readyForData(CatalogContext context, HostMessenger messenger);
+    public void readyForData();
 
     /**
      * The system is terminating. Cleanup and exit the processor.
@@ -47,7 +54,11 @@ public interface ImportDataProcessor  {
     /**
      * Pass processor specific processor configuration properties
      * @param config an instance of {@linkplain Properties}
+     * @param list of abstract importer factory
      */
-    public void setProcessorConfig(Map<String, Properties> config);
+
+    public void setProcessorConfig(Map<String, ImportConfiguration> config, final Map<String, AbstractImporterFactory> importers);
+
+    public int getPartitionsCount();
 
 }

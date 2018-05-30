@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -32,8 +32,10 @@ import org.voltdb.VoltDB;
 import org.voltdb.VoltProcedure.VoltAbortException;
 import org.voltdb.VoltSystemProcedure;
 import org.voltdb.VoltTable;
+import org.voltdb.VoltTable.ColumnInfo;
 import org.voltdb.VoltType;
 import org.voltdb.exceptions.EEException;
+import org.voltdb.exceptions.ReplicatedTableException;
 import org.voltdb.exceptions.SQLException;
 import org.voltdb.exceptions.SerializableException;
 import org.voltdb.exceptions.SpecifiedException;
@@ -44,12 +46,21 @@ import org.voltdb.sysprocs.SysProcFragmentId;
 import org.voltdb.utils.Encoder;
 import org.voltdb.utils.LogKeys;
 import org.voltdb.utils.VoltTableUtil;
+import org.voltdb.utils.VoltTrace;
 
-public class SysprocFragmentTask extends TransactionTask
+public class SysprocFragmentTask extends FragmentTaskBase
 {
     final Mailbox m_initiator;
     final FragmentTaskMessage m_fragmentMsg;
     Map<Integer, List<VoltTable>> m_inputDeps;
+    boolean m_respBufferable = true;
+    static final byte[] m_rawDummyResponse;
+
+    static {
+        VoltTable dummyResponse = new VoltTable(new ColumnInfo("STATUS", VoltType.TINYINT));
+        dummyResponse.setStatusCode(VoltTableUtil.NULL_DEPENDENCY_STATUS);
+        m_rawDummyResponse = dummyResponse.buildReusableDependenyResult();
+    }
 
     // This constructor is used during live rejoin log replay.
     SysprocFragmentTask(Mailbox mailbox,
@@ -73,6 +84,10 @@ public class SysprocFragmentTask extends TransactionTask
             m_inputDeps = new HashMap<Integer, List<VoltTable>>();
         }
         assert(m_fragmentMsg.isSysProcTask());
+
+        if (txnState != null && !txnState.isReadOnly()) {
+            m_respBufferable = false;
+        }
     }
 
     /**
@@ -88,20 +103,26 @@ public class SysprocFragmentTask extends TransactionTask
 
         // Set the dependencies even if this is a dummy response. This site could be the master
         // on elastic join, so the fragment response message is actually going to the MPI.
-        VoltTable depTable = new VoltTable(new VoltTable.ColumnInfo("STATUS", VoltType.TINYINT));
-        depTable.setStatusCode(VoltTableUtil.NULL_DEPENDENCY_STATUS);
         for (int frag = 0; frag < m_fragmentMsg.getFragmentCount(); frag++) {
             final int outputDepId = m_fragmentMsg.getOutputDepId(frag);
-            response.addDependency(outputDepId, depTable);
+            response.addDependency(new DependencyPair.BufferDependencyPair(outputDepId,
+                    m_rawDummyResponse, 0, m_rawDummyResponse.length));
         }
-
+        response.setRespBufferable(m_respBufferable);
         m_initiator.deliver(response);
+    }
+
+    public void setResponseNotBufferable() {
+        m_respBufferable = false;
     }
 
     @Override
     public void run(SiteProcedureConnection siteConnection)
     {
         waitOnDurabilityBackpressureFuture();
+        if (hostLog.isDebugEnabled()) {
+            hostLog.debug("STARTING: " + this);
+        }
         if (!m_txnState.isReadOnly()) {
             if (m_txnState.getBeginUndoToken() == Site.kInvalidUndoToken) {
                 m_txnState.setBeginUndoToken(siteConnection.getLatestUndoToken());
@@ -125,7 +146,12 @@ public class SysprocFragmentTask extends TransactionTask
 
         final FragmentResponseMessage response = processFragmentTask(siteConnection);
         response.m_sourceHSId = m_initiator.getHSId();
+        response.setRespBufferable(m_respBufferable);
+        response.setForOldLeader(m_fragmentMsg.isForOldLeader());
         m_initiator.deliver(response);
+        if (hostLog.isDebugEnabled()) {
+            hostLog.debug("COMPLETE: " + this);
+        }
     }
 
     /**
@@ -135,19 +161,25 @@ public class SysprocFragmentTask extends TransactionTask
     public void runForRejoin(SiteProcedureConnection siteConnection, TaskLog taskLog)
     throws IOException
     {
-        // special case @UpdateApplicationCatalog to die die die during rejoin
+        // special case @UpdateCore to die die die during rejoin
         if (SysProcFragmentId.isCatalogUpdateFragment(m_fragmentMsg.getPlanHash(0))) {
-            VoltDB.crashLocalVoltDB("@UpdateApplicationCatalog is not supported during a rejoin. " +
+            VoltDB.crashLocalVoltDB("@UpdateCore is not supported during a rejoin. " +
                     "The rejoining node's VoltDB process will now exit.", false, null);
         }
 
-        //If this is a snapshot creation we have the nonce of the snapshot
-        //Provide it to the site so it can decide to enable recording in the task log
-        //if it is our rejoin snapshot start
-        if (SysProcFragmentId.isFirstSnapshotFragment(m_fragmentMsg.getPlanHash(0))) {
-            siteConnection.notifyOfSnapshotNonce((String)m_fragmentMsg.getParameterSetForFragment(0).toArray()[1],
-                    m_fragmentMsg.getSpHandle());
+        // special case for @PingPartitions for re-enabling scoreboard
+        if (SysProcFragmentId.isEnableScoreboardFragment(m_fragmentMsg.getPlanHash(0)) &&
+                ! m_queue.scoreboardEnabled()) {
+            // enable scoreboard
+            // For handling the rare corner case of MPI Failover during handling the last @PingPartitions,
+            // We would better to enable the scoreboard atomically. This requires a barrier for ensuring all sites has seen this last fragments.
+            if (m_queue.enableScoreboard()) {
+                // queue to the scoreboard
+                m_queue.offer(this);
+                return;
+            }
         }
+
         taskLog.logTask(m_fragmentMsg);
 
         respondWithDummy();
@@ -156,6 +188,9 @@ public class SysprocFragmentTask extends TransactionTask
     @Override
     public void runFromTaskLog(SiteProcedureConnection siteConnection)
     {
+        if (hostLog.isDebugEnabled()) {
+            hostLog.debug("START replaying txn: " + this);
+        }
         if (!m_txnState.isReadOnly()) {
             if (m_txnState.getBeginUndoToken() == Site.kInvalidUndoToken) {
                 m_txnState.setBeginUndoToken(siteConnection.getLatestUndoToken());
@@ -163,11 +198,14 @@ public class SysprocFragmentTask extends TransactionTask
         }
 
         processFragmentTask(siteConnection);
+        if (hostLog.isDebugEnabled()) {
+            hostLog.debug("COMPLETE replaying txn: " + this);
+        }
     }
 
 
     // Extracted the sysproc portion of ExecutionSite processFragmentTask(), then
-    // modifed to work in the new world
+    // modified to work in the new world
     public FragmentResponseMessage processFragmentTask(SiteProcedureConnection siteConnection)
     {
         final FragmentResponseMessage currentFragResponse =
@@ -179,6 +217,14 @@ public class SysprocFragmentTask extends TransactionTask
             final long fragmentId = VoltSystemProcedure.hashToFragId(m_fragmentMsg.getPlanHash(frag));
             // equivalent to dep.depId:
             // final int outputDepId = m_fragmentMsg.getOutputDepId(frag);
+
+            final VoltTrace.TraceEventBatch traceLog = VoltTrace.log(VoltTrace.Category.SPSITE);
+            if (traceLog != null) {
+                traceLog.add(() -> VoltTrace.beginDuration("runfragmenttask",
+                                                           "txnId", TxnEgo.txnIdToString(getTxnId()),
+                                                           "partition", Integer.toString(siteConnection.getCorrespondingPartitionId()),
+                                                           "fragmentId", String.valueOf(fragmentId)));
+            }
 
             ParameterSet params = m_fragmentMsg.getParameterSetForFragment(frag);
 
@@ -192,17 +238,40 @@ public class SysprocFragmentTask extends TransactionTask
                                                          params);
                 // @Shutdown returns null, handle it here
                 if (dep != null) {
-                    currentFragResponse.addDependency(dep.depId, dep.dependency);
+                    currentFragResponse.addDependency(dep);
                 }
             } catch (final EEException e) {
                 hostLog.l7dlog(Level.TRACE, LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),
                         new Object[] { Encoder.hexEncode(m_fragmentMsg.getFragmentPlan(frag)) }, e);
                 currentFragResponse.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR, e);
+                if (currentFragResponse.getTableCount() == 0) {
+                    // Make sure the response has at least 1 result with a valid DependencyId
+                    currentFragResponse.addDependency(new
+                            DependencyPair.BufferDependencyPair(m_fragmentMsg.getOutputDepId(0),
+                                    m_rawDummyResult, 0, m_rawDummyResult.length));
+                }
                 break;
             } catch (final SQLException e) {
                 hostLog.l7dlog(Level.TRACE, LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),
                         new Object[] { Encoder.hexEncode(m_fragmentMsg.getFragmentPlan(frag)) }, e);
                 currentFragResponse.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR, e);
+                if (currentFragResponse.getTableCount() == 0) {
+                    // Make sure the response has at least 1 result with a valid DependencyId
+                    currentFragResponse.addDependency(new
+                            DependencyPair.BufferDependencyPair(m_fragmentMsg.getOutputDepId(0),
+                                    m_rawDummyResult, 0, m_rawDummyResult.length));
+                }
+                break;
+            } catch (final ReplicatedTableException e) {
+                hostLog.l7dlog(Level.TRACE, LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),
+                        new Object[] { Encoder.hexEncode(m_fragmentMsg.getFragmentPlan(frag)) }, e);
+                currentFragResponse.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR, e);
+                if (currentFragResponse.getTableCount() == 0) {
+                    // Make sure the response has at least 1 result with a valid DependencyId
+                    currentFragResponse.addDependency(new
+                            DependencyPair.BufferDependencyPair(m_fragmentMsg.getOutputDepId(0),
+                                    m_rawDummyResult, 0, m_rawDummyResult.length));
+                }
                 break;
             }
             catch (final SpecifiedException e) {
@@ -215,12 +284,28 @@ public class SysprocFragmentTask extends TransactionTask
                 currentFragResponse.setStatus(
                         FragmentResponseMessage.USER_ERROR,
                         e);
+                if (currentFragResponse.getTableCount() == 0) {
+                    // Make sure the response has at least 1 result with a valid DependencyId
+                    currentFragResponse.addDependency(new
+                            DependencyPair.BufferDependencyPair(m_fragmentMsg.getOutputDepId(0),
+                                    m_rawDummyResult, 0, m_rawDummyResult.length));
+                }
             }
             catch (final VoltAbortException e) {
                 currentFragResponse.setStatus(
                         FragmentResponseMessage.USER_ERROR,
                         new SerializableException(CoreUtils.throwableToString(e)));
+                if (currentFragResponse.getTableCount() == 0) {
+                    // Make sure the response has at least 1 result with a valid DependencyId
+                    currentFragResponse.addDependency(new
+                            DependencyPair.BufferDependencyPair(m_fragmentMsg.getOutputDepId(0),
+                                    m_rawDummyResult, 0, m_rawDummyResult.length));
+                }
                 break;
+            }
+
+            if (traceLog != null) {
+                traceLog.add(VoltTrace::endDuration);
             }
         }
         return currentFragResponse;
@@ -234,6 +319,23 @@ public class SysprocFragmentTask extends TransactionTask
         sb.append("  TXN ID: ").append(TxnEgo.txnIdToString(getTxnId()));
         sb.append("  SP HANDLE ID: ").append(TxnEgo.txnIdToString(getSpHandle()));
         sb.append("  ON HSID: ").append(CoreUtils.hsIdToString(m_initiator.getHSId()));
+        sb.append("  TIMESTAMP: ");
+        MpRestartSequenceGenerator.restartSeqIdToString(getTimestamp(), sb);
+        sb.append("  FRAGMENT ID: ").append(VoltSystemProcedure.hashToFragId(m_fragmentMsg.getPlanHash(0)));
+
         return sb.toString();
+    }
+
+    public boolean needCoordination() {
+        return !(m_txnState.isReadOnly() || isBorrowedTask() || m_isNPartition);
+    }
+
+    public boolean isBorrowedTask() {
+        return false;
+    }
+
+    @Override
+    public long getTimestamp() {
+        return m_fragmentMsg.getTimestamp();
     }
 }

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,11 +23,20 @@
 
 package org.voltdb;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicReference;
 
-import junit.framework.TestCase;
-
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.voltdb.benchmark.tpcc.TPCCProjectBuilder;
 import org.voltdb.catalog.Catalog;
 import org.voltdb.compiler.VoltProjectBuilder.RoleInfo;
@@ -36,8 +45,22 @@ import org.voltdb.utils.BuildDirectoryUtils;
 import org.voltdb.utils.CatalogUtil;
 import org.voltdb.utils.MiscUtils;
 
-public class TestVoltDB extends TestCase {
+final public class TestVoltDB {
 
+    @BeforeClass
+    public static void setupClass() throws Exception {
+        System.setProperty("VOLT_JUSTATEST", "YESYESYES");
+    }
+
+    @Before
+    public void setup() {
+        VoltDB.ignoreCrash = true;
+    }
+
+    @Rule
+    public final TemporaryFolder tmp = new TemporaryFolder();
+
+    @Test
     public void testConfigurationConstructor() {
         VoltDB.Configuration blankConfig = new VoltDB.Configuration();
         assertFalse(blankConfig.m_noLoadLibVOLTDB);
@@ -106,39 +129,20 @@ public class TestVoltDB extends TestCase {
         String args21[] = {"create", "internalport", "localhost:7777"};
         VoltDB.Configuration cfg21 = new VoltDB.Configuration(args21);
         assertEquals(7777, cfg21.m_internalPort);
-        assertEquals("localhost", cfg21.m_internalPortInterface);
+        assertEquals("localhost", cfg21.m_internalInterface);
 
         //with override
         String args22[] = {"create", "internalinterface", "xxxxxx", "internalport", "localhost:7777"};
         VoltDB.Configuration cfg22 = new VoltDB.Configuration(args22);
         assertEquals(7777, cfg22.m_internalPort);
-        assertEquals("localhost", cfg22.m_internalPortInterface);
+        assertEquals("localhost", cfg22.m_internalInterface);
 
         // XXX don't test what happens if port is invalid, because the code
         // doesn't handle that
-
-        String args23[] = { "create", "replica" };
-        VoltDB.Configuration cfg23 = new VoltDB.Configuration(args23);
-        assertEquals(StartAction.CREATE, cfg23.m_startAction);
-        assertEquals(ReplicationRole.REPLICA, cfg23.m_replicationRole);
-
-        String args24[] = { "recover", "replica" };
-        VoltDB.Configuration cfg24 = new VoltDB.Configuration(args24);
-        assertEquals(StartAction.RECOVER, cfg24.m_startAction);
-        assertEquals(ReplicationRole.REPLICA, cfg24.m_replicationRole);
-
-        String args25[] = { "rejoin", "replica" };
-        VoltDB.Configuration cfg25 = new VoltDB.Configuration(args25);
-        assertEquals(StartAction.REJOIN, cfg25.m_startAction);
-        assertEquals(ReplicationRole.REPLICA, cfg25.m_replicationRole);
-
-        String args26[] = { "live rejoin", "replica" };
-        VoltDB.Configuration cfg26 = new VoltDB.Configuration(args26);
-        assertEquals(StartAction.LIVE_REJOIN, cfg26.m_startAction);
-        assertEquals(ReplicationRole.REPLICA, cfg26.m_replicationRole);
     }
 
-    public void testConfigurationValidate() {
+    @Test
+    public void testConfigurationValidate() throws Exception {
         VoltDB.Configuration config;
 
         // missing leader provided deployment - not okay.
@@ -165,15 +169,8 @@ public class TestVoltDB extends TestCase {
         config = new VoltDB.Configuration(args6);
         assertFalse(config.validate());
 
-        if (config.m_isEnterprise) {
-            // replica with explicit recover
-            String[] args7 = {"host", "hola", "replica", "recover"};
-            config = new VoltDB.Configuration(args7);
-            assertTrue(config.validate());
-        }
-
         // replica with explicit create
-        String[] args8 = {"host", "hola", "deployment", "teststring4", "catalog", "catalog.jar", "replica", "create"};
+        String[] args8 = {"host", "hola", "deployment", "teststring4", "catalog", "catalog.jar", "create"};
         config = new VoltDB.Configuration(args8);
         assertTrue(config.validate());
 
@@ -190,7 +187,7 @@ public class TestVoltDB extends TestCase {
         // valid rejoin config
         String[] args200 = {"rejoin", "host", "localhost"};
         config = new VoltDB.Configuration(args200);
-        assertEquals(config.validate(), MiscUtils.isPro());
+        assertTrue(config.validate());
 
         // invalid rejoin config, missing rejoin host
         String[] args250 = {"rejoin"};
@@ -200,19 +197,65 @@ public class TestVoltDB extends TestCase {
         // rejoinhost should still work
         String[] args201 = {"rejoinhost", "localhost"};
         config = new VoltDB.Configuration(args201);
-        assertEquals(config.validate(), MiscUtils.isPro());
+        assertTrue(config.validate());
 
         // valid rejoin config
-        String[] args300 = {"live", "rejoin", "host", "localhost", "replica"};
+        String[] args300 = {"live", "rejoin", "host", "localhost"};
         config = new VoltDB.Configuration(args300);
-        assertEquals(MiscUtils.isPro(), config.validate());
+        assertTrue(config.validate());
         assertEquals(StartAction.LIVE_REJOIN, config.m_startAction);
+    }
+
+    AtomicReference<Throwable> serverException = new AtomicReference<>(null);
+
+    final Thread.UncaughtExceptionHandler handleUncaught = new Thread.UncaughtExceptionHandler() {
+        @Override
+        public void uncaughtException(Thread t, Throwable e) {
+            serverException.compareAndSet(null, e);
+        }
+    };
+
+    @Test
+    public void testHostCountValidations() throws Exception {
+        final File path = tmp.newFolder();
+
+        String [] init = {"initialize", "voltdbroot", path.getPath()};
+        VoltDB.Configuration config = new VoltDB.Configuration(init);
+        assertTrue(config.validate()); // false in both pro and community]
+
+        ServerThread server = new ServerThread(config);
+        server.setUncaughtExceptionHandler(handleUncaught);
+        server.start();
+        server.join();
+
+        // invalid host count
+        String [] args400 = {"probe", "voltdbroot", path.getPath(), "hostcount", "2", "mesh", "uno,", "due", ",","tre", ",quattro" };
+        config = new VoltDB.Configuration(args400);
+        assertFalse(config.validate()); // false in both pro and community
+
+        String [] args401 = {"probe", "voltdbroot", path.getPath(), "hostcount", "-3" , "mesh", "uno,", "due", ",","tre", ",quattro"};
+        config = new VoltDB.Configuration(args401);
+        assertFalse(config.validate()); // false in both pro and community
+
+        String [] args402 = {"probe", "voltdbroot", path.getPath(), "hostcount", "4" , "mesh", "uno,", "due", ",","tre", ",quattro"};
+        config = new VoltDB.Configuration(args402);
+        assertTrue(config.validate()); // false in both pro and community
+
+        String [] args403 = {"probe", "voltdbroot", path.getPath(), "hostcount", "6" , "mesh", "uno,", "due", ",","tre", ",quattro"};
+        config = new VoltDB.Configuration(args403);
+        assertTrue(config.validate()); // false in both pro and community
+
+        String [] args404 = {"probe", "voltdbroot", path.getPath(), "mesh", "uno,", "due", ",","tre", ",quattro"};
+        config = new VoltDB.Configuration(args404);
+        assertTrue(config.validate()); // false in both pro and community
+        assertEquals(4, config.m_hostCount);
     }
 
     /**
      * ENG-7088: Validate that deployment file users that want to belong to roles which
      * don't yet exist don't render the deployment file invalid.
      */
+    @Test
     public void testCompileDeploymentAddUserToNonExistentGroup() throws IOException {
         TPCCProjectBuilder project = new TPCCProjectBuilder();
         project.addDefaultSchema();
@@ -238,7 +281,7 @@ public class TestVoltDB extends TestCase {
         assertTrue("Project failed to compile", project.compile(catalogJar));
 
         byte[] bytes = MiscUtils.fileToBytes(new File(catalogJar));
-        String serializedCatalog = CatalogUtil.getSerializedCatalogStringFromJar(CatalogUtil.loadAndUpgradeCatalogFromJar(bytes).getFirst());
+        String serializedCatalog = CatalogUtil.getSerializedCatalogStringFromJar(CatalogUtil.loadAndUpgradeCatalogFromJar(bytes, false).getFirst());
         assertNotNull("Error loading catalog from jar", serializedCatalog);
 
         Catalog catalog = new Catalog();

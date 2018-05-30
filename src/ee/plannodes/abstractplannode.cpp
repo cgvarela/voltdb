@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -50,13 +50,21 @@
 #include "storage/persistenttable.h"
 #include "storage/TableCatalogDelegate.hpp"
 
-#include <sstream>
-
-using namespace std;
-
 namespace voltdb {
 
-AbstractPlanNode::AbstractPlanNode() : m_planNodeId(-1), m_isInline(false) { }
+AbstractPlanNode::AbstractPlanNode()
+    : m_planNodeId(-1)
+    , m_children()
+    , m_childIds()
+    , m_executor()
+    , m_inlineNodes()
+    , m_isInline(false)
+    , m_outputTable()
+    , m_inputTables()
+    , m_validOutputColumnCount(0)
+    , m_outputSchema()
+{
+}
 
 AbstractPlanNode::~AbstractPlanNode()
 {
@@ -111,9 +119,9 @@ void AbstractPlanNode::setInputTables(const vector<Table*>& val)
             TableCatalogDelegate* tcd = engine->getTableDelegate(persistentTable->name());
             m_inputTables[ii].setTable(tcd);
         } else {
-            TempTable* tempTable = dynamic_cast<TempTable*>(val[ii]);
-            assert(tempTable);
-            m_inputTables[ii].setTable(tempTable);
+            AbstractTempTable* abstractTempTable = dynamic_cast<AbstractTempTable*>(val[ii]);
+            assert(abstractTempTable);
+            m_inputTables[ii].setTable(abstractTempTable);
         }
     }
 }
@@ -126,9 +134,9 @@ void AbstractPlanNode::setOutputTable(Table* table)
         TableCatalogDelegate* tcd = engine->getTableDelegate(persistentTable->name());
         m_outputTable.setTable(tcd);
     } else {
-        TempTable* tempTable = dynamic_cast<TempTable*>(table);
-        assert(tempTable);
-        m_outputTable.setTable(tempTable);
+        AbstractTempTable* abstractTempTable = dynamic_cast<AbstractTempTable*>(table);
+        assert(abstractTempTable);
+        m_outputTable.setTable(abstractTempTable);
     }
 }
 
@@ -250,15 +258,7 @@ AbstractPlanNode* AbstractPlanNode::fromJSONObject(PlannerDomValue obj)
 {
 
     string typeString = obj.valueForKey("PLAN_NODE_TYPE").asStr();
-
-    //FIXME: EVEN if this leak guard is warranted --
-    // like we EXPECT to be catching plan deserialization exceptions
-    // and our biggest concern will be the memory this may leak? --
-    // we don't need to be mediating all the node
-    // pointer dereferences through the smart pointer.
-    // Why not just get() it and forget it until .release() time?
-    // As is, it just makes single-step debugging awkward.
-    auto_ptr<AbstractPlanNode> node(
+    std::unique_ptr<AbstractPlanNode> node(
         plannodeutil::getEmptyPlanNode(stringToPlanNode(typeString)));
 
     node->m_planNodeId = obj.valueForKey("ID").asInt();
@@ -317,8 +317,40 @@ void AbstractPlanNode::loadIntArrayFromJSONObject(const char* label,
 {
     if (obj.hasNonNullKey(label)) {
         PlannerDomValue intArray = obj.valueForKey(label);
-        for (int i = 0; i < intArray.arrayLen(); i++) {
+        int len = intArray.arrayLen();
+        for (int i = 0; i < len; ++i) {
             result.push_back(intArray.valueAtIndex(i).asInt());
+        }
+    }
+}
+
+void AbstractPlanNode::loadStringArrayFromJSONObject(const char* label,
+                                                     PlannerDomValue obj,
+                                                     std::vector<std::string>& result)
+{
+    if (obj.hasNonNullKey(label)) {
+        PlannerDomValue stringArray = obj.valueForKey(label);
+        int len = stringArray.arrayLen();
+        for (int i = 0; i < len; ++i) {
+            result.push_back(stringArray.valueAtIndex(i).asStr());
+        }
+    }
+}
+
+// Load boolean array from JSON object.
+// In IndexScanPlanNode (indexscannode.h and indexscannode.cpp),
+//   we added a boolean vector "m_compare_not_distinct"
+//   to indicate whether null values should be skipped for each search key column.
+// This function is used to deseralize that boolean vector. (ENG-11096)
+void AbstractPlanNode::loadBooleanArrayFromJSONObject(const char* label,
+                                                      PlannerDomValue obj,
+                                                      std::vector<bool>& result)
+{
+    if (obj.hasNonNullKey(label)) {
+        PlannerDomValue stringArray = obj.valueForKey(label);
+        int len = stringArray.arrayLen();
+        for (int i = 0; i < len; ++i) {
+            result.push_back(stringArray.valueAtIndex(i).asBool());
         }
     }
 }
@@ -337,7 +369,7 @@ AbstractExpression* AbstractPlanNode::loadExpressionFromJSONObject(const char* l
 // ------------------------------------------------------------------
 string AbstractPlanNode::debug() const
 {
-    ostringstream buffer;
+    std::ostringstream buffer;
     buffer << planNodeToString(getPlanNodeType())
            << "[" << getPlanNodeId() << "]";
     return buffer.str();
@@ -345,9 +377,9 @@ string AbstractPlanNode::debug() const
 
 string AbstractPlanNode::debug(const string& spacer) const
 {
-    ostringstream buffer;
+    std::ostringstream buffer;
     buffer << spacer << "* " << debug() << "\n";
-    string info_spacer = spacer + "  |";
+    std::string info_spacer = spacer + "  |";
     buffer << debugInfo(info_spacer);
     //
     // Inline PlanNodes
@@ -362,6 +394,30 @@ string AbstractPlanNode::debug(const string& spacer) const
                    << planNodeToString(it->second->getPlanNodeType())
                    << ":\n";
             buffer << it->second->debugInfo(internal_spacer);
+        }
+    }
+    //
+    // Output table
+    //
+    Table* outputTable = getOutputTable();
+    buffer << info_spacer << "Output table:\n";
+    if (outputTable != NULL) {
+        buffer << outputTable->debug(spacer + "  ");
+    }
+    else {
+        buffer << "  " << info_spacer << "<NULL>\n";
+    }
+    //
+    // Input tables
+    //
+    for (int i = 0; i < getInputTableCount(); ++i) {
+        Table* inputTable = getInputTable(i);
+        buffer << info_spacer << "Input table " << i << ":\n";
+        if (inputTable != NULL) {
+            buffer << inputTable->debug(spacer + "  ");
+        }
+        else {
+            buffer << "  " << info_spacer << "<NULL>\n";
         }
     }
     //
@@ -385,7 +441,7 @@ Table* AbstractPlanNode::TableReference::getTable() const
     return m_tempTable;
 }
 
-AbstractPlanNode::TableOwner::~TableOwner() { delete m_tempTable; }
+AbstractPlanNode::TableOwner::~TableOwner() { delete getTempTable(); }
 
 AbstractPlanNode::OwningExpressionVector::~OwningExpressionVector()
 {
@@ -409,4 +465,31 @@ void AbstractPlanNode::OwningExpressionVector::loadExpressionArrayFromJSONObject
     }
 }
 
+void AbstractPlanNode::loadSortListFromJSONObject(PlannerDomValue obj,
+                                                      std::vector<AbstractExpression*> *sortExprs,
+                                                      std::vector<SortDirectionType>   *sortDirs) {
+    PlannerDomValue sortColumnsArray = obj.valueForKey("SORT_COLUMNS");
+
+    for (int i = 0; i < sortColumnsArray.arrayLen(); i++) {
+        PlannerDomValue sortColumn = sortColumnsArray.valueAtIndex(i);
+        bool hasDirection = (sortDirs == NULL), hasExpression = (sortExprs == NULL);
+
+        if (sortDirs && sortColumn.hasNonNullKey("SORT_DIRECTION")) {
+            hasDirection = true;
+            std::string sortDirectionStr = sortColumn.valueForKey("SORT_DIRECTION").asStr();
+            sortDirs->push_back(stringToSortDirection(sortDirectionStr));
+        }
+        if (sortExprs && sortColumn.hasNonNullKey("SORT_EXPRESSION")) {
+            hasExpression = true;
+            PlannerDomValue exprDom = sortColumn.valueForKey("SORT_EXPRESSION");
+            sortExprs->push_back(AbstractExpression::buildExpressionTree(exprDom));
+        }
+
+        if (!(hasExpression && hasDirection)) {
+            throw SerializableEEException(VOLT_EE_EXCEPTION_TYPE_EEEXCEPTION,
+                                          "OrderByPlanNode::loadFromJSONObject:"
+                                          " Does not have expression and direction.");
+        }
+    }
+}
 } // namespace voltdb

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,10 +17,8 @@
 
 package org.voltdb.sysprocs;
 
-import org.voltdb.ProcInfo;
 import org.voltdb.SystemProcedureExecutionContext;
 import org.voltdb.VoltTable;
-import org.voltdb.catalog.Database;
 
 /**
  * Execute a user-provided read-write multi-partition SQL statement.
@@ -28,22 +26,15 @@ import org.voltdb.catalog.Database;
  * embedded planner process.
  *
  * AdHocBase implements the core logic.
- * This subclass is needed for @ProcInfo.
  */
-@ProcInfo(singlePartition = false)
 public class AdHoc_RW_MP extends AdHocBase {
-
-    Database m_db = null;
 
     /**
      * System procedure run hook.
      * Use the base class implementation.
      *
-     * @param ctx  execution context
-     * @param aggregatorFragments  aggregator plan fragments
-     * @param collectorFragments  collector plan fragments
-     * @param sqlStatements  source SQL statements
-     * @param replicatedTableDMLFlags  flags set to 1 when replicated
+     * @param ctx execution context
+     * @param serializedBatchData serialized batch data
      *
      * @return  results as VoltTable array
      */

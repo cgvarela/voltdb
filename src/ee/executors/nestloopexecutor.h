@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -48,29 +48,22 @@
 
 #include "common/common.h"
 #include "common/valuevector.h"
-#include "executors/abstractexecutor.h"
+#include "executors/abstractjoinexecutor.h"
 
 namespace voltdb {
-
-class UndoLog;
-class ReadWriteSet;
-class AggregateExecutorBase;
 
 /**
  *
  */
-class NestLoopExecutor : public AbstractExecutor {
+class NestLoopExecutor : public AbstractJoinExecutor {
     public:
         NestLoopExecutor(VoltDBEngine *engine, AbstractPlanNode* abstract_node) :
-            AbstractExecutor(engine, abstract_node) { }
-    protected:
-        bool p_init(AbstractPlanNode*,
-                    TempTableLimits* limits);
+            AbstractJoinExecutor(engine, abstract_node) { }
+    private:
+
+        bool p_init(AbstractPlanNode*, const ExecutorVector& executorVector);
         bool p_execute(const NValueArray &params);
 
-        StandAloneTupleStorage m_null_tuple;
-
-        AggregateExecutorBase* m_aggExec;
 };
 
 }

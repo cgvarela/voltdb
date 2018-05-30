@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,8 +21,8 @@ namespace voltdb {
 
 /** implement the 2n/2n+1-argument DECODE function */
 template<> inline NValue NValue::call<FUNC_DECODE>(const std::vector<NValue>& arguments) {
-    int size = (int)arguments.size();
-    assert(size>=3);
+    int size = static_cast <int> (arguments.size());
+    assert(size >=3);
     int loopnum = ( size - 1 )/2;
     const NValue& baseval = arguments[0];
     for ( int i = 0; i < loopnum; i++ ) {
@@ -35,8 +35,8 @@ template<> inline NValue NValue::call<FUNC_DECODE>(const std::vector<NValue>& ar
     if ( hasDefault ) {
         NValue defaultResult = arguments[size-1];
         // See the comment above about the reason for un-inlining, here.
-        if ( defaultResult.m_sourceInlined ) {
-            defaultResult.allocateObjectFromInlinedValue();
+        if (defaultResult.getVolatile()) {
+            defaultResult.allocateObjectFromPool();
         }
         return defaultResult;
     }

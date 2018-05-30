@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -22,18 +22,23 @@ import java.nio.ByteBuffer;
 
 import org.voltcore.messaging.TransactionInfoBaseMessage;
 import org.voltcore.utils.CoreUtils;
+import org.voltdb.iv2.MpRestartSequenceGenerator;
+import org.voltdb.iv2.TxnEgo;
 
 public class CompleteTransactionMessage extends TransactionInfoBaseMessage
 {
     boolean m_isRollback;
     boolean m_requiresAck;
     boolean m_rollbackForFault;
-
+    long m_timestamp = INITIAL_TIMESTAMP;
+    boolean m_isAbortDuringRepair;
     int m_hash;
     int m_flags = 0;
     static final int ISROLLBACK = 0;
     static final int REQUIRESACK = 1;
     static final int ISRESTART = 2;
+    static final int ISNPARTTXN = 3;
+    static final int ISABORTDURINGREPAIR = 4;
 
     private void setBit(int position, boolean value)
     {
@@ -70,18 +75,21 @@ public class CompleteTransactionMessage extends TransactionInfoBaseMessage
     public CompleteTransactionMessage(long initiatorHSId, long coordinatorHSId,
                                       long txnId, boolean isReadOnly, int hash,
                                       boolean isRollback, boolean requiresAck,
-                                      boolean isRestart, boolean isForReplay)
+                                      boolean isRestart, boolean isForReplay,
+                                      boolean isNPartTxn, boolean isAbortDuringRepair)
     {
         super(initiatorHSId, coordinatorHSId, txnId, 0, isReadOnly, isForReplay);
         m_hash = hash;
         setBit(ISROLLBACK, isRollback);
         setBit(REQUIRESACK, requiresAck);
         setBit(ISRESTART, isRestart);
+        setBit(ISNPARTTXN, isNPartTxn);
+        setBit(ISABORTDURINGREPAIR, isAbortDuringRepair);
     }
 
-    public CompleteTransactionMessage(CompleteTransactionMessage msg)
+    public CompleteTransactionMessage(long initiatorHSId, long coordinatorHSId, CompleteTransactionMessage msg)
     {
-        super(msg.getInitiatorHSId(), msg.getCoordinatorHSId(), msg);
+        super(initiatorHSId, coordinatorHSId, msg);
         m_hash = msg.m_hash;
         m_flags = msg.m_flags;
     }
@@ -101,15 +109,41 @@ public class CompleteTransactionMessage extends TransactionInfoBaseMessage
         return getBit(ISRESTART);
     }
 
+    public boolean isNPartTxn()
+    {
+        return getBit(ISNPARTTXN);
+    }
+
+    public boolean isAbortDuringRepair() {
+        return getBit(ISABORTDURINGREPAIR);
+    }
+
     public int getHash() {
         return m_hash;
+    }
+
+    public void setRequireAck(boolean requireAck) {
+        setBit(REQUIRESACK, requireAck);
+    }
+
+    public boolean needsCoordination() {
+        return !isNPartTxn() && !isReadOnly();
+    }
+
+    // This is used when MP txn is restarted.
+    public void setTimestamp(long timestamp) {
+        m_timestamp = timestamp;
+    }
+
+    public long getTimestamp() {
+        return m_timestamp;
     }
 
     @Override
     public int getSerializedSize()
     {
         int msgsize = super.getSerializedSize();
-        msgsize += 4 + 4;
+        msgsize += 4 + 4 + 8;
         return msgsize;
     }
 
@@ -120,6 +154,7 @@ public class CompleteTransactionMessage extends TransactionInfoBaseMessage
         super.flattenToBuffer(buf);
         buf.putInt(m_hash);
         buf.putInt(m_flags);
+        buf.putLong(m_timestamp);
         assert(buf.capacity() == buf.position());
         buf.limit(buf.position());
     }
@@ -130,6 +165,7 @@ public class CompleteTransactionMessage extends TransactionInfoBaseMessage
         super.initFromBuffer(buf);
         m_hash = buf.getInt();
         m_flags = buf.getInt();
+        m_timestamp = buf.getLong();
         assert(buf.capacity() == buf.position());
     }
 
@@ -140,9 +176,17 @@ public class CompleteTransactionMessage extends TransactionInfoBaseMessage
         sb.append("COMPLETE_TRANSACTION (FROM COORD: ");
         sb.append(CoreUtils.hsIdToString(m_coordinatorHSId));
         sb.append(") FOR TXN ");
-        sb.append(m_txnId);
+        sb.append(TxnEgo.txnIdToString(m_txnId) + "(" + m_txnId + ")");
+        sb.append("\n SP HANDLE: ");
+        sb.append(TxnEgo.txnIdToString(getSpHandle()));
         sb.append("\n  FLAGS: ").append(m_flags);
 
+        if (isNPartTxn())
+            sb.append("\n  ").append(" N Partition TXN");
+
+        sb.append("\n  TIMESTAMP: ");
+        MpRestartSequenceGenerator.restartSeqIdToString(m_timestamp, sb);
+        sb.append("\n  TRUNCATION HANDLE:" + TxnEgo.txnIdToString(getTruncationHandle()));
         sb.append("\n  HASH: " + String.valueOf(m_hash));
 
         if (isRollback())
@@ -155,6 +199,13 @@ public class CompleteTransactionMessage extends TransactionInfoBaseMessage
             sb.append("\n  THIS IS A TRANSACTION RESTART");
         }
 
+        if (!isForReplica()) {
+            sb.append("\n  SEND TO LEADER");
+        }
+
+        if(isAbortDuringRepair()) {
+            sb.append("\n  THIS IS NOT RESTARTABLE (ABORT) REPAIR");
+        }
         return sb.toString();
     }
 }

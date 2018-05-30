@@ -1,34 +1,98 @@
 # This file is part of VoltDB.
-
-# Copyright (C) 2008-2015 VoltDB Inc.
+# Copyright (C) 2008-2018 VoltDB Inc.
 #
-# This file contains original code and/or modifications of original code.
-# Any modifications made by VoltDB Inc. are licensed under the following
-# terms and conditions:
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
 #
-# Permission is hereby granted, free of charge, to any person obtaining
-# a copy of this software and associated documentation files (the
-# "Software"), to deal in the Software without restriction, including
-# without limitation the rights to use, copy, modify, merge, publish,
-# distribute, sublicense, and/or sell copies of the Software, and to
-# permit persons to whom the Software is furnished to do so, subject to
-# the following conditions:
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
 #
-# The above copyright notice and this permission notice shall be
-# included in all copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-# IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-# OTHER DEALINGS IN THE SOFTWARE.
+# You should have received a copy of the GNU Affero General Public License
+# along with VoltDB.  If not, see <http://www.gnu.org/licenses/>.
+import sys
+import time
+import signal
+from voltcli import checkstats
+from voltcli.checkstats import StatisticsProcedureException
+from voltcli import utility
 
 @VOLT.Command(
     bundles = VOLT.AdminBundle(),
-    description = 'Shut down the running VoltDB cluster.'
+    description = 'Shutdown the running VoltDB cluster.',
+    options = (
+        VOLT.BooleanOption('-f', '--force', 'forcing', 'immediate shutdown', default = False),
+        VOLT.BooleanOption('-s', '--save', 'save', 'snapshot database contents', default = False),
+        VOLT.IntegerOption('-t', '--timeout', 'timeout', 'The timeout value in seconds if @Statistics is not progressing.', default = 120),
+    )
 )
 def shutdown(runner):
-    response = runner.call_proc('@Shutdown', [], [], check_status = False)
+    if runner.opts.forcing and runner.opts.save:
+       runner.abort_with_help('You cannot specify both --force and --save options.')
+    if runner.opts.timeout <= 0:
+        runner.abort_with_help('The timeout value must be more than zero seconds.')
+    shutdown_params = []
+    columns = []
+    zk_pause_txnid = 0
+
+    communityVersion = isCommunityVersion(runner)
+
+    runner.info('Cluster shutdown in progress.')
+    if not runner.opts.forcing:
+        stateMessage = 'The cluster shutdown process has stopped. The cluster is still in a paused state.'
+        actionMessage = 'You may shutdown the cluster with the "voltadmin shutdown --force" command, or continue to wait with "voltadmin shutdown".'
+        try:
+            runner.info('Preparing for shutdown...')
+            resp = runner.call_proc('@PrepareShutdown', [], [])
+            if resp.status() != 1:
+                runner.abort('The preparation for shutdown failed with status: %d' % resp.response.statusString)
+            zk_pause_txnid = resp.table(0).tuple(0).column_integer(0)
+            runner.info('The cluster is paused prior to shutdown.')
+
+            runner.info('Writing out all queued export data...')
+            status = runner.call_proc('@Quiesce', [], []).table(0).tuple(0).column_integer(0)
+            if status <> 0:
+                runner.abort('The cluster has failed to be quiesce with status: %d' % status)
+
+            checkstats.check_clients(runner)
+            checkstats.check_importer(runner)
+
+            if not communityVersion:
+                checkstats.check_command_log(runner)
+                runner.info('All transactions have been made durable.')
+
+            if runner.opts.save:
+               actionMessage = 'You may shutdown the cluster with the "voltadmin shutdown --force" command, or continue to wait with "voltadmin shutdown --save".'
+               columns = [VOLT.FastSerializer.VOLTTYPE_BIGINT]
+               shutdown_params =  [zk_pause_txnid]
+               #save option, check more stats
+               checkstats.check_dr_consumer(runner)
+               runner.info('Starting resolution of external commitments...')
+               checkstats.check_exporter(runner)
+               checkstats.check_dr_producer(runner)
+               runner.info('Saving a final snapshot, The cluster will shutdown after the snapshot is finished...')
+            else:
+                checkstats.check_exporter(runner)
+                runner.info('Shutting down the cluster...')
+        except StatisticsProcedureException as proex:
+             runner.info(stateMessage)
+             runner.error(proex.message)
+             if proex.isTimeout:
+                 runner.info(actionMessage)
+             sys.exit(proex.exitCode)
+        except (KeyboardInterrupt, SystemExit):
+            runner.info(stateMessage)
+            runner.abort(actionMessage)
+    response = runner.call_proc('@Shutdown', columns, shutdown_params, check_status = False)
     print response
+
+
+def isCommunityVersion(runner):
+    response = runner.call_proc('@SystemInformation', [VOLT.FastSerializer.VOLTTYPE_STRING], ['OVERVIEW'])
+    for tuple in response.table(0).tuples():
+        if tuple[1] == "LICENSE":
+            return False
+    return True

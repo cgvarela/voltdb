@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -15,10 +15,7 @@
  * along with VoltDB.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "JNITopend.h"
-#include <cassert>
-#include <iostream>
 
-#include "common/debuglog.h"
 #include "common/StreamBlock.h"
 #include "storage/table.h"
 
@@ -91,6 +88,22 @@ JNITopend::JNITopend(JNIEnv *env, jobject caller) : m_jniEnv(env), m_javaExecuti
         throw std::exception();
     }
 
+    m_callJavaUserDefinedFunctionMID = m_jniEnv->GetMethodID(
+            jniClass, "callJavaUserDefinedFunction", "()I");
+    if (m_callJavaUserDefinedFunctionMID == NULL) {
+        m_jniEnv->ExceptionDescribe();
+        assert(m_callJavaUserDefinedFunctionMID != 0);
+        throw std::exception();
+    }
+
+    m_resizeUDFBufferMID = m_jniEnv->GetMethodID(
+            jniClass, "resizeUDFBuffer", "(I)V");
+    if (m_resizeUDFBufferMID == NULL) {
+        m_jniEnv->ExceptionDescribe();
+        assert(m_resizeUDFBufferMID != 0);
+        throw std::exception();
+    }
+
     m_nextDependencyMID = m_jniEnv->GetMethodID(jniClass, "nextDependencyAsBytes", "(I)[B");
     if (m_nextDependencyMID == NULL) {
         m_jniEnv->ExceptionDescribe();
@@ -98,7 +111,14 @@ JNITopend::JNITopend(JNIEnv *env, jobject caller) : m_jniEnv(env), m_javaExecuti
         throw std::exception();
     }
 
-    m_fragmentProgressUpdateMID = m_jniEnv->GetMethodID(jniClass, "fragmentProgressUpdate", "(ILjava/lang/String;Ljava/lang/String;JJJJ)J");
+    m_traceLogMID = m_jniEnv->GetMethodID(jniClass, "traceLog", "(ZLjava/lang/String;Ljava/lang/String;)V");
+    if (m_traceLogMID == NULL) {
+        m_jniEnv->ExceptionDescribe();
+        assert(m_traceLogMID != 0);
+        throw std::exception();
+    }
+
+    m_fragmentProgressUpdateMID = m_jniEnv->GetMethodID(jniClass, "fragmentProgressUpdate", "(IIJJJ)J");
     if (m_fragmentProgressUpdateMID == NULL) {
         m_jniEnv->ExceptionDescribe();
         assert(m_fragmentProgressUpdateMID != 0);
@@ -140,10 +160,19 @@ JNITopend::JNITopend(JNIEnv *env, jobject caller) : m_jniEnv(env), m_javaExecuti
     m_pushExportBufferMID = m_jniEnv->GetStaticMethodID(
             m_exportManagerClass,
             "pushExportBuffer",
-            "(JILjava/lang/String;JJLjava/nio/ByteBuffer;ZZ)V");
+            "(ILjava/lang/String;JJLjava/nio/ByteBuffer;Z)V");
     if (m_pushExportBufferMID == NULL) {
         m_jniEnv->ExceptionDescribe();
         assert(m_pushExportBufferMID != NULL);
+        throw std::exception();
+    }
+    m_pushExportEOFMID = m_jniEnv->GetStaticMethodID(
+            m_exportManagerClass,
+            "pushEndOfStream",
+            "(ILjava/lang/String;)V");
+    if (m_pushExportEOFMID == NULL) {
+        m_jniEnv->ExceptionDescribe();
+        assert(m_pushExportEOFMID != NULL);
         throw std::exception();
     }
 
@@ -174,34 +203,77 @@ JNITopend::JNITopend(JNIEnv *env, jobject caller) : m_jniEnv(env), m_javaExecuti
     m_pushDRBufferMID = m_jniEnv->GetStaticMethodID(
             m_partitionDRGatewayClass,
             "pushDRBuffer",
-            "(IJJJLjava/nio/ByteBuffer;)V");
-    if (m_pushDRBufferMID == NULL) {
+            "(IJJJJILjava/nio/ByteBuffer;)J");
+
+    m_pushPoisonPillMID = m_jniEnv->GetStaticMethodID(
+            m_partitionDRGatewayClass,
+            "pushPoisonPill",
+            "(ILjava/lang/String;Ljava/nio/ByteBuffer;)V");
+
+    if (m_pushDRBufferMID == NULL || m_pushPoisonPillMID == NULL) {
         m_jniEnv->ExceptionDescribe();
-        assert(m_pushDRBufferMID != NULL);
+        assert(m_pushDRBufferMID != NULL && m_pushPoisonPillMID != NULL);
         throw std::exception();
     }
 
-    m_encoderClass = m_jniEnv->FindClass("org/voltdb/utils/Encoder");
-    if (m_encoderClass == NULL) {
+    m_reportDRConflictMID = m_jniEnv->GetStaticMethodID(
+            m_partitionDRGatewayClass,
+            "reportDRConflict",
+            "(IIJLjava/lang/String;IILjava/nio/ByteBuffer;Ljava/nio/ByteBuffer;Ljava/nio/ByteBuffer;Ljava/nio/ByteBuffer;ILjava/nio/ByteBuffer;Ljava/nio/ByteBuffer;Ljava/nio/ByteBuffer;Ljava/nio/ByteBuffer;)I");
+    if (m_reportDRConflictMID == NULL) {
         m_jniEnv->ExceptionDescribe();
-        assert(m_encoderClass != NULL);
+        assert(m_reportDRConflictMID != NULL);
         throw std::exception();
     }
 
-    m_encoderClass = static_cast<jclass>(m_jniEnv->NewGlobalRef(m_encoderClass));
-    if (m_encoderClass == NULL) {
+    m_decompressionClass = m_jniEnv->FindClass("org/voltdb/utils/CompressionService");
+    if (m_decompressionClass == NULL) {
         m_jniEnv->ExceptionDescribe();
-        assert(m_encoderClass != NULL);
+        assert(m_decompressionClass != NULL);
+        throw std::exception();
+    }
+
+    m_decompressionClass = static_cast<jclass>(m_jniEnv->NewGlobalRef(m_decompressionClass));
+    if (m_decompressionClass == NULL) {
+        m_jniEnv->ExceptionDescribe();
+        assert(m_decompressionClass != NULL);
         throw std::exception();
     }
 
     m_decodeBase64AndDecompressToBytesMID = m_jniEnv->GetStaticMethodID(
-            m_encoderClass,
+            m_decompressionClass,
             "decodeBase64AndDecompressToBytes",
             "(Ljava/lang/String;)[B");
     if (m_decodeBase64AndDecompressToBytesMID == NULL) {
         m_jniEnv->ExceptionDescribe();
         assert(m_decodeBase64AndDecompressToBytesMID != NULL);
+        throw std::exception();
+    }
+
+    m_storeLargeTempTableBlockMID = m_jniEnv->GetMethodID(jniClass,
+                                                          "storeLargeTempTableBlock",
+                                                          "(JJLjava/nio/ByteBuffer;)Z");
+    if (m_storeLargeTempTableBlockMID == NULL) {
+        m_jniEnv->ExceptionDescribe();
+        assert(m_storeLargeTempTableBlockMID != 0);
+        throw std::exception();
+    }
+
+    m_loadLargeTempTableBlockMID = m_jniEnv->GetMethodID(jniClass,
+                                                         "loadLargeTempTableBlock",
+                                                          "(JJLjava/nio/ByteBuffer;)Z");
+    if (m_loadLargeTempTableBlockMID == NULL) {
+        m_jniEnv->ExceptionDescribe();
+        assert(m_loadLargeTempTableBlockMID != 0);
+        throw std::exception();
+    }
+
+    m_releaseLargeTempTableBlockMID = m_jniEnv->GetMethodID(jniClass,
+                                                            "releaseLargeTempTableBlock",
+                                                            "(JJ)Z");
+    if (m_releaseLargeTempTableBlockMID == NULL) {
+        m_jniEnv->ExceptionDescribe();
+        assert(m_releaseLargeTempTableBlockMID != 0);
         throw std::exception();
     }
 }
@@ -260,33 +332,35 @@ int JNITopend::loadNextDependency(int32_t dependencyId, voltdb::Pool *stringPool
     }
 }
 
-int64_t JNITopend::fragmentProgressUpdate(int32_t batchIndex,
-                std::string planNodeName,
-                std::string targetTableName,
-                int64_t targetTableSize,
+void JNITopend::traceLog(bool isBegin, const char *name, const char *args) {
+    jstring nameStr = m_jniEnv->NewStringUTF(name);
+    jstring argsStr = m_jniEnv->NewStringUTF(args);
+
+    m_jniEnv->CallVoidMethod(m_javaExecutionEngine, m_traceLogMID,
+                             isBegin ? JNI_TRUE : JNI_FALSE, nameStr, argsStr);
+
+    m_jniEnv->DeleteLocalRef(nameStr);
+    m_jniEnv->DeleteLocalRef(argsStr);
+
+    if (m_jniEnv->ExceptionCheck()) {
+        m_jniEnv->ExceptionDescribe();
+        throw std::exception();
+    }
+}
+
+int64_t JNITopend::fragmentProgressUpdate(
+                int32_t batchIndex,
+                PlanNodeType planNodeType,
                 int64_t tuplesProcessed,
                 int64_t currMemoryInBytes,
                 int64_t peakMemoryInBytes) {
-        JNILocalFrameBarrier jni_frame = JNILocalFrameBarrier(m_jniEnv, 10);
-        if (jni_frame.checkResult() < 0) {
-                VOLT_ERROR("Unable to load dependency: jni frame error.");
-                throw std::exception();
-        }
-
-        jstring jPlanNodeName = m_jniEnv->NewStringUTF(planNodeName.c_str());
-        if (m_jniEnv->ExceptionCheck()) {
-                m_jniEnv->ExceptionDescribe();
-                throw std::exception();
-        }
-        jstring jTargetTableName = m_jniEnv->NewStringUTF(targetTableName.c_str());
-        if (m_jniEnv->ExceptionCheck()) {
-                m_jniEnv->ExceptionDescribe();
-                throw std::exception();
-        }
-
-    jlong nextStep = m_jniEnv->CallLongMethod(m_javaExecutionEngine,m_fragmentProgressUpdateMID,
-                batchIndex, jPlanNodeName, jTargetTableName, targetTableSize, tuplesProcessed,
-                currMemoryInBytes, peakMemoryInBytes);
+    jlong nextStep = m_jniEnv->CallLongMethod(m_javaExecutionEngine,
+                                              m_fragmentProgressUpdateMID,
+                                              batchIndex,
+                                              static_cast<int32_t>(planNodeType),
+                                              tuplesProcessed,
+                                              currMemoryInBytes,
+                                              peakMemoryInBytes);
     return (int64_t)nextStep;
 }
 
@@ -342,10 +416,81 @@ std::string JNITopend::decodeBase64AndDecompress(const std::string& base64Str) {
         throw std::exception();
     }
 
-    jbyteArray jbuf = (jbyteArray)m_jniEnv->CallStaticObjectMethod(m_encoderClass,
+    jbyteArray jbuf = (jbyteArray)m_jniEnv->CallStaticObjectMethod(m_decompressionClass,
                                                                    m_decodeBase64AndDecompressToBytesMID,
                                                                    jBase64Str);
     return jbyteArrayToStdString(m_jniEnv, jni_frame, jbuf);
+}
+
+bool JNITopend::storeLargeTempTableBlock(LargeTempTableBlock* block) {
+    JNILocalFrameBarrier jni_frame = JNILocalFrameBarrier(m_jniEnv, 1);
+    if (jni_frame.checkResult() < 0) {
+        VOLT_ERROR("JNI frame error");
+        throw std::exception();
+    }
+
+    std::unique_ptr<char[]> storage = block->releaseData();
+    jobject blockByteBuffer = m_jniEnv->NewDirectByteBuffer(storage.get(), LargeTempTableBlock::BLOCK_SIZE_IN_BYTES);
+    if (blockByteBuffer == NULL) {
+        m_jniEnv->ExceptionDescribe();
+        throw std::exception();
+    }
+
+    LargeTempTableBlockId blockId = block->id();
+    jboolean success = m_jniEnv->CallBooleanMethod(m_javaExecutionEngine,
+                                                   m_storeLargeTempTableBlockMID,
+                                                   blockId.getSiteId(),
+                                                   blockId.getBlockCounter(),
+                                                   blockByteBuffer);
+    // It's assumed that when control returns to this method the block
+    // will have been persisted to disk.  The memory for the block
+    // will be returned to the OS when above unique_ptr goes out of
+    // scope.
+    return success;
+}
+
+bool JNITopend::loadLargeTempTableBlock(LargeTempTableBlock* block) {
+    JNILocalFrameBarrier jni_frame = JNILocalFrameBarrier(m_jniEnv, 1);
+    if (jni_frame.checkResult() < 0) {
+        VOLT_ERROR("JNI frame error");
+        throw std::exception();
+    }
+
+    // Memory allocation should really be done by LargeTempTableBLock
+    // cache, and it should pass in the storage for the loaded block.
+    std::unique_ptr<char[]> storage(new char[LargeTempTableBlock::BLOCK_SIZE_IN_BYTES]);
+    jobject blockByteBuffer = m_jniEnv->NewDirectByteBuffer(storage.get(), LargeTempTableBlock::BLOCK_SIZE_IN_BYTES);
+    if (blockByteBuffer == NULL) {
+        m_jniEnv->ExceptionDescribe();
+        throw std::exception();
+    }
+
+    bool success = m_jniEnv->CallBooleanMethod(m_javaExecutionEngine,
+                                               m_loadLargeTempTableBlockMID,
+                                               block->id(),
+                                               blockByteBuffer);
+    if (success) {
+        block->setData(std::move(storage));
+    }
+
+    return success;
+}
+
+bool JNITopend::releaseLargeTempTableBlock(LargeTempTableBlockId blockId) {
+    jboolean success = (jboolean)m_jniEnv->CallBooleanMethod(m_javaExecutionEngine,
+                                                             m_releaseLargeTempTableBlockMID,
+                                                             blockId.getSiteId(),
+                                                             blockId.getBlockCounter());
+    return success;
+}
+
+int32_t JNITopend::callJavaUserDefinedFunction() {
+    return (int32_t)m_jniEnv->CallIntMethod(m_javaExecutionEngine,
+                                            m_callJavaUserDefinedFunctionMID);
+}
+
+void JNITopend::resizeUDFBuffer(int32_t size) {
+    m_jniEnv->CallVoidMethod(m_javaExecutionEngine, m_resizeUDFBufferMID, size);
 }
 
 void JNITopend::crashVoltDB(FatalException e) {
@@ -393,6 +538,9 @@ void JNITopend::crashVoltDB(FatalException e) {
 
 JNITopend::~JNITopend() {
     m_jniEnv->DeleteGlobalRef(m_javaExecutionEngine);
+    m_jniEnv->DeleteGlobalRef(m_exportManagerClass);
+    m_jniEnv->DeleteGlobalRef(m_partitionDRGatewayClass);
+    m_jniEnv->DeleteGlobalRef(m_decompressionClass);
 }
 
 int64_t JNITopend::getQueuedExportBytes(int32_t partitionId, string signature) {
@@ -407,12 +555,10 @@ int64_t JNITopend::getQueuedExportBytes(int32_t partitionId, string signature) {
 }
 
 void JNITopend::pushExportBuffer(
-        int64_t exportGeneration,
         int32_t partitionId,
         string signature,
         StreamBlock *block,
-        bool sync,
-        bool endOfStream) {
+        bool sync) {
     jstring signatureString = m_jniEnv->NewStringUTF(signature.c_str());
     if (block != NULL) {
         jobject buffer = m_jniEnv->NewDirectByteBuffer( block->rawPtr(), block->rawLength());
@@ -420,32 +566,28 @@ void JNITopend::pushExportBuffer(
             m_jniEnv->ExceptionDescribe();
             throw std::exception();
         }
-        //std::cout << "Block is length " << block->rawLength() << std::endl;
+
         m_jniEnv->CallStaticVoidMethod(
                 m_exportManagerClass,
                 m_pushExportBufferMID,
-                exportGeneration,
                 partitionId,
                 signatureString,
                 block->uso(),
                 reinterpret_cast<jlong>(block->rawPtr()),
                 buffer,
-                sync ? JNI_TRUE : JNI_FALSE,
-                endOfStream ? JNI_TRUE : JNI_FALSE);
+                sync ? JNI_TRUE : JNI_FALSE);
         m_jniEnv->DeleteLocalRef(buffer);
     } else {
-        //std::cout << "Block is null" << std::endl;
+
         m_jniEnv->CallStaticVoidMethod(
                         m_exportManagerClass,
                         m_pushExportBufferMID,
-                        exportGeneration,
                         partitionId,
                         signatureString,
                         static_cast<int64_t>(0),
                         NULL,
                         NULL,
-                        sync ? JNI_TRUE : JNI_FALSE,
-                        endOfStream ? JNI_TRUE : JNI_FALSE);
+                        sync ? JNI_TRUE : JNI_FALSE);
     }
     m_jniEnv->DeleteLocalRef(signatureString);
     if (m_jniEnv->ExceptionCheck()) {
@@ -454,23 +596,162 @@ void JNITopend::pushExportBuffer(
     }
 }
 
-void JNITopend::pushDRBuffer(int32_t partitionId, StreamBlock *block) {
+void JNITopend::pushEndOfStream(
+        int32_t partitionId,
+        string signature) {
+    jstring signatureString = m_jniEnv->NewStringUTF(signature.c_str());
+    //std::cout << "Block is null" << std::endl;
+    m_jniEnv->CallStaticVoidMethod(
+                    m_exportManagerClass,
+                    m_pushExportEOFMID,
+                    partitionId,
+                    signatureString);
+    m_jniEnv->DeleteLocalRef(signatureString);
+    if (m_jniEnv->ExceptionCheck()) {
+        m_jniEnv->ExceptionDescribe();
+        throw std::exception();
+    }
+}
+
+int64_t JNITopend::pushDRBuffer(int32_t partitionId, StreamBlock *block) {
+    int64_t retval = -1;
     if (block != NULL) {
         jobject buffer = m_jniEnv->NewDirectByteBuffer( block->rawPtr(), block->rawLength());
         if (buffer == NULL) {
             m_jniEnv->ExceptionDescribe();
             throw std::exception();
         }
-        //std::cout << "Block is length " << block->rawLength() << std::endl;
-        m_jniEnv->CallStaticVoidMethod(
+
+        retval = m_jniEnv->CallStaticLongMethod(
                 m_partitionDRGatewayClass,
                 m_pushDRBufferMID,
                 partitionId,
                 block->startDRSequenceNumber(),
                 block->lastDRSequenceNumber(),
-                block->lastUniqueId(),
+                block->lastSpUniqueId(),
+                block->lastMpUniqueId(),
+                block->drEventType(),
                 buffer);
         m_jniEnv->DeleteLocalRef(buffer);
     }
+    return retval;
+}
+
+void JNITopend::pushPoisonPill(int32_t partitionId, std::string& reason, StreamBlock *block) {
+    jstring jReason = m_jniEnv->NewStringUTF(reason.c_str());
+
+    if (block != NULL) {
+        jobject buffer = m_jniEnv->NewDirectByteBuffer( block->rawPtr(), block->rawLength());
+        if (buffer == NULL) {
+            m_jniEnv->ExceptionDescribe();
+            throw std::exception();
+        }
+
+        m_jniEnv->CallStaticLongMethod(
+                m_partitionDRGatewayClass,
+                m_pushPoisonPillMID,
+                partitionId,
+                jReason,
+                buffer);
+        m_jniEnv->DeleteLocalRef(buffer);
+    }
+    m_jniEnv->DeleteLocalRef(jReason);
+}
+
+static boost::shared_array<char> serializeToDirectByteBuffer(JNIEnv *jniEngine, Table *table, jobject &byteBuffer) {
+    if (table) {
+        size_t serializeSize = table->getAccurateSizeToSerialize();
+        boost::shared_array<char> backingArray(new char[serializeSize]);
+        ReferenceSerializeOutput conflictSerializeOutput(backingArray.get(), serializeSize);
+        table->serializeToWithoutTotalSize(conflictSerializeOutput);
+        byteBuffer = jniEngine->NewDirectByteBuffer(static_cast<void*>(backingArray.get()),
+                                                            static_cast<int32_t>(serializeSize));
+        if (byteBuffer == NULL) {
+            jniEngine->ExceptionDescribe();
+            throw std::exception();
+        }
+        return backingArray;
+    }
+    return boost::shared_array<char>();
+}
+
+int JNITopend::reportDRConflict(int32_t partitionId, int32_t remoteClusterId, int64_t remoteTimestamp, std::string tableName, DRRecordType action,
+        DRConflictType deleteConflict, Table *existingMetaTableForDelete, Table *existingTupleTableForDelete,
+        Table *expectedMetaTableForDelete, Table *expectedTupleTableForDelete,
+        DRConflictType insertConflict, Table *existingMetaTableForInsert, Table *existingTupleTableForInsert,
+        Table *newMetaTableForInsert, Table *newTupleTableForInsert) {
+    // prepare tablename
+    jstring tableNameString = m_jniEnv->NewStringUTF(tableName.c_str());
+
+    // prepare input buffer for delete conflict
+    jobject existingMetaRowsBufferForDelete = NULL;
+    boost::shared_array<char> existingMetaArrayForDelete = serializeToDirectByteBuffer(m_jniEnv,
+                                                                                       existingMetaTableForDelete,
+                                                                                       existingMetaRowsBufferForDelete);
+
+    jobject existingTupleRowsBufferForDelete = NULL;
+    boost::shared_array<char> existingTupleArrayForDelete = serializeToDirectByteBuffer(m_jniEnv,
+                                                                                        existingTupleTableForDelete,
+                                                                                        existingTupleRowsBufferForDelete);
+
+    jobject expectedMetaRowsBufferForDelete = NULL;
+    boost::shared_array<char> expectedMetaArrayForDelete = serializeToDirectByteBuffer(m_jniEnv,
+                                                                                       expectedMetaTableForDelete,
+                                                                                       expectedMetaRowsBufferForDelete);
+
+    jobject expectedTupleRowsBufferForDelete = NULL;
+    boost::shared_array<char> expectedTupleArrayForDelete = serializeToDirectByteBuffer(m_jniEnv,
+                                                                                        expectedTupleTableForDelete,
+                                                                                        expectedTupleRowsBufferForDelete);
+
+    jobject existingMetaRowsBufferForInsert = NULL;
+    boost::shared_array<char> existingMetaArrayForInsert = serializeToDirectByteBuffer(m_jniEnv,
+                                                                                       existingMetaTableForInsert,
+                                                                                       existingMetaRowsBufferForInsert);
+
+    jobject existingTupleRowsBufferForInsert = NULL;
+    boost::shared_array<char> existingTupleArrayForInsert = serializeToDirectByteBuffer(m_jniEnv,
+                                                                                        existingTupleTableForInsert,
+                                                                                        existingTupleRowsBufferForInsert);
+
+    jobject newMetaRowsBufferForInsert = NULL;
+    boost::shared_array<char> newMetaArrayForInsert = serializeToDirectByteBuffer(m_jniEnv,
+                                                                                  newMetaTableForInsert,
+                                                                                  newMetaRowsBufferForInsert);
+
+    jobject newTupleRowsBufferForInsert = NULL;
+    boost::shared_array<char> newTupleArrayForInsert = serializeToDirectByteBuffer(m_jniEnv,
+                                                                                   newTupleTableForInsert,
+                                                                                   newTupleRowsBufferForInsert);
+
+    int32_t retval = m_jniEnv->CallStaticIntMethod(m_partitionDRGatewayClass,
+                                            m_reportDRConflictMID,
+                                            partitionId,
+                                            remoteClusterId,
+                                            remoteTimestamp,
+                                            tableNameString,
+                                            action,
+                                            deleteConflict,
+                                            existingMetaRowsBufferForDelete,
+                                            existingTupleRowsBufferForDelete,
+                                            expectedMetaRowsBufferForDelete,
+                                            expectedTupleRowsBufferForDelete,
+                                            insertConflict,
+                                            existingMetaRowsBufferForInsert,
+                                            existingTupleRowsBufferForInsert,
+                                            newMetaRowsBufferForInsert,
+                                            newTupleRowsBufferForInsert);
+
+    m_jniEnv->DeleteLocalRef(tableNameString);
+    m_jniEnv->DeleteLocalRef(existingMetaRowsBufferForDelete);
+    m_jniEnv->DeleteLocalRef(existingTupleRowsBufferForDelete);
+    m_jniEnv->DeleteLocalRef(expectedMetaRowsBufferForDelete);
+    m_jniEnv->DeleteLocalRef(expectedTupleRowsBufferForDelete);
+    m_jniEnv->DeleteLocalRef(existingMetaRowsBufferForInsert);
+    m_jniEnv->DeleteLocalRef(existingTupleRowsBufferForInsert);
+    m_jniEnv->DeleteLocalRef(newMetaRowsBufferForInsert);
+    m_jniEnv->DeleteLocalRef(newTupleRowsBufferForInsert);
+
+    return retval;
 }
 }

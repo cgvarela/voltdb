@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -30,19 +30,23 @@ import java.io.IOException;
 import java.net.URL;
 import java.net.URLDecoder;
 
-import junit.framework.TestCase;
-
 import org.hsqldb_voltpatches.HSQLInterface;
 import org.hsqldb_voltpatches.HSQLInterface.HSQLParseException;
 import org.hsqldb_voltpatches.VoltXMLElement;
+import org.voltdb.VoltType;
 import org.voltdb.benchmark.tpcc.TPCCProjectBuilder;
 import org.voltdb.catalog.Catalog;
 import org.voltdb.catalog.CatalogMap;
+import org.voltdb.catalog.Column;
 import org.voltdb.catalog.Database;
+import org.voltdb.catalog.IndexRef;
 import org.voltdb.catalog.MaterializedViewInfo;
 import org.voltdb.catalog.Table;
-import org.voltdb.compiler.VoltCompiler.VoltCompilerException;
 import org.voltdb.compilereport.TableAnnotation;
+import org.voltdb.planner.ParameterizationInfo;
+import org.voltdb.utils.CatalogUtil;
+
+import junit.framework.TestCase;
 
 public class TestDDLCompiler extends TestCase {
 
@@ -60,7 +64,7 @@ public class TestDDLCompiler extends TestCase {
             "PRIMARY KEY  (w_id) " +
             ");";
 
-        HSQLInterface hsql = HSQLInterface.loadHsqldb();
+        HSQLInterface hsql = HSQLInterface.loadHsqldb(ParameterizationInfo.getParamStateManager());
 
         hsql.runDDLCommand(ddl1);
 
@@ -76,7 +80,7 @@ public class TestDDLCompiler extends TestCase {
             "w_street_1 char(32) default NULL, " +
             ");";
 
-        HSQLInterface hsql = HSQLInterface.loadHsqldb();
+        HSQLInterface hsql = HSQLInterface.loadHsqldb(ParameterizationInfo.getParamStateManager());
         try {
             hsql.runDDLCommand(ddl1);
         }
@@ -106,7 +110,7 @@ public class TestDDLCompiler extends TestCase {
         }
 
         br.close();
-        HSQLInterface hsql = HSQLInterface.loadHsqldb();
+        HSQLInterface hsql = HSQLInterface.loadHsqldb(ParameterizationInfo.getParamStateManager());
 
         hsql.runDDLCommand(ddl1);
 
@@ -126,7 +130,7 @@ public class TestDDLCompiler extends TestCase {
     //
     public void testENG_912() throws HSQLParseException {
         String schema = "create table tmc (name varchar(32), user varchar(32), primary key (name, user));";
-        HSQLInterface hsql = HSQLInterface.loadHsqldb();
+        HSQLInterface hsql = HSQLInterface.loadHsqldb(ParameterizationInfo.getParamStateManager());
 
         hsql.runDDLCommand(schema);
         VoltXMLElement xml = hsql.getXMLFromCatalog();
@@ -141,7 +145,7 @@ public class TestDDLCompiler extends TestCase {
     //
     public void testENG_2345() throws HSQLParseException {
         String table = "create table tmc (name varchar(32), user varchar(32), primary key (name, user));";
-        HSQLInterface hsql = HSQLInterface.loadHsqldb();
+        HSQLInterface hsql = HSQLInterface.loadHsqldb(ParameterizationInfo.getParamStateManager());
         hsql.runDDLCommand(table);
 
         String view = "create view v (name , user ) as select name , user from tmc where name = 'name';";
@@ -171,24 +175,10 @@ public class TestDDLCompiler extends TestCase {
         // similar schema with not null and unique constraints (should have no warnings)
         String schema2 =  "create table t0 (id bigint not null, primary key (id));\n";
 
-        // boilerplate for making a project
-        final String simpleProject =
-                "<?xml version=\"1.0\"?>\n" +
-                "<project><database><schemas>" +
-                "<schema path='%s' />" +
-                "</schemas></database></project>";
-
         // RUN EXPECTING WARNINGS
-        File schemaFile = VoltProjectBuilder.writeStringToTempFile(schema1);
-        String schemaPath = schemaFile.getPath();
-
-        File projectFile = VoltProjectBuilder.writeStringToTempFile(
-                String.format(simpleProject, schemaPath));
-        String projectPath = projectFile.getPath();
-
         // compile successfully (but with two warnings hopefully)
-        VoltCompiler compiler = new VoltCompiler();
-        boolean success = compiler.compileWithProjectXML(projectPath, jarOut.getPath());
+        VoltCompiler compiler = new VoltCompiler(false);
+        boolean success = compiler.compileDDLString(schema1, jarOut.getPath());
         assertTrue(success);
 
         // verify the warnings exist
@@ -209,18 +199,11 @@ public class TestDDLCompiler extends TestCase {
         jarOut.delete();
 
         // RUN EXPECTING NO WARNINGS
-        schemaFile = VoltProjectBuilder.writeStringToTempFile(schema2);
-        schemaPath = schemaFile.getPath();
-
-        projectFile = VoltProjectBuilder.writeStringToTempFile(
-                String.format(simpleProject, schemaPath));
-        projectPath = projectFile.getPath();
-
         // don't reinitialize the compiler to test that it can be re-called
         //compiler = new VoltCompiler();
 
         // compile successfully with no warnings
-        success = compiler.compileWithProjectXML(projectPath, jarOut.getPath());
+        success = compiler.compileDDLString(schema2, jarOut.getPath());
         assertTrue(success);
 
         // verify no warnings
@@ -230,92 +213,12 @@ public class TestDDLCompiler extends TestCase {
         jarOut.delete();
     }
 
-    boolean checkImportValidity(String importStmt) {
-        File jarOut = new File("checkImportValidity.jar");
-        jarOut.deleteOnExit();
-
-        String schema = String.format("IMPORT CLASS %s;", importStmt);
-
-        File schemaFile = VoltProjectBuilder.writeStringToTempFile(schema);
-        schemaFile.deleteOnExit();
-
-        // compile and fail on bad import
-        VoltCompiler compiler = new VoltCompiler();
-        try {
-            return compiler.compileFromDDL(jarOut.getPath(), schemaFile.getPath());
-        }
-        catch (VoltCompilerException e) {
-            e.printStackTrace();
-            fail();
-            return false;
-        }
-    }
-
-    public void testExtraClasses() {
-        assertFalse(checkImportValidity("org.1oltdb.**"));
-        assertTrue(checkImportValidity("org.voltdb_testprocs.a**"));
-        assertFalse(checkImportValidity("$.1oltdb.**"));
-        assertFalse(checkImportValidity("org.voltdb.** org.bolt"));
-        assertTrue(checkImportValidity("org.voltdb_testprocs.a*"));
-        assertTrue(checkImportValidity("你rg.voltdb_testprocs.a*"));
-        assertTrue(checkImportValidity("org.我不爱你.V*"));
-        assertFalse(checkImportValidity("org.1我不爱你.V*"));
-        assertFalse(checkImportValidity("org"));
-        assertTrue(checkImportValidity("org.**.executeSQLMP"));
-        assertTrue(checkImportValidity("org.vol*_testprocs.adhoc.executeSQLMP"));
-        assertTrue(checkImportValidity("org.voltdb_testprocs.adhoc.executeSQLMP"));
-        assertFalse(checkImportValidity("org."));
-        assertFalse(checkImportValidity("org.."));
-        assertFalse(checkImportValidity("org.v_dt"));
-        assertTrue(checkImportValidity("org.voltdb.compiler.dummy_test_underscore"));
-    }
-
-    boolean checkMultiDDLImportValidity(String importStmt1, String importStmt2, boolean checkWarn) {
-        File jarOut = new File("checkImportValidity.jar");
-        jarOut.deleteOnExit();
-
-        String schema1 = String.format("IMPORT CLASS %s;", importStmt1);
-        File schemaFile1 = VoltProjectBuilder.writeStringToTempFile(schema1);
-        schemaFile1.deleteOnExit();
-
-        String schema2 = String.format("IMPORT CLASS %s;", importStmt2);
-        File schemaFile2 = VoltProjectBuilder.writeStringToTempFile(schema2);
-        schemaFile2.deleteOnExit();
-
-        // compile and fail on bad import
-        VoltCompiler compiler = new VoltCompiler();
-        try {
-            boolean rslt = compiler.compileFromDDL(jarOut.getPath(), schemaFile1.getPath(), schemaFile2.getPath());
-            assertTrue(checkWarn^compiler.m_warnings.isEmpty());
-            return rslt;
-        }
-        catch (VoltCompilerException e) {
-            e.printStackTrace();
-            fail();
-            assertTrue(checkWarn^compiler.m_warnings.isEmpty());
-            return false;
-        }
-    }
-
-    public void testExtraClassesFrom2Ddls() {
-        assertTrue(checkMultiDDLImportValidity("org.voltdb_testprocs.a**", "org.voltdb_testprocs.a**", false));
-        assertTrue(checkMultiDDLImportValidity("org.woltdb_testprocs.a**", "org.voltdb_testprocs.a**", true));
-        assertTrue(checkMultiDDLImportValidity("org.voltdb_testprocs.a**", "org.woltdb_testprocs.a**", true));
-        assertTrue(checkMultiDDLImportValidity("org.woltdb_testprocs.*", "org.voltdb_testprocs.a**", true));
-        assertTrue(checkMultiDDLImportValidity("org.voltdb_testprocs.a**", "org.woltdb_testprocs.*", true));
-        assertFalse(checkMultiDDLImportValidity("org.vol*db_testprocs.adhoc.executeSQLMP", "org.voltdb_testprocs.", false));
-        assertTrue(checkMultiDDLImportValidity("org.vol*db_testprocs.adhoc.executeSQLMP", "org.voltdb_testprocs.adhoc.*", false));
-        assertFalse(checkMultiDDLImportValidity("org.voltdb_testprocs.adhoc.executeSQLMP", "org.woltdb", false));
-        assertTrue(checkMultiDDLImportValidity("org.vol*db_testprocs.adhoc.executeSQLMP", "org.voltdb_testprocs.adhoc.executeSQLMP", false));
-        assertTrue(checkMultiDDLImportValidity("org.voltdb_testprocs.adhoc.executeSQLMP", "org.voltdb_testprocs.adhoc.executeSQLMP", false));
-    }
-
-    public void testIndexedMinMaxViews() {
+    public void testViewIndexSelectionWarning() {
         File jarOut = new File("indexedMinMaxViews.jar");
         jarOut.deleteOnExit();
 
         String schema[] = {
-                // no indexes (should produce warnings)
+                // #1, no indices (should produce warnings)
                 "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
                 "CREATE VIEW VT1 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " +
                 "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(ABS(VAL3)) " +
@@ -334,43 +237,44 @@ public class TestDDLCompiler extends TestCase {
                 "FROM T WHERE D1 > 3 " +
                 "GROUP BY D1 + D2, ABS(D3);",
 
-                // schema with indexes (should have no warnings)
-               "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
-               "CREATE INDEX T_TREE_1 ON T(D1);\n" +
-               "CREATE INDEX T_TREE_2 ON T(D1, D2);\n" +
-               "CREATE INDEX T_TREE_3 ON T(D1+D2, ABS(D3));\n" +
-               "CREATE INDEX T_TREE_4 ON T(D1, D2, D3);\n" +
-               "CREATE INDEX T_TREE_5 ON T(D1, D2, D3) WHERE D1 > 3;\n" +
-               "CREATE INDEX T_TREE_6 ON T(D1+D2, ABS(D3)) WHERE D1 > 3;\n" +
-               "CREATE VIEW VT1 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " +
-               "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(ABS(VAL3)) " +
-               "FROM T " +
-               "GROUP BY D1, D2, D3;\n" +
-               "CREATE VIEW VT2 (V_D1_D2, V_D3, CNT, MIN_VAL1, SUM_VAL2, MAX_VAL3) " +
-               "AS SELECT D1 + D2, ABS(D3), COUNT(*), MIN(VAL1), SUM(VAL2), MAX(VAL3) " +
-               "FROM T " +
-               "GROUP BY D1 + D2, ABS(D3);" +
-               "CREATE VIEW VT3 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " +
-               "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(ABS(VAL3)) " +
-               "FROM T WHERE D1 > 3 " +
-               "GROUP BY D1, D2, D3;\n" +
-               "CREATE VIEW VT4 (V_D1_D2, V_D3, CNT, MIN_VAL1, SUM_VAL2, MAX_VAL3) " +
-               "AS SELECT D1 + D2, ABS(D3), COUNT(*), MIN(VAL1), SUM(VAL2), MAX(VAL3) " +
-               "FROM T WHERE D1 > 3 " +
-               "GROUP BY D1 + D2, ABS(D3);",
+                // #2, schema with indices (should have no warnings)
+                "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
+                "CREATE INDEX T_TREE_1 ON T(D1);\n" +
+                "CREATE INDEX T_TREE_2 ON T(D1, D2);\n" +
+                "CREATE INDEX T_TREE_3 ON T(D1+D2, ABS(D3));\n" +
+                "CREATE INDEX T_TREE_4 ON T(D1, D2, D3);\n" +
+                "CREATE INDEX T_TREE_5 ON T(D1, D2, D3) WHERE D1 > 3;\n" +
+                "CREATE INDEX T_TREE_6 ON T(D1+D2, ABS(D3)) WHERE D1 > 3;\n" +
+                "CREATE VIEW VT1 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " +
+                "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(ABS(VAL3)) " +
+                "FROM T " +
+                "GROUP BY D1, D2, D3;\n" +
+                "CREATE VIEW VT2 (V_D1_D2, V_D3, CNT, MIN_VAL1, SUM_VAL2, MAX_VAL3) " +
+                "AS SELECT D1 + D2, ABS(D3), COUNT(*), MIN(VAL1), SUM(VAL2), MAX(VAL3) " +
+                "FROM T " +
+                "GROUP BY D1 + D2, ABS(D3);" +
+                "CREATE VIEW VT3 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " +
+                "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(ABS(VAL3)) " +
+                "FROM T WHERE D1 > 3 " +
+                "GROUP BY D1, D2, D3;\n" +
+                "CREATE VIEW VT4 (V_D1_D2, V_D3, CNT, MIN_VAL1, SUM_VAL2, MAX_VAL3) " +
+                "AS SELECT D1 + D2, ABS(D3), COUNT(*), MIN(VAL1), SUM(VAL2), MAX(VAL3) " +
+                "FROM T WHERE D1 > 3 " +
+                "GROUP BY D1 + D2, ABS(D3);",
 
-               // schema with no indexes and mat view with no min / max
-               "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
-               "CREATE VIEW VT1 (V_D1, V_D2, V_D3, CNT) " +
-               "AS SELECT D1, D2, D3, COUNT(*) " +
-               "FROM T " +
-               "GROUP BY D1, D2, D3;\n" +
-               "CREATE VIEW VT2 (V_D1_D2, V_D3, CNT) " +
-               "AS SELECT D1 + D2, ABS(D3), COUNT(*) " +
-               "FROM T " +
-               "GROUP BY D1 + D2, ABS(D3);",
+                // #3, schema with no indices and mat view with no min / max (should have no warnings)
+                "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
+                "CREATE VIEW VT1 (V_D1, V_D2, V_D3, CNT) " +
+                "AS SELECT D1, D2, D3, COUNT(*) " +
+                "FROM T " +
+                "GROUP BY D1, D2, D3;\n" +
+                "CREATE VIEW VT2 (V_D1_D2, V_D3, CNT) " +
+                "AS SELECT D1 + D2, ABS(D3), COUNT(*) " +
+                "FROM T " +
+                "GROUP BY D1 + D2, ABS(D3);",
 
-                // schema with index but can not be used for mat view with min / max
+                // #4, schema with indices but hard-coded function cannot find a usable one.
+                // The query planner can tell us to use T_TREE_3 for all min/nax columns. (should have no warnings)
                 "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
                 "CREATE INDEX T_TREE_1 ON T(D1, D2 + D3);\n" +
                 "CREATE INDEX T_TREE_2 ON T(D1, D2 + D3, D3);\n" +
@@ -385,15 +289,15 @@ public class TestDDLCompiler extends TestCase {
                 "FROM T " +
                 "GROUP BY D1, D2, D3;\n",
 
-                // schemas with index but can not be used for mat view with min / max
+                // #5, schemas with indices, both hard-coded function and query planner cannot find a usable index.
                 "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
-                "CREATE INDEX T_TREE_1 ON T(D1, D2 + D3);\n" +
-                "CREATE INDEX T_TREE_2 ON T(D1, D2 + D3, D3);\n" +
-                "CREATE INDEX T_TREE_3 ON T(D1, D2);\n" +
-                "CREATE INDEX T_TREE_4 ON T(D1, D2, D3, VAL1);\n" +
-                "CREATE INDEX T_TREE_5 ON T(D1, D2, D3, ABS(VAL1));\n" +
-                "CREATE INDEX T_TREE_6 ON T(D1, D2-D3);\n" +
-                "CREATE INDEX T_TREE_7 ON T(D1, D2-D3, D3, D2);\n" +
+                "CREATE INDEX T_TREE_1 ON T(VAL1, D2 + D3);\n" +
+                "CREATE INDEX T_TREE_2 ON T(VAL1, D2 + D3, D3);\n" +
+                "CREATE INDEX T_TREE_3 ON T(VAL1, D2);\n" +
+                "CREATE INDEX T_TREE_4 ON T(VAL1, D2, D3, VAL2);\n" +
+                "CREATE INDEX T_TREE_5 ON T(VAL1, D2, D3, ABS(VAL1));\n" +
+                "CREATE INDEX T_TREE_6 ON T(VAL1, D2-D3);\n" +
+                "CREATE INDEX T_TREE_7 ON T(VAL1, D2-D3, D3, D2);\n" +
                 "CREATE VIEW VT1 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " +
                 "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(ABS(VAL3)) " +
                 "FROM T " +
@@ -402,33 +306,63 @@ public class TestDDLCompiler extends TestCase {
                 "AS SELECT D1, D2-D3, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(ABS(VAL3)) " +
                 "FROM T " +
                 "GROUP BY D1, D2-D3, D3;",
+
+                // #6, schemas with indices but hard-coded function cannot find usable index for ALL min/max columns.
+                // For VT1, hard-coded function can find T_TREE_7 for min;
+                //          query planner will find T_TREE_4 for max.
+                // This means we will use the hard-coded path for min, and query plan for the max.
+                // For VT2, hard-coded function can find T_TREE_6 for max;
+                //          query planner will find T_TREE_6 for min.
+                "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
+                "CREATE INDEX T_TREE_1 ON T(D1, D2 + D3);\n" +
+                "CREATE INDEX T_TREE_2 ON T(D1, D2 + D3, D3);\n" +
+                "CREATE INDEX T_TREE_3 ON T(D1, D2);\n" +
+                "CREATE INDEX T_TREE_4 ON T(D1, D2, D3, VAL1);\n" +
+                "CREATE INDEX T_TREE_5 ON T(D1, D2, D3, ABS(VAL1));\n" +
+                "CREATE INDEX T_TREE_6 ON T(D1, D2-D3, D3, ABS(VAL3));\n" +
+                "CREATE INDEX T_TREE_7 ON T(D1, D2, D3, VAL1 + VAL2);\n" +
+                "CREATE VIEW VT1 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " +
+                "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(ABS(VAL3)) " +
+                "FROM T " +
+                "GROUP BY D1, D2, D3;\n" +
+                "CREATE VIEW VT2 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " +
+                "AS SELECT D1, D2-D3, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(ABS(VAL3)) " +
+                "FROM T " +
+                "GROUP BY D1, D2-D3, D3;",
+
+                // #7, join case, no index, has warnings
+                "CREATE TABLE CUSTOMERS (ID INTEGER NOT NULL, NAME VARCHAR(20), AGE INTEGER NOT NULL, ADDRESS VARCHAR(20));\n" +
+                "CREATE TABLE ORDERS (OID INTEGER NOT NULL, DATE TIMESTAMP, CUSTOMER_ID INTEGER NOT NULL, AMOUNT INTEGER NOT NULL);\n" +
+                "CREATE VIEW ORDERSUM (NAME, CNT, SUMAMT, MINAMT, MAXAMT) AS\n" +
+                "  SELECT CUSTOMERS.NAME, COUNT(*), SUM(ORDERS.AMOUNT), MIN(ORDERS.AMOUNT), MAX(ORDERS.AMOUNT) FROM\n" +
+                "  CUSTOMERS JOIN ORDERS ON CUSTOMERS.ID = ORDERS.CUSTOMER_ID GROUP BY CUSTOMERS.NAME;",
+
+                // #8, join case, has index, no warnings.
+                "CREATE TABLE CUSTOMERS (ID INTEGER NOT NULL, NAME VARCHAR(20), AGE INTEGER NOT NULL, ADDRESS VARCHAR(20));\n" +
+                "CREATE TABLE ORDERS (OID INTEGER NOT NULL, DATE TIMESTAMP, CUSTOMER_ID INTEGER NOT NULL, AMOUNT INTEGER NOT NULL);\n" +
+                "CREATE INDEX IDX ON CUSTOMERS(ID);\n" +
+                "CREATE VIEW ORDERSUM (NAME, CNT, SUMAMT, MINAMT, MAXAMT) AS\n" +
+                "  SELECT CUSTOMERS.NAME, COUNT(*), SUM(ORDERS.AMOUNT), MIN(ORDERS.AMOUNT), MAX(ORDERS.AMOUNT) FROM\n" +
+                "  CUSTOMERS JOIN ORDERS ON CUSTOMERS.ID = ORDERS.CUSTOMER_ID GROUP BY CUSTOMERS.NAME;",
         };
 
-        int expectWarning[] = { 4, 0, 0, 2, 2 };
-        // boilerplate for making a project
-        final String simpleProject =
-                "<?xml version=\"1.0\"?>\n" +
-                "<project><database><schemas>" +
-                "<schema path='%s' />" +
-                "</schemas></database></project>";
+        int expectWarning[] = { 4, 0, 0, 0, 2, 0, 1, 0 };
+        int expectWarningType[] = { 0, 0, 0, 0, 0, 0, 1, 1 };
+        final String warningPrefix[] = {
+                "No index found to support UPDATE and DELETE on some of the min() / max() columns",
+                "No index found to support some of the join operations required to refresh the materialized view"
+        };
 
-        VoltCompiler compiler = new VoltCompiler();
+        VoltCompiler compiler = new VoltCompiler(false);
         for (int ii = 0; ii < schema.length; ++ii) {
-            File schemaFile = VoltProjectBuilder.writeStringToTempFile(schema[ii]);
-            String schemaPath = schemaFile.getPath();
-
-            File projectFile = VoltProjectBuilder.writeStringToTempFile(
-                    String.format(simpleProject, schemaPath));
-            String projectPath = projectFile.getPath();
-
             // compile successfully (but with two warnings hopefully)
-            boolean success = compiler.compileWithProjectXML(projectPath, jarOut.getPath());
+            boolean success = compiler.compileDDLString(schema[ii], jarOut.getPath());
             assertTrue(success);
 
             // verify the warnings exist
             int foundWarnings = 0;
             for (VoltCompiler.Feedback f : compiler.m_warnings) {
-                if (f.message.toLowerCase().contains("min")) {
+                if (f.message.contains(warningPrefix[expectWarningType[ii]])) {
                     System.out.println(f.message);
                     foundWarnings++;
                 }
@@ -448,114 +382,148 @@ public class TestDDLCompiler extends TestCase {
         }
     }
 
-    // ENG-6511
-    public void testMinMaxViewIndexSelection() {
+    private void assertIndexSelectionResult(CatalogMap<IndexRef> indexRefs, String... indexNames) {
+        assertEquals(indexRefs.size(), indexNames.length);
+        int i = 0;
+        for (IndexRef idx : indexRefs) {
+            assertEquals(idx.getName(), indexNames[i++]);
+        }
+    }
+
+    // ENG-6511 This test is for the hard-coded index selection function.
+    public void testMinMaxViewIndexSelectionFunction() {
         File jarOut = new File("minMaxViewIndexSelection.jar");
         jarOut.deleteOnExit();
 
-        // boilerplate for making a project
-        final String simpleProject =
-                "<?xml version=\"1.0\"?>\n" +
-                "<project><database><schemas>" +
-                "<schema path='%s' />" +
-                "</schemas></database></project>";
         String schema =
-                 // schema with indexes (should have no warnings)
-                "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
-                "CREATE INDEX T_TREE_1 ON T(D1);\n" +
-                "CREATE INDEX T_TREE_2 ON T(D1, D2);\n" +
-                "CREATE INDEX T_TREE_3 ON T(D1+D2, ABS(D3));\n" +
-                "CREATE INDEX T_TREE_4 ON T(D1, D2, D3);\n" +
-                "CREATE INDEX T_TREE_5 ON T(D1, D2, D3, VAL1+VAL2);\n" +
-                "CREATE INDEX T_TREE_6 ON T(D1+D2, ABS(D3)) WHERE D1 > 3;\n" +
-                "CREATE INDEX T_TREE_7 ON T(D1, D2, VAL1+VAL2) WHERE D1 > 3;\n" +
-                "CREATE INDEX T_TREE_8 ON T(D1+D2, ABS(D3), VAL1);\n" +
-                "CREATE INDEX T_TREE_9 ON T(D1, D2, D3, VAL1+VAL2) WHERE D2 > 4;\n" +
-                "CREATE INDEX T_TREE_10 ON T(D1, D2, VAL1);\n" +
 
-                "CREATE VIEW VT1 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " + // should choose T_TREE_4
-                "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(ABS(VAL3)) " +
+                "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
+                "CREATE INDEX T_TREE_01 ON T(      D1,       D2                         );\n" +
+                "CREATE INDEX T_TREE_02 ON T(      D1,       D2,       VAL1             );\n" +
+                "CREATE INDEX T_TREE_03 ON T(      D1,       D2,  VAL1+VAL2             ) WHERE D1 > 3;\n" +
+                "CREATE INDEX T_TREE_04 ON T(      D1,       D2,         D3             );\n" +
+                "CREATE INDEX T_TREE_05 ON T(      D1,       D2,         D3,  VAL1+VAL2 );\n" +
+                "CREATE INDEX T_TREE_06 ON T(      D1,       D2,         D3,  VAL1+VAL2 ) WHERE D2 > 4;\n" +
+                "CREATE INDEX T_TREE_07 ON T(   D1+D2,  ABS(D3)                         );\n" +
+                "CREATE INDEX T_TREE_08 ON T(   D1+D2,  ABS(D3)                         ) WHERE D1 > 3;\n" +
+                "CREATE INDEX T_TREE_09 ON T(   D1+D2,  ABS(D3),       VAL1             );\n" +
+                "CREATE INDEX T_TREE_10 ON T(   D1+D2                                   );\n" +
+                "CREATE INDEX T_TREE_11 ON T( ABS(D3)                                   );\n" +
+
+                // Test no min/max
+                "CREATE VIEW VT01 (V_D1, V_D2, CNT, SUM_VAL1_VAL2, COUNT_VAL3) " +           // should have no index for min/max
+                "AS SELECT D1, D2, COUNT(*), SUM(VAL1 + VAL2), COUNT(VAL3) " +
+                "FROM T " +
+                "GROUP BY D1, D2;\n" +
+
+                // Test one single min/max
+                "CREATE VIEW VT02 (V_D1, V_D2, V_D3, CNT, MIN_VAL1) " +                      // should choose T_TREE_04
+                "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1) " +
                 "FROM T " +
                 "GROUP BY D1, D2, D3;\n" +
 
-                "CREATE VIEW VT2 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " + // should choose T_TREE_5
+                // Test repeated min/max, single aggCol
+                "CREATE VIEW VT03 (V_D1, V_D2, CNT, MIN_VAL1, MAX_VAL1, MIN_VAL1_DUP) " +    // should choose T_TREE_02, T_TREE_02, T_TREE_02
+                "AS SELECT D1, D2, COUNT(*), MIN(VAL1), MAX(VAL1), MIN(VAL1) " +
+                "FROM T " +
+                "GROUP BY D1, D2;\n" +
+
+                // Test min/max with different aggCols
+                "CREATE VIEW VT04 (V_D1, V_D2, CNT, MIN_VAL1, MAX_VAL1, MIN_VAL2) " +        // should choose T_TREE_02, T_TREE_02, T_TREE_01
+                "AS SELECT D1, D2, COUNT(*), MIN(VAL1), MAX(VAL1), MIN(VAL2) " +
+                "FROM T " +
+                "GROUP BY D1, D2;\n" +
+
+                // Test min/max with single arithmetic aggExpr
+                "CREATE VIEW VT05 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " +   // should choose T_TREE_05, T_TREE_05
                 "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1 + VAL2), MAX(VAL1 + VAL2) " +
                 "FROM T " +
                 "GROUP BY D1, D2, D3;\n" +
 
-                "CREATE VIEW VT3 (V_D1_D2, V_D3, CNT, MIN_VAL1, SUM_VAL2, MAX_VAL3) " + // should choose T_TREE_8
+                // Test min/max with different aggExprs
+                "CREATE VIEW VT06 (V_D1, V_D2, V_D3, CNT, MIN_VAL1_VAL2, MAX_ABS_VAL3) " +   // should choose T_TREE_05, T_TREE_04
+                "AS SELECT D1, D2, D3, COUNT(*), MIN(VAL1 + VAL2), MAX( ABS(VAL3) ) " +
+                "FROM T " +
+                "GROUP BY D1, D2, D3;\n" +
+
+                // Test min/max with expression in group-by, single aggCol
+                "CREATE VIEW VT07 (V_D1_D2, V_D3, CNT, MIN_VAL1, SUM_VAL2, MAX_VAL3) " +     // should choose T_TREE_09, T_TREE_09
                 "AS SELECT D1 + D2, ABS(D3), COUNT(*), MIN(VAL1), SUM(VAL1), MAX(VAL1) " +
                 "FROM T " +
                 "GROUP BY D1 + D2, ABS(D3);\n" +
 
-                "CREATE VIEW VT4 (V_D1, V_D2, CNT, MIN_VAL1_VAL2) " + // should choose T_TREE_5
+                // Test min/max with predicate (partial index)
+                "CREATE VIEW VT08 (V_D1, V_D2, CNT, MIN_VAL1_VAL2) " +                       // should choose T_TREE_03
                 "AS SELECT D1, D2, COUNT(*), MIN(VAL1 + VAL2)" +
                 "FROM T WHERE D1 > 3 " +
                 "GROUP BY D1, D2;\n" +
 
-                "CREATE VIEW VT5 (V_D1_D2, V_D3, CNT, MIN_VAL1, SUM_VAL2, MAX_VAL3) " + // should choose T_TREE_6
+                // Test min/max with predicate, with expression in group-by
+                "CREATE VIEW VT09 (V_D1_D2, V_D3, CNT, MIN_VAL1, SUM_VAL2, MAX_VAL3) " +     // should choose T_TREE_09, T_TREE_08
                 "AS SELECT D1 + D2, ABS(D3), COUNT(*), MIN(VAL1), SUM(VAL2), MAX(VAL3) " +
                 "FROM T WHERE D1 > 3 " +
                 "GROUP BY D1 + D2, ABS(D3);\n" +
 
-                "CREATE VIEW VT6 (V_D1, V_D2, CNT, MIN_VAL1, MIN_VAL2, MAX_VAL1) " + // should choose T_TREE_2
-                "AS SELECT D1, D2, COUNT(*), MIN(VAL1), MIN(VAL2), MAX(VAL1) " +
-                "FROM T " +
-                "GROUP BY D1, D2;\n" +
-
-                "CREATE VIEW VT7 (V_D1, V_D2, CNT, MIN_VAL1, SUM_VAL2, MAX_VAL1) " + // should choose T_TREE_10
+                "CREATE VIEW VT10 (V_D1, V_D2, CNT, MIN_VAL1, SUM_VAL2, MAX_VAL1) " +        // should choose T_TREE_02, T_TREE_02
                 "AS SELECT D1, D2, COUNT(*), MIN(VAL1), SUM(VAL2), MAX(VAL1) " +
                 "FROM T " +
-                "GROUP BY D1, D2;";
+                "GROUP BY D1, D2;" +
 
-        VoltCompiler compiler = new VoltCompiler();
-        File schemaFile = VoltProjectBuilder.writeStringToTempFile(schema);
-        String schemaPath = schemaFile.getPath();
+                // Test min/max with no group by.
+                "CREATE VIEW VT11 (CNT, MIN_D1_D2, MAX_ABS_VAL3) " +                         // should choose T_TREE_10, T_TREE_11
+                "AS SELECT COUNT(*), MIN(D1+D2), MAX(ABS(D3)) " +
+                "FROM T;";
 
-        File projectFile = VoltProjectBuilder.writeStringToTempFile(
-                String.format(simpleProject, schemaPath));
-        String projectPath = projectFile.getPath();
-
+        VoltCompiler compiler = new VoltCompiler(false);
         // compile successfully
-        boolean success = compiler.compileWithProjectXML(projectPath, jarOut.getPath());
+        boolean success = compiler.compileDDLString(schema, jarOut.getPath());
         assertTrue(success);
 
         CatalogMap<Table> tables = compiler.getCatalogDatabase().getTables();
         Table t = tables.get("T");
         CatalogMap<MaterializedViewInfo> views = t.getViews();
-        assertEquals(views.get("VT1").getIndexforminmax(), "T_TREE_4");
-        assertEquals(views.get("VT2").getIndexforminmax(), "T_TREE_5");
-        assertEquals(views.get("VT3").getIndexforminmax(), "T_TREE_8");
-        assertEquals(views.get("VT4").getIndexforminmax(), "T_TREE_7");
-        assertEquals(views.get("VT5").getIndexforminmax(), "T_TREE_6");
-        assertEquals(views.get("VT6").getIndexforminmax(), "T_TREE_2");
-        assertEquals(views.get("VT7").getIndexforminmax(), "T_TREE_10");
+        assertIndexSelectionResult( views.get("VT01").getIndexforminmax() );
+        assertIndexSelectionResult( views.get("VT02").getIndexforminmax(), "T_TREE_04" );
+        assertIndexSelectionResult( views.get("VT03").getIndexforminmax(), "T_TREE_02", "T_TREE_02", "T_TREE_02" );
+        assertIndexSelectionResult( views.get("VT04").getIndexforminmax(), "T_TREE_02", "T_TREE_02", "T_TREE_01" );
+        assertIndexSelectionResult( views.get("VT05").getIndexforminmax(), "T_TREE_05", "T_TREE_05" );
+        assertIndexSelectionResult( views.get("VT06").getIndexforminmax(), "T_TREE_05", "T_TREE_04" );
+        assertIndexSelectionResult( views.get("VT07").getIndexforminmax(), "T_TREE_09", "T_TREE_09" );
+        assertIndexSelectionResult( views.get("VT08").getIndexforminmax(), "T_TREE_03" );
+        assertIndexSelectionResult( views.get("VT09").getIndexforminmax(), "T_TREE_09", "T_TREE_08" );
+        assertIndexSelectionResult( views.get("VT10").getIndexforminmax(), "T_TREE_02", "T_TREE_02" );
+        assertIndexSelectionResult( views.get("VT11").getIndexforminmax(), "T_TREE_10", "T_TREE_11" );
 
         // cleanup after the test
         jarOut.delete();
     }
 
-    public void testExportTables() {
-        File jarOut = new File("exportTables.jar");
+    public void testCreateStream() {
+        File jarOut = new File("createStream.jar");
         jarOut.deleteOnExit();
 
         String schema[] = {
-                // export table w/o group
-                "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
-                "EXPORT TABLE T;",
+                // create stream w/o export
+                "CREATE STREAM FOO (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n",
 
-                // export table w/ group
-                "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
-                "EXPORT TABLE T TO STREAM FOO;",
+                // create stream w/ export
+                "CREATE STREAM FOO EXPORT TO TARGET BAR (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n",
 
-                // export table w/ and w/o group
-                "CREATE TABLE T (T_D1 INTEGER, T_D2 INTEGER, T_D3 INTEGER, T_VAL1 INTEGER, T_VAL2 INTEGER, T_VAL3 INTEGER);\n" +
-                "CREATE TABLE S (S_D1 INTEGER, S_D2 INTEGER, S_D3 INTEGER, S_VAL1 INTEGER, S_VAL2 INTEGER, S_VAL3 INTEGER);\n" +
-                "EXPORT TABLE T;\n" +
-                "EXPORT TABLE S TO STREAM FOO;"
+                // create stream w/ and w/o group
+                "CREATE STREAM T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
+                "CREATE STREAM S EXPORT TO TARGET BAR (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
+
+                // ENG-11862 create stream without a space before "("
+                "CREATE STREAM Reservation_final\n" +
+                "    EXPORT TO TARGET archive PARTITION ON COLUMN ReserveID(\n" +
+                "    ReserveID INTEGER NOT NULL,\n" +
+                "    FlightID INTEGER NOT NULL,\n" +
+                "    CustomerID INTEGER NOT NULL,\n" +
+                "    Seat VARCHAR(5) DEFAULT NULL\n" +
+                ");"
         };
 
-        VoltCompiler compiler = new VoltCompiler();
+        VoltCompiler compiler = new VoltCompiler(false);
         for (int ii = 0; ii < schema.length; ++ii) {
             File schemaFile = VoltProjectBuilder.writeStringToTempFile(schema[ii]);
             String schemaPath = schemaFile.getPath();
@@ -575,16 +543,85 @@ public class TestDDLCompiler extends TestCase {
         }
     }
 
+    public void testCreateStreamNegative() throws Exception {
+        File jarOut = new File("createStream.jar");
+        jarOut.deleteOnExit();
+
+        String schema[] = {
+                // with primary key
+                "CREATE STREAM FOO (D1 INTEGER, D2 INTEGER, VAL1 INTEGER, VAL2 INTEGER, " +
+                "CONSTRAINT PK_TEST1 PRIMARY KEY (D1));\n",
+                // unique index
+                "CREATE STREAM FOO (D1 INTEGER, D2 INTEGER, VAL1 INTEGER, VAL2 INTEGER, " +
+                "CONSTRAINT IDX_TEST1 UNIQUE (D1));\n",
+                // assumeunique index
+                "CREATE STREAM FOO (D1 INTEGER, D2 INTEGER, VAL1 INTEGER, VAL2 INTEGER, " +
+                "CONSTRAINT IDX_TEST1 ASSUMEUNIQUE (D1));\n",
+                // with limit
+                "CREATE STREAM FOO (D1 INTEGER, D2 INTEGER, VAL1 INTEGER, VAL2 INTEGER, " +
+                "LIMIT PARTITION ROWS 100);\n",
+                // with limit and execute
+                "CREATE STREAM FOO (D1 INTEGER, D2 INTEGER, VAL1 INTEGER, VAL2 INTEGER, " +
+                "LIMIT PARTITION ROWS 100 EXECUTE (\n" +
+                "  DELETE FROM FOO WHERE D1 > 100));\n",
+        };
+
+        VoltCompiler compiler = new VoltCompiler(false);
+        for (int ii = 0; ii < schema.length; ++ii) {
+            File schemaFile = VoltProjectBuilder.writeStringToTempFile(schema[ii]);
+            String schemaPath = schemaFile.getPath();
+
+            // compile successfully
+            boolean success = compiler.compileFromDDL(jarOut.getPath(), schemaPath);
+            assertFalse(success);
+
+            // cleanup after the test
+            jarOut.delete();
+        }
+    }
+
     public void testExportDRTable() {
         File jarOut = new File("exportDrTables.jar");
         jarOut.deleteOnExit();
 
-        VoltCompiler compiler = new VoltCompiler();
+        VoltCompiler compiler = new VoltCompiler(false);
+        File schemaFile = VoltProjectBuilder.writeStringToTempFile(
+        "CREATE STREAM T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
+        "DR TABLE T;");
+        String schemaPath = schemaFile.getPath();
+
+        try {
+            assertFalse(compiler.compileFromDDL(jarOut.getPath(), schemaPath));
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+
+        // cleanup after the test
+        jarOut.delete();
+    }
+
+    public void testSetDatabaseConfig() {
+        File jarOut = new File("setDatabaseConfig.jar");
+        jarOut.deleteOnExit();
+
+        VoltCompiler compiler = new VoltCompiler(true);
         File schemaFile = VoltProjectBuilder.writeStringToTempFile(
         "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
-        "DR TABLE T;\n" +
-        "EXPORT TABLE T;");
+        "DR TABLE T;");
         String schemaPath = schemaFile.getPath();
+
+        try {
+            assertTrue(compiler.compileFromDDL(jarOut.getPath(), schemaPath));
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+
+        compiler = new VoltCompiler(false);
+        schemaFile = VoltProjectBuilder.writeStringToTempFile(
+        "SET DR_MOD=ACTIVE_ACTIVE;\n" +
+        "CREATE TABLE T (D1 INTEGER, D2 INTEGER, D3 INTEGER, VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER);\n" +
+        "DR TABLE T;");
+        schemaPath = schemaFile.getPath();
 
         try {
             assertFalse(compiler.compileFromDDL(jarOut.getPath(), schemaPath));
@@ -598,7 +635,7 @@ public class TestDDLCompiler extends TestCase {
 
     public void testNullAnnotation() throws IOException {
 
-        Catalog catalog  = new TPCCProjectBuilder().createTPCCSchemaCatalog();
+        Catalog catalog  = TPCCProjectBuilder.getTPCCSchemaCatalog();
         Database catalog_db = catalog.getClusters().get("cluster").getDatabases().get("database");
 
         for(Table t : catalog_db.getTables()) {
@@ -608,7 +645,7 @@ public class TestDDLCompiler extends TestCase {
 
     public void testQuotedNameIsNotAllowed() {
         class Tester {
-            HSQLInterface hsql = HSQLInterface.loadHsqldb();
+            HSQLInterface hsql = HSQLInterface.loadHsqldb(ParameterizationInfo.getParamStateManager());
             void testSuccess(String ddl) {
                 try {
                     hsql.runDDLCommand(ddl);
@@ -633,5 +670,163 @@ public class TestDDLCompiler extends TestCase {
         tester.testFailure("create table an_unquoted_table (\"a_quoted_column_without_spaces\" integer)");
         tester.testFailure("create table an_unquoted_table (\"a quoted column with spaces\" integer)");
         tester.testSuccess("create table an_unquoted_table (an_unquoted_column integer)");
+    }
+
+    public void testIndexExpressions() throws Exception {
+        File jarOut = new File("indexExpressions.jar");
+        jarOut.deleteOnExit();
+
+        String tableCreation = "CREATE TABLE GEO ( ID INTEGER, REGION GEOGRAPHY ); ";
+
+        String schema[] = {
+                "CREATE INDEX POLY ON GEO ( POLYGONFROMTEXT( REGION ) );",
+                "CREATE INDEX POLY ON GEO ( VALIDPOLYGONFROMTEXT( REGION ) );",
+        };
+
+        VoltCompiler compiler = new VoltCompiler(false);
+        for (int ii = 0; ii < schema.length; ++ii) {
+            File schemaFile = VoltProjectBuilder.writeStringToTempFile(tableCreation + schema[ii]);
+            String schemaPath = schemaFile.getPath();
+
+            // compile successfully
+            boolean success = compiler.compileFromDDL(jarOut.getPath(), schemaPath);
+            assertFalse(success);
+
+            // cleanup after the test
+            jarOut.delete();
+        }
+
+    }
+
+    public void testMatViewPartitionColumnSelection() {
+        // This test checks whether the materialzied view code can find and assign correct partition columns to
+        // views with various definitions.
+        String tableSchemas =
+            "CREATE TABLE t1 (a INT NOT NULL, b INT NOT NULL);\n" +
+            "CREATE TABLE t2 (a INT NOT NULL, b INT NOT NULL);\n";
+        String partitionDDLs =
+            "PARTITION TABLE t1 ON COLUMN b;\n" +
+            "PARTITION TABLE t2 ON COLUMN a;\n";
+        String viewDefinitions =
+            // v1: t2.a This is testing complex group-by column case.
+            "CREATE VIEW v1 (a1, a2, cnt, sumb) AS SELECT t1.a+1, t2.a, COUNT(*), SUM(t2.b) FROM t1 JOIN t2 ON t1.b=t2.a GROUP BY t1.a+1, t2.a;\n" +
+            // v2: NULL, because a parttion column must be a simple column.
+            "CREATE VIEW v2 (a1, a2, cnt, sumb) AS SELECT t1.a, t2.a+1, COUNT(*), SUM(t2.b) FROM t1 JOIN t2 ON t1.b=t2.a GROUP BY t1.a, t2.a+1;\n" +
+            // v3: t2.a This is testing simple group-by column case.
+            "CREATE VIEW v3 (a1, a2, cnt, sumb) AS SELECT t1.a, t2.a, COUNT(*), SUM(t2.b) FROM t1 JOIN t2 ON t1.b=t2.a GROUP BY t1.a, t2.a;\n" +
+            // v4: NULL
+            "CREATE VIEW v4 (a, cnt, sumb) AS SELECT t1.a, count(*), sum(t2.b) from t1 join t2 on t1.b=t2.a group by t1.a;\n";
+
+        String viewNames[] = {"v1", "v2", "v3", "v4"};
+        String pcols[] = {"A2", null, "A2", null};
+        assertEquals(viewNames.length, pcols.length);
+        VoltCompiler compiler = new VoltCompiler(false);
+        File jarOut = new File("viewpcolselection.jar");
+        jarOut.deleteOnExit();
+        File schemaFile = VoltProjectBuilder.writeStringToTempFile(tableSchemas + partitionDDLs + viewDefinitions);
+        String schemaPath = schemaFile.getPath();
+        try {
+            assertTrue(compiler.compileFromDDL(jarOut.getPath(), schemaPath));
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+        CatalogMap<Table> tables = compiler.getCatalogDatabase().getTables();
+        for (int i=0; i<viewNames.length; i++) {
+            Table table = tables.get(viewNames[i]);
+            Column pcol = table.getPartitioncolumn();
+            if (pcol == null) {
+                assertNull(pcols[i]);
+            }
+            else {
+                assertEquals(pcols[i], pcol.getName());
+            }
+        }
+        jarOut.delete();
+    }
+
+    public void testAutogenDRConflictTable() {
+        File jarOut = new File("setDatabaseConfig.jar");
+        jarOut.deleteOnExit();
+
+        VoltCompiler compiler = new VoltCompiler(true);
+        File schemaFile = VoltProjectBuilder.writeStringToTempFile(
+        "CREATE TABLE T (D1 INTEGER NOT NULL, D2 INTEGER, D3 VARCHAR(32), VAL1 INTEGER, VAL2 INTEGER, VAL3 INTEGER, PRIMARY KEY (D1), LIMIT PARTITION ROWS 1000);\n" +
+        "DR TABLE T;\n" +
+        "PARTITION TABLE T ON COLUMN D1;\n");
+        String schemaPath = schemaFile.getPath();
+
+        try {
+            assertTrue(compiler.compileFromDDL(jarOut.getPath(), schemaPath));
+            verifyDRConflictTableSchema(compiler, CatalogUtil.DR_CONFLICTS_PARTITIONED_EXPORT_TABLE, true);
+            verifyDRConflictTableSchema(compiler, CatalogUtil.DR_CONFLICTS_REPLICATED_EXPORT_TABLE, false);
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail(e.getMessage());
+        }
+
+        // cleanup after the test
+        jarOut.delete();
+    }
+
+    private static void verifyDRConflictTableSchema(VoltCompiler compiler, String name, boolean partitioned) {
+        Table t = compiler.getCatalogDatabase().getTables().get(name);
+        assertNotNull(t);
+
+        if (partitioned) {
+            assertNotNull(t.getPartitioncolumn());
+        } else {
+            assertNull(t.getPartitioncolumn());
+        }
+
+        // verify table schema
+        assertTrue(t.getColumns().size() == DDLCompiler.DR_CONFLICTS_EXPORT_TABLE_META_COLUMNS.length);
+
+        Column c1 = t.getColumns().get(DDLCompiler.DR_ROW_TYPE_COLUMN_NAME);
+        assertNotNull(c1);
+        assertTrue(c1.getType() == VoltType.STRING.getValue());
+
+        Column c2 = t.getColumns().get(DDLCompiler.DR_LOG_ACTION_COLUMN_NAME);
+        assertNotNull(c2);
+        assertTrue(c2.getType() == VoltType.STRING.getValue());
+
+        Column c3 = t.getColumns().get(DDLCompiler.DR_CONFLICT_COLUMN_NAME);
+        assertNotNull(c3);
+        assertTrue(c3.getType() == VoltType.STRING.getValue());
+
+        Column c4 = t.getColumns().get(DDLCompiler.DR_CONFLICTS_ON_PK_COLUMN_NAME);
+        assertNotNull(c4);
+        assertTrue(c4.getType() == VoltType.TINYINT.getValue());
+
+        Column c5 = t.getColumns().get(DDLCompiler.DR_DECISION_COLUMN_NAME);
+        assertNotNull(c5);
+        assertTrue(c5.getType() == VoltType.STRING.getValue());
+
+        Column c6 = t.getColumns().get(DDLCompiler.DR_CLUSTER_ID_COLUMN_NAME);
+        assertNotNull(c6);
+        assertTrue(c6.getType() == VoltType.TINYINT.getValue());
+
+        Column c7 = t.getColumns().get(DDLCompiler.DR_TIMESTAMP_COLUMN_NAME);
+        assertNotNull(c7);
+        assertTrue(c7.getType() == VoltType.BIGINT.getValue());
+
+        Column c8 = t.getColumns().get(DDLCompiler.DR_DIVERGENCE_COLUMN_NAME);
+        assertNotNull(c8);
+        assertTrue(c8.getType() == VoltType.STRING.getValue());
+
+        Column c9 = t.getColumns().get(DDLCompiler.DR_TABLE_NAME_COLUMN_NAME);
+        assertNotNull(c9);
+        assertTrue(c9.getType() == VoltType.STRING.getValue());
+
+        Column c10 = t.getColumns().get(DDLCompiler.DR_CURRENT_CLUSTER_ID_COLUMN_NAME);
+        assertNotNull(c10);
+        assertTrue(c10.getType() == VoltType.TINYINT.getValue());
+
+        Column c11 = t.getColumns().get(DDLCompiler.DR_CURRENT_TIMESTAMP_COLUMN_NAME);
+        assertNotNull(c11);
+        assertTrue(c11.getType() == VoltType.BIGINT.getValue());
+
+        Column c12 = t.getColumns().get(DDLCompiler.DR_TUPLE_COLUMN_NAME);
+        assertNotNull(c12);
+        assertTrue(c12.getType() == VoltType.STRING.getValue());
     }
 }

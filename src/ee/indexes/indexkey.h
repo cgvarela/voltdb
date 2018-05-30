@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -269,8 +269,10 @@ struct IntsKey
         }
     }
 
-    IntsKey(const TableTuple *tuple, const std::vector<int> &indices,
-            const std::vector<AbstractExpression*> &indexed_expressions, const TupleSchema *keySchema) {
+    IntsKey(const TableTuple *tuple,
+            const std::vector<int> &indices,
+            const std::vector<AbstractExpression*> &indexed_expressions,
+            const TupleSchema *keySchema) {
         ::memset(data, 0, keySize * sizeof(uint64_t));
         const int columnCount = keySchema->columnCount();
         int keyOffset = 0;
@@ -368,6 +370,11 @@ struct IntsComparator
             else if (*lvalue > *rvalue) return 1;
         }
         return 0;
+    }
+
+    // This method is provided to be compatible with ComparatorWithPointer.
+    int compareWithoutPointer(const IntsKey<keySize> &lhs, const IntsKey<keySize> &rhs) const {
+        return operator()(lhs, rhs);
     }
 };
 
@@ -508,7 +515,7 @@ struct GenericPersistentKey : public GenericKey<keySize>
             // The NULL argument means use the persistent memory pool for the varchar
             // allocation rather than any particular COW context's pool.
             // XXX: Could this ever somehow interact badly with a COW context?
-            keyTuple.setNValueAllocateForObjectCopies(ii, indexedValue, NULL);
+            keyTuple.setNValueAllocateForObjectCopies(ii, indexedValue);
         }
     }
 
@@ -598,6 +605,11 @@ struct GenericComparator
         TableTuple rhTuple(m_keySchema); rhTuple.moveToReadOnlyTuple(reinterpret_cast<const void*>(&rhs));
         // lexographical compare could be faster for fixed N
         return lhTuple.compare(rhTuple);
+    }
+
+    // This method is provided to be compatible with ComparatorWithPointer.
+    int compareWithoutPointer(const GenericKey<keySize> &lhs, const GenericKey<keySize> &rhs) const {
+        return operator()(lhs, rhs);
     }
 private:
     const TupleSchema *m_keySchema;
@@ -760,6 +772,12 @@ struct TupleKeyComparator
         }
         return VALUE_COMPARE_EQUAL;
     }
+
+    // This method is provided to be compatible with ComparatorWithPointer.
+    int compareWithoutPointer(const TupleKey &lhs, const TupleKey &rhs) const {
+        return operator()(lhs, rhs);
+    }
+
 private:
     const TupleSchema *m_keySchema;
 };
@@ -837,12 +855,22 @@ struct ComparatorWithPointer : public KeyType::KeyComparator {
         int rv = KeyType::KeyComparator::operator()(lhs, rhs);
         return rv == 0 ? comparePointer(lhs.m_keyTuple, rhs.m_keyTuple) : rv;
     }
+
+    // Do a comparison, but don't compare pointers to tuple storage.
+    int compareWithoutPointer(const KeyWithPointer<KeyType> &lhs, const KeyWithPointer<KeyType> &rhs) const {
+        return KeyType::KeyComparator::operator()(lhs, rhs);
+    }
 };
 
 // overload template
 template <typename KeyType>
 inline void setPointerValue(KeyWithPointer<KeyType>& k, const void * v) { k.setValue(v); }
 
+// PointerKeyValuePair is the entry type for multimaps that implement
+// non-unique indexes, to speed up deletion of entries.  When rows are
+// deleted, they are deleted by a pointer to the tuple.  In order to
+// find all the rows that need to be deleted quickly, the pointer to
+// the tuple is the last component of the key.
 template < typename KeyType, typename DataType = const void*>
 class PointerKeyValuePair {
 public:
@@ -853,12 +881,18 @@ public:
     // the caller has to make sure the key has already contained the value
     // the signatures are to be consist with the general template
     PointerKeyValuePair() {}
+    // TODO: For safety, post-assert that (value == k.getValue()).
     PointerKeyValuePair(const first_type &key, const second_type &value) : k(key) {}
 
     const first_type& getKey() const { return k; }
     const second_type& getValue() const { return k.getValue(); }
     void setKey(const first_type &key) { k = key; }
     void setValue(const second_type &value) { k.setValue(value); }
+    // TODO: Optimize to take advantage of how k/key contain both
+    //       the "key proper" AND the value, so k.setValue should be redundant?
+    //       For safety, post-assert that (value == k.getValue()).
+    void setKeyValuePair(const first_type &key, const second_type &value)
+    { k = key; k.setValue(value); }
 
     // set the tuple pointer to the new value, and return the old value
     const void *setPointerValue(const void *value) {

@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,21 +23,38 @@
 
 package org.voltdb;
 
+
 import java.io.File;
-import java.io.IOException;
 
-import junit.framework.TestCase;
-
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
+import org.junit.Test;
 import org.voltcore.logging.VoltLogger;
 import org.voltdb.VoltDB.Configuration;
-import org.voltdb.client.ProcCallException;
 import org.voltdb.compiler.VoltProjectBuilder;
 import org.voltdb.compiler.deploymentfile.DeploymentType;
 import org.voltdb.utils.CatalogUtil;
+import org.voltdb.utils.VoltFile;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
-public class TestDefaultDeployment extends TestCase {
+public class TestDefaultDeployment {
+    static File m_tempRootDH = new File(System.getProperty("java.io.tmpdir"), System.getProperty("user.name"));
+    static File m_root;
 
-    public void testDefaultDeploymentInitialization() throws InterruptedException, IOException, ProcCallException {
+    @BeforeClass
+    public static void setUpClass() throws Exception {
+        m_root = VoltFile.initNewSubrootForThisProcess();
+    }
+
+    @AfterClass
+    public static void tearDownClass() throws Exception {
+        VoltFile.resetSubrootForThisProcess();
+        VoltFile.recursivelyDelete(m_root);
+    }
+
+    @Test
+    public void testDefaultDeploymentInitialization() throws Exception {
         String ddl =
             "CREATE TABLE WAREHOUSE (" +
             "W_ID INTEGER DEFAULT '0' NOT NULL, "+

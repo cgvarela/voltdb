@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,40 +17,34 @@
 
 package org.voltdb.planner.microoptimizations;
 
-import org.voltdb.compiler.DeterminismMode;
 import org.voltdb.planner.AbstractParsedStmt;
 import org.voltdb.planner.CompiledPlan;
 import org.voltdb.plannodes.AbstractPlanNode;
 
 public abstract class MicroOptimization {
-    protected AbstractParsedStmt m_parsedStmt;
 
-    /// Provide a commonly used approach to optimization via a potentially recursive call to
-    /// recursivelyApply that is expected to edit or replace the plan graph.
+    /// Provide a commonly used approach to optimization via a potentially
+    /// recursive call to recursivelyApply that is expected to edit or replace
+    /// the plan graph.
     /// The parsed statement is also available as a data member to provide context.
-    /// Derived classes must implement recursiveApply, but that implementation could,
-    /// theoretically, just "assert(false)" IF the class also completely re-implements "apply".
-    /// Implementing recursivelyApply to do real work on the plan graph is the more common paradigm.
-    void apply(CompiledPlan plan, DeterminismMode detMode, AbstractParsedStmt parsedStmt)
-    {
-        // seq scan to index scan overrides this function
-        apply(plan, parsedStmt);
-    }
-
-    void apply(CompiledPlan plan, AbstractParsedStmt parsedStmt)
+    /// Derived classes must implement recursiveApply, but that implementation
+    /// could just "assert(false)" IF the class also completely re-implemented
+    /// "apply". Implementing recursivelyApply to do real work on the plan
+    /// graph is the more common way to specialize this class.
+    protected void apply(CompiledPlan plan, AbstractParsedStmt parsedStmt)
     {
         try {
-            m_parsedStmt = parsedStmt;
             AbstractPlanNode planGraph = plan.rootPlanGraph;
-            planGraph = recursivelyApply(planGraph);
+            planGraph = recursivelyApply(planGraph, parsedStmt);
             plan.rootPlanGraph = planGraph;
-        }
-        finally {
-            // Avoid leaking a long-term reference from static optimizations
-            // to a large parsed statement structure.
-            m_parsedStmt = null;
+        } catch (Exception ex) {
+            ex.printStackTrace();
         }
     }
 
-    protected abstract AbstractPlanNode recursivelyApply(AbstractPlanNode plan);
+    MicroOptimizationRunner.Phases getPhase() {
+        return MicroOptimizationRunner.Phases.DURING_PLAN_ASSEMBLY;
+    }
+
+    protected abstract AbstractPlanNode recursivelyApply(AbstractPlanNode plan, AbstractParsedStmt parsedStmt);
 }

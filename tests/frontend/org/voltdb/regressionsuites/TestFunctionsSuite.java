@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -26,12 +26,14 @@ package org.voltdb.regressionsuites;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.function.DoubleFunction;
 
 import org.voltdb.BackendTarget;
 import org.voltdb.VoltTable;
@@ -75,10 +77,159 @@ public class TestFunctionsSuite extends RegressionSuite {
         // Edge case: MOD 0
         verifyStmtFails(client, "select MOD(-25,0) from R1", "division by zero");
 
-        // Test guards on other types
-        verifyStmtFails(client, "select MOD(-25.32, 2.5) from R1", "unsupported non-integral type for SQL MOD function");
-        verifyStmtFails(client, "select MOD(-25.32, ratio) from R1", "unsupported non-integral type for SQL MOD function");
+        validateTableOfScalarDecimals(client, "select MOD(CAST(3.0 as decimal), CAST(2.0 as decimal)) from R1",  new BigDecimal[]{new BigDecimal("1.000000000000")});
+        validateTableOfScalarDecimals(client, "select MOD(CAST(-25.32 as decimal), CAST(ratio as decimal)) from R1",  new BigDecimal[]{new BigDecimal("-0.020000000000")});
 
+        // Test MOD with NULL values
+        validateTableOfScalarDecimals(client, "select MOD(NULL, CAST(ratio as decimal)) from R1",  new BigDecimal[]{null});
+        validateTableOfScalarDecimals(client, "select MOD(CAST(3.12 as decimal), NULL) from R1",  new BigDecimal[]{null});
+        validateTableOfScalarDecimals(client, "select MOD(CAST(NULL AS decimal), CAST(ratio as decimal)) from R1",  new BigDecimal[]{null});
+        verifyStmtFails(client, "select MOD(NULL, NULL) from R1", "data type cast needed for parameter or null literal");
+
+        // Mix of decimal and ints
+        verifyStmtFails(client, "select MOD(25.32, 2) from R1", "incompatible data type in operation");
+        verifyStmtFails(client, "select MOD(2, 25.32) from R1", "incompatible data type in operation");
+
+        // Test guards on other types
+        verifyStmtFails(client, "select MOD('-25.32', 2.5) from R1", "incompatible data type in operation");
+        verifyStmtFails(client, "select MOD(-25.32, ratio) from R1", "incompatible data type in operation");
+    }
+
+    public void testUnaryMinus() throws Exception {
+        System.out.println("STARTING testUnaryMinus");
+        Client client = getClient();
+
+        ClientResponse cr = null;
+        /*
+        CREATE TABLE P1 (
+                ID INTEGER DEFAULT '0' NOT NULL,
+                DESC VARCHAR(300),
+                NUM INTEGER,
+                RATIO FLOAT,
+                PAST TIMESTAMP DEFAULT NULL,
+                PRIMARY KEY (ID) );
+                // Test generalized indexes on a string function and combos.
+        CREATE INDEX P1_SUBSTRING_DESC ON P1 ( SUBSTRING(DESC FROM 1 FOR 2) );
+        CREATE INDEX P1_SUBSTRING_WITH_COL_DESC ON P1 ( SUBSTRING(DESC FROM 1 FOR 2), DESC );
+        CREATE INDEX P1_NUM_EXPR_WITH_STRING_COL ON P1 ( DESC, ABS(ID) );
+        CREATE INDEX P1_MIXED_TYPE_EXPRS1 ON P1 ( ABS(ID+2), SUBSTRING(DESC FROM 1 FOR 2) );
+        CREATE INDEX P1_MIXED_TYPE_EXPRS2 ON P1 ( SUBSTRING(DESC FROM 1 FOR 2), ABS(ID+2) );
+        */
+
+        client.callProcedure("@AdHoc", "INSERT INTO P1 VALUES (0, 'wEoiXIuJwSIKBujWv', -405636, 1.38145922788945552107e-01, NULL)");
+
+        VoltTable r;
+        cr = client.callProcedure("@AdHoc", "SELECT -id from P1;");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        r = cr.getResults()[0];
+        assertEquals(1, r.getRowCount());
+
+        r.advanceRow();
+        // check if unary minus equals 0-value
+        // EDGE CASE -0 integer
+        assertEquals( 0, r.get("C1", VoltType.INTEGER));
+
+        // invalid data type for unary minus
+        verifyStmtFails(client, "select -desc from P1", "incompatible data type in operation");
+
+        // check -(-var) = var
+        cr = client.callProcedure("@AdHoc", "select num, -(-num) from P1");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        r = cr.getResults()[0];
+        r.advanceRow();
+        assertEquals(r.get("NUM", VoltType.INTEGER), r.get("C2", VoltType.INTEGER));
+
+        // unary minus returns NULL for NULL numeric values like other arithmetic operators
+        client.callProcedure("@AdHoc", "INSERT INTO P1 VALUES (2, 'nulltest', NULL, 1.38145922788945552107e-01, NULL)");
+        cr = client.callProcedure("@AdHoc", "select -num from P1 where desc='nulltest'");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        r = cr.getResults()[0];
+        r.advanceRow();
+        assertEquals( VoltType.NULL_INTEGER, r.get("C1", VoltType.INTEGER));
+
+        client.callProcedure("@AdHoc", "INSERT INTO P1 VALUES (3, 'maxvalues', 0, " + Double.MAX_VALUE + " , NULL)");
+        cr = client.callProcedure("@AdHoc", "select -ratio from P1 where desc='maxvalues'");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        r = cr.getResults()[0];
+        r.advanceRow();
+        // actually returns NULL but when we do r.get("C1", VoltType.FLOAT) it returns more precision
+        assertTrue( (Double) r.get("C1", VoltType.FLOAT) <= VoltType.NULL_FLOAT );
+
+        // testing the same behavior for 0-Double.MAX_VALUE
+        cr = client.callProcedure("@AdHoc", "select 0-ratio from P1 where desc='maxvalues'");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        r = cr.getResults()[0];
+        r.advanceRow();
+        // actually returns NULL but when we do r.get("C1", VoltType.FLOAT) it returns more precision
+        assertTrue( (Double) r.get("C1", VoltType.FLOAT) <= VoltType.NULL_FLOAT );
+
+        client.callProcedure("@AdHoc", "INSERT INTO P1 VALUES (4, 'minvalues', 0 , " + Double.MIN_VALUE + " , NULL)");
+
+        cr = client.callProcedure("@AdHoc", "select -ratio from P1 where desc='minvalues'");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        r = cr.getResults()[0];
+        r.advanceRow();
+        assertTrue( (Double) r.get("C1", VoltType.FLOAT) <= -Double.MIN_VALUE );
+
+        /*
+         * //Another table that has all numeric types, for testing numeric column functions.
+                "CREATE TABLE NUMBER_TYPES ( " +
+                "INTEGERNUM INTEGER DEFAULT 0 NOT NULL, " +
+                "TINYNUM TINYINT, " +
+                "SMALLNUM SMALLINT, " +
+                "BIGNUM BIGINT, " +
+                "FLOATNUM FLOAT, " +
+                "DECIMALNUM DECIMAL, " +
+                "PRIMARY KEY (INTEGERNUM) );"
+         */
+        client.callProcedure("NUMBER_TYPES.insert", 1, 2, 3, 4, 1.523, 2.53E09);
+
+        VoltTable rA;
+        VoltTable rB;
+        cr = client.callProcedure("@AdHoc", "select -integernum, -tinynum, -smallnum, -bignum, -floatnum, -decimalnum from NUMBER_TYPES");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        rA = cr.getResults()[0];
+        assertEquals(1, rA.getRowCount());
+
+        cr = client.callProcedure("@AdHoc", "select 0-integernum, 0-tinynum, 0-smallnum, 0-bignum, 0-floatnum, 0-decimalnum from NUMBER_TYPES");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        rB = cr.getResults()[0];
+        assertEquals(1, rB.getRowCount());
+
+        rA.advanceRow();
+        rB.advanceRow();
+        // check if unary minus equals 0-value
+        assertEquals( rA.get( "C1", VoltType.INTEGER), rB.get( "C1", VoltType.INTEGER ));
+        assertEquals( rA.get( "C2", VoltType.TINYINT), rB.get( "C2", VoltType.TINYINT ));
+        assertEquals( rA.get( "C3", VoltType.SMALLINT), rB.get( "C3", VoltType.SMALLINT ));
+        assertEquals( rA.get( "C4", VoltType.BIGINT), rB.get( "C4", VoltType.BIGINT ));
+        assertEquals( rA.get( "C5", VoltType.FLOAT), rB.get( "C5", VoltType.FLOAT ));
+        assertEquals( rA.get( "C6", VoltType.DECIMAL), rB.get( "C6", VoltType.DECIMAL ));
+
+        client.callProcedure("@AdHoc", "delete from NUMBER_TYPES where INTEGERNUM = 1");
+        client.callProcedure("NUMBER_TYPES.insert", Integer.MAX_VALUE, Byte.MAX_VALUE, Short.MAX_VALUE,
+                Long.MAX_VALUE, 0, 0);
+
+        String sql = "select -integernum, -tinynum, -smallnum, -bignum, -floatnum, -decimalnum from NUMBER_TYPES;";
+        validateTableOfLongs(client, sql, new long[][]{{ -Integer.MAX_VALUE, -Byte.MAX_VALUE,
+            -Short.MAX_VALUE, -Long.MAX_VALUE, 0, 0 }});
+
+        client.callProcedure("@AdHoc", "delete from NUMBER_TYPES where INTEGERNUM = " + Integer.MAX_VALUE);
+        //client.callProcedure("NUMBER_TYPES.insert", 1, 2, 3, 4, 5.0, -99999999999999999999999999.999999999999);
+        client.callProcedure("@AdHoc", "Insert into NUMBER_TYPES values(1, 2, 3, 4, 5.0, -99999999999999999999999999.999999999999);");
+
+        /* for debugging */
+//        VoltTable[] rs = client.callProcedure("@AdHoc", "SELECT * FROM NUMBER_TYPES").getResults();
+//        System.out.println(rs[0]);
+
+        cr = client.callProcedure("@AdHoc", "select -decimalnum from NUMBER_TYPES");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        r = cr.getResults()[0];
+        System.out.println(r);
+        assertEquals(1, r.getRowCount());
+        r.advanceRow();
+        // Java converts big numbers - so comparing strings which have the values preserved
+        assertEquals( "99999999999999999999999999.999999999999", r.get("C1", VoltType.DECIMAL).toString() );
     }
 
     // Test some false alarm cases in HSQLBackend that were interfering with sqlcoverage.
@@ -1482,7 +1633,7 @@ public class TestFunctionsSuite extends RegressionSuite {
 
         assertEquals(results.length, resultValues.length);
 
-        Map<String, Integer> valueBag = new HashMap<String, Integer>();
+        Map<String, Integer> valueBag = new HashMap<>();
         int kk = 0;
         for (FunctionTestCase result : results) {
             double expected = resultValues[kk++];
@@ -1538,40 +1689,42 @@ public class TestFunctionsSuite extends RegressionSuite {
             }
         }
 
-        results = whereFunctionRun(client, fname, filters, expectedFormat);
+        if (filters != null) {
+            results = whereFunctionRun(client, fname, filters, expectedFormat);
 
-        assertEquals(results.length, COLUMNCOUNT*filters.size());
-        // If filters represents all the values in resultValues,
-        // the filtered counts should total to resultValues.length.
-        int coveringCount = resultValues.length;
-        //*VERBOSIFY TO DEBUG:*/ System.out.println("EXPECTING total count" + coveringCount);
-        for (FunctionTestCase result : results) {
-            if (result.m_result == 0.0) {
-                // complain("NONMATCHING filter " + result.m_case + " " + result.m_filter);
-                continue;
+            assertEquals(results.length, COLUMNCOUNT*filters.size());
+            // If filters represents all the values in resultValues,
+            // the filtered counts should total to resultValues.length.
+            int coveringCount = resultValues.length;
+            //*VERBOSIFY TO DEBUG:*/ System.out.println("EXPECTING total count" + coveringCount);
+            for (FunctionTestCase result : results) {
+                if (result.m_result == 0.0) {
+                    // complain("NONMATCHING filter " + result.m_case + " " + result.m_filter);
+                    continue;
+                }
+                Integer count = valueBag.get(String.format(formatForFuzziness, result.m_filter));
+                if (count == null) {
+                    complain("Function " + fname + " got unexpected result " + result.m_filter + ".");
+                }
+                assertNotNull(count);
+                //*VERBOSIFY TO DEBUG:*/ System.out.println("REDUCING " + result.m_case + " unfound " + result.m_filter + " count " + count + " by " + result.m_result );
+                if (count < result.m_result) {
+                    complain(result.m_case + " value " + result.m_filter + " not expected or previously depleted from " + valueBag + ".");
+                }
+                assertTrue(count >= result.m_result);
+                valueBag.put(String.format(formatForFuzziness, result.m_filter), count-(int)result.m_result);
+                coveringCount -= (int)result.m_result;
+                //*VERBOSIFY TO DEBUG:*/ System.out.println("DROPPING TOTAL TO " + coveringCount);
             }
-            Integer count = valueBag.get(String.format(formatForFuzziness, result.m_filter));
-            if (count == null) {
-                complain("Function " + fname + " got unexpected result " + result.m_filter + ".");
+            for (Entry<String, Integer> entry : valueBag.entrySet()) {
+                int count = entry.getValue();
+                if (count != 0) {
+                    complain("Function " + fname + " expected result " + entry.getKey() + " lacks " + count + " matches.");
+                }
+                assertEquals(0, count);
             }
-            assertNotNull(count);
-            //*VERBOSIFY TO DEBUG:*/ System.out.println("REDUCING " + result.m_case + " unfound " + result.m_filter + " count " + count + " by " + result.m_result );
-            if (count < result.m_result) {
-                complain(result.m_case + " value " + result.m_filter + " not expected or previously depleted from " + valueBag + ".");
-            }
-            assertTrue(count >= result.m_result);
-            valueBag.put(String.format(formatForFuzziness, result.m_filter), count-(int)result.m_result);
-            coveringCount -= (int)result.m_result;
-            //*VERBOSIFY TO DEBUG:*/ System.out.println("DROPPING TOTAL TO " + coveringCount);
+            assertEquals(0, coveringCount);
         }
-        for (Entry<String, Integer> entry : valueBag.entrySet()) {
-            int count = entry.getValue();
-            if (count != 0) {
-                complain("Function " + fname + " expected result " + entry.getKey() + " lacks " + count + " matches.");
-            }
-            assertEquals(0, count);
-        }
-        assertEquals(0, coveringCount);
 
         System.out.println("ENDING test of " + fname);
     }
@@ -1589,13 +1742,18 @@ public class TestFunctionsSuite extends RegressionSuite {
         subtestPower7x();
         subtestPower07x();
         subtestSqrt();
+        subtestNaturalLog();
+        subtestNaturalLog10();
+        subtestTrig();
+        subtestDegrees();
+        subtestRadians();
     }
 
     public void subtestCeiling() throws Exception
     {
         String fname = "CEILING";
         final double[] resultValues = new double[values.length];
-        final Set<Double> filters = new HashSet<Double>();
+        final Set<Double> filters = new HashSet<>();
         for (int kk = 0; kk < resultValues.length; ++kk) {
             // Believe it or not, "negative 0" results were causing problems.
             resultValues[kk] = normalizeZero(Math.ceil(values[kk]));
@@ -1611,7 +1769,7 @@ public class TestFunctionsSuite extends RegressionSuite {
     {
         String fname = "EXP";
         final double[] resultValues = new double[values.length];
-        final Set<Double> filters = new HashSet<Double>();
+        final Set<Double> filters = new HashSet<>();
         for (int kk = 0; kk < resultValues.length; ++kk) {
             resultValues[kk] = Math.exp(values[kk]);
             filters.add(resultValues[kk]);
@@ -1626,7 +1784,7 @@ public class TestFunctionsSuite extends RegressionSuite {
     {
         String fname = "FLOOR";
         final double[] resultValues = new double[values.length];
-        final Set<Double> filters = new HashSet<Double>();
+        final Set<Double> filters = new HashSet<>();
         for (int kk = 0; kk < resultValues.length; ++kk) {
             resultValues[kk] = Math.floor(values[kk]);
             filters.add(resultValues[kk]);
@@ -1642,7 +1800,7 @@ public class TestFunctionsSuite extends RegressionSuite {
     {
         final String fname = "POWERX7";
         final double[] resultValues = new double[values.length];
-        final Set<Double> filters = new HashSet<Double>();
+        final Set<Double> filters = new HashSet<>();
         for (int kk = 0; kk < resultValues.length; ++kk) {
             resultValues[kk] = Math.pow(values[kk], 7.0);
             filters.add(resultValues[kk]);
@@ -1657,7 +1815,7 @@ public class TestFunctionsSuite extends RegressionSuite {
     {
         final String fname = "POWERX07";
         final double[] resultValues = new double[nonnegnonzeros.length];
-        final Set<Double> filters = new HashSet<Double>();
+        final Set<Double> filters = new HashSet<>();
         for (int kk = 0; kk < resultValues.length; ++kk) {
             resultValues[kk] = Math.pow(nonnegnonzeros[kk], 0.7);
             filters.add(resultValues[kk]);
@@ -1672,7 +1830,7 @@ public class TestFunctionsSuite extends RegressionSuite {
     {
         final String fname = "POWER7X";
         final double[] resultValues = new double[values.length];
-        final Set<Double> filters = new HashSet<Double>();
+        final Set<Double> filters = new HashSet<>();
         for (int kk = 0; kk < resultValues.length; ++kk) {
             resultValues[kk] = Math.pow(7.0, values[kk]);
             filters.add(resultValues[kk]);
@@ -1687,7 +1845,7 @@ public class TestFunctionsSuite extends RegressionSuite {
     {
         final String fname = "POWER07X";
         final double[] resultValues = new double[values.length];
-        final Set<Double> filters = new HashSet<Double>();
+        final Set<Double> filters = new HashSet<>();
         for (int kk = 0; kk < resultValues.length; ++kk) {
             resultValues[kk] = Math.pow(0.7, values[kk]);
             filters.add(resultValues[kk]);
@@ -1702,7 +1860,7 @@ public class TestFunctionsSuite extends RegressionSuite {
     {
         final String fname = "SQRT";
         final double[] resultValues = new double[nonnegs.length];
-        final Set<Double> filters = new HashSet<Double>();
+        final Set<Double> filters = new HashSet<>();
         for (int kk = 0; kk < resultValues.length; ++kk) {
             resultValues[kk] = Math.sqrt(nonnegs[kk]);
             filters.add(resultValues[kk]);
@@ -1711,6 +1869,190 @@ public class TestFunctionsSuite extends RegressionSuite {
         final boolean ascending = true;
         final String expectedFormat = "DOUBLE";
         functionTest(fname, nonnegs, resultValues, filters, monotonic, ascending, expectedFormat);
+    }
+
+    private void subtestTrig() throws Exception
+    {
+        final boolean monotonic = false;
+        final boolean ascending = false;
+        final String expectedFormat = "DOUBLE";
+        final Set<Double> filters = null;
+
+        Map<String, DoubleFunction<Double>> funcInfo = new HashMap<>();
+        funcInfo.put("SIN", x -> Math.sin(x));
+        funcInfo.put("COS", x -> Math.cos(x));
+        funcInfo.put("TAN", x -> Math.tan(x));
+        funcInfo.put("COT", x -> 1.0 / Math.tan(x));
+        funcInfo.put("SEC", x -> 1.0 / Math.cos(x));
+        funcInfo.put("CSC", x -> 1.0 / Math.sin(x));
+
+        double[] valuesCopy = Arrays.copyOf(values, values.length);
+        for (Entry<String, DoubleFunction<Double>> entry : funcInfo.entrySet()) {
+            final String fname = entry.getKey();
+            final double[] resultValues = new double[valuesCopy.length];
+            for (int kk = 0; kk < resultValues.length; ++kk) {
+                resultValues[kk] = entry.getValue().apply(valuesCopy[kk]);
+                if (Double.isInfinite(resultValues[kk])) {
+                    // The EE throws an exception when a nonfinite would be produced.
+                    valuesCopy[kk] += 1;
+                    resultValues[kk] = entry.getValue().apply(valuesCopy[kk]);
+                    assert(Double.isFinite(resultValues[kk]));
+                }
+            }
+            functionTest(fname, valuesCopy, resultValues, filters, monotonic, ascending, expectedFormat);
+        }
+
+        if (!isHSQL()) {
+            // Also verify that trig functions that produce non-finites throw an exception
+            String[] stmts = {
+                    "select cot(0.0) from number_types",
+                    "select csc(0.0) from number_types"
+            };
+
+            for (String stmt : stmts) {
+                verifyStmtFails(getClient(), stmt, "Invalid result value");
+            }
+        }
+    }
+
+    public void subtestDegrees() throws Exception
+    {
+        String fname = "DEGREES";
+        final double[] resultValues = new double[values.length];
+        final Set<Double> filters = new HashSet<>();
+        for (int kk = 0; kk < resultValues.length; ++kk) {
+            resultValues[kk] = values[kk]*(180.0/Math.PI);
+            filters.add(resultValues[kk]);
+        }
+        final boolean monotonic = true;
+        final boolean ascending = true;
+        final String expectedFormat = "DOUBLE";
+        functionTest(fname, values, resultValues, filters, monotonic, ascending, expectedFormat);
+
+    }
+
+    public void subtestRadians() throws Exception
+    {
+        String fname = "RADIANS";
+        final double[] resultValues = new double[values.length];
+        final Set<Double> filters = new HashSet<>();
+        for (int kk = 0; kk < resultValues.length; ++kk) {
+            resultValues[kk] = values[kk]*(Math.PI / 180.0);
+            filters.add(resultValues[kk]);
+        }
+        final boolean monotonic = true;
+        final boolean ascending = true;
+        final String expectedFormat = "DOUBLE";
+        functionTest(fname, values, resultValues, filters, monotonic, ascending, expectedFormat);
+
+    }
+
+    public void subtestNaturalLog() throws Exception
+    {
+        final String[] fname = {"LOG", "LN"};
+        final double[] resultValues = new double[nonnegnonzeros.length];
+        final Set<Double> filters = new HashSet<>();
+        for (int kk = 0; kk < resultValues.length; ++kk) {
+            resultValues[kk] = Math.log(nonnegnonzeros[kk]);
+            filters.add(resultValues[kk]);
+        }
+
+        final boolean monotonic = true;
+        final boolean ascending = true;
+        final String expectedFormat = "DOUBLE";
+        for (String log : fname) {
+            functionTest(log, nonnegnonzeros, resultValues, filters, monotonic, ascending, expectedFormat);
+        }
+
+        // Adhoc Queries
+        Client client = getClient();
+
+        client.callProcedure("@AdHoc", "INSERT INTO P1 VALUES (5, 'wEoiXIuJwSIKBujWv', -405636, 1.38145922788945552107e-01, NULL)");
+        client.callProcedure("@AdHoc", "INSERT INTO P1 VALUES (2, 'wEoiXIuJwSIKBujWv', -29914, 8.98500019539639316335e-01, NULL)");
+        client.callProcedure("@AdHoc", "INSERT INTO P1 VALUES (4, 'WCfDDvZBPoqhanfGN', -1309657, 9.34160160574919795629e-01, NULL)");
+
+        // valid adhoc SQL query
+        String sql = "select * from P1 where ID > LOG(1)";
+        client.callProcedure("@AdHoc", sql);
+
+        // execute Log() with invalid arguments
+        try {
+            sql = "select LOG(0) from P1";
+            client.callProcedure("@AdHoc", sql);
+            fail("Expected for Log(zero) result: invalid result value (-inf)");
+        } catch (ProcCallException excp) {
+            if (isHSQL()) {
+                assertTrue(excp.getMessage().contains("invalid argument for natural logarithm"));
+            } else {
+                assertTrue(excp.getMessage().contains("Invalid result value (-inf)"));
+            }
+        }
+
+        try {
+            sql = "select LOG(-10) from P1";
+            client.callProcedure("@AdHoc", sql);
+            fail("Expected resultfor Log(negative #): invalid result value (nan)");
+        } catch (ProcCallException excp) {
+            if (isHSQL()) {
+                assertTrue(excp.getMessage().contains("invalid argument for natural logarithm"));
+            } else {
+                assertTrue(excp.getMessage().contains("Invalid result value (nan)"));
+            }
+        }
+    }
+
+    public void subtestNaturalLog10() throws Exception
+    {
+        final String[] fname = {"LOG10"};
+        final double[] resultValues = new double[nonnegnonzeros.length];
+        final Set<Double> filters = new HashSet<>();
+        for (int kk = 0; kk < resultValues.length; ++kk) {
+            resultValues[kk] = Math.log10(nonnegnonzeros[kk]);
+            filters.add(resultValues[kk]);
+        }
+
+        final boolean monotonic = true;
+        final boolean ascending = true;
+        final String expectedFormat = "DOUBLE";
+        for (String log : fname) {
+            functionTest(log, nonnegnonzeros, resultValues, filters, monotonic, ascending, expectedFormat);
+        }
+
+        // Adhoc Queries
+        Client client = getClient();
+
+        client.callProcedure("@AdHoc", "INSERT INTO P1 VALUES (510, 'wEoiXIuJwSIKBujWv', -405636, 1.38145922788945552107e-01, NULL)");
+        client.callProcedure("@AdHoc", "INSERT INTO P1 VALUES (210, 'wEoiXIuJwSIKBujWv', -29914, 8.98500019539639316335e-01, NULL)");
+        client.callProcedure("@AdHoc", "INSERT INTO P1 VALUES (410, 'WCfDDvZBPoqhanfGN', -1309657, 9.34160160574919795629e-01, NULL)");
+
+        // valid adhoc SQL query
+        String sql = "select * from P1 where ID > LOG10(1)";
+        client.callProcedure("@AdHoc", sql);
+
+        // execute Log10() with invalid arguments
+        try {
+            sql = "select LOG10(0) from P1";
+            client.callProcedure("@AdHoc", sql);
+            fail("Expected for Log10(zero) result: invalid result value (-inf)");
+        } catch (ProcCallException excp) {
+            if (isHSQL()) {
+                assertTrue(excp.getMessage().contains("invalid argument for natural logarithm"));
+            } else {
+                assertTrue(excp.getMessage().contains("Invalid result value (-inf)"));
+            }
+        }
+
+        try {
+            sql = "select LOG10(-10) from P1";
+            client.callProcedure("@AdHoc", sql);
+            fail("Expected resultfor Log10(negative #): invalid result value (nan)");
+        } catch (ProcCallException excp) {
+            if (isHSQL()) {
+                assertTrue(excp.getMessage().contains("invalid argument for natural logarithm"));
+            } else {
+                assertTrue(excp.getMessage().contains("Invalid result value (nan)"));
+            }
+        }
     }
 
     private static class FunctionVarCharTestCase
@@ -1838,8 +2180,8 @@ public class TestFunctionsSuite extends RegressionSuite {
         System.out.println("STARTING test of numeric CAST");
         final double[] rawData = values;
         final double[] resultIntValues = new double[values.length];
-        final Set<Double> intFilters = new HashSet<Double>();
-        final Set<Double> rawFilters = new HashSet<Double>();
+        final Set<Double> intFilters = new HashSet<>();
+        final Set<Double> rawFilters = new HashSet<>();
         for (int kk = 0; kk < resultIntValues.length; ++kk) {
             resultIntValues[kk] = (int)values[kk];
             intFilters.add(resultIntValues[kk]);
@@ -1866,7 +2208,7 @@ public class TestFunctionsSuite extends RegressionSuite {
             }
             assertEquals(results.length, values.length);
 
-            Map<String, Integer> valueBag = new HashMap<String, Integer>();
+            Map<String, Integer> valueBag = new HashMap<>();
             int kk = 0;
             for (FunctionTestCase result : results) {
                 double expected = resultValues[kk++];
@@ -1994,13 +2336,13 @@ public class TestFunctionsSuite extends RegressionSuite {
         sql = "SELECT CAST(VB1 AS VARBINARY) FROM INLINED_VC_VB_TABLE WHERE ID = 22;";
         vt = client.callProcedure("@AdHoc", sql).getResults()[0];
         vt.advanceRow();
-        assertTrue(VoltType.varbinaryToPrintableString(vt.getVarbinary(0)).contains("DEADBEEF"));
+        assertTrue(VoltTable.varbinaryToPrintableString(vt.getVarbinary(0)).contains("DEADBEEF"));
     }
 
     private void subtestVarCharCasts(Client client) throws Exception
     {
         final String[] resultValues = new String[values.length];
-        final Set<String> filters = new HashSet<String>();
+        final Set<String> filters = new HashSet<>();
         for (int kk = 0; kk < resultValues.length; ++kk) {
             resultValues[kk] = "" + values[kk];
             filters.add(resultValues[kk]);
@@ -2011,7 +2353,7 @@ public class TestFunctionsSuite extends RegressionSuite {
         results = displayVarCharCastRun(client, values.length / COLUMNCOUNT);
         assertEquals(results.length, values.length);
 
-        Map<String, Integer> valueBag = new HashMap<String, Integer>();
+        Map<String, Integer> valueBag = new HashMap<>();
         int kk = 0;
         for (FunctionVarCharTestCase result : results) {
             String expected = resultValues[kk++];
@@ -2363,9 +2705,11 @@ public class TestFunctionsSuite extends RegressionSuite {
         try {
             cr = client.callProcedure(trimProc, "", "", "", 1);
             fail();
-        } catch (Exception ex) {
-            assertTrue(ex.getMessage().contains("data exception"));
-            assertTrue(ex.getMessage().contains("trim error"));
+        }
+        catch (Exception ex) {
+            String exceptionMsg = ex.getMessage();
+            assertTrue(exceptionMsg.contains("data exception"));
+            assertTrue(exceptionMsg.contains("trim error"));
         }
 
         // Test TRIM with other character
@@ -2512,10 +2856,26 @@ public class TestFunctionsSuite extends RegressionSuite {
         assertTrue(result.advanceRow());
         assertEquals("foofoofoo", result.getString(1));
         if (!isHSQL()) {
+            String expectedError = "VOLTDB ERROR: SQL ERROR\\s*+The result of the REPEAT function is larger than the maximum size allowed "
+                + "for strings \\(1048576 bytes\\)\\. Reduce either the string size or repetition count\\.";
             verifyProcFails(client,
-                            "VOLTDB ERROR: SQL ERROR\\s*REPEAT function call would create a string of size \\d+ which is larger than the maximum size \\d+",
-                            "REPEAT", 10000000, 1);
+                expectedError,
+                "REPEAT", 10000000, 1);
+            // The multiply needed to do the size check for this call to REPEAT will
+            // overflow a 64-bit signed int.  This was ticket ENG-11559.
+            verifyProcFails(client,
+                expectedError,
+                "REPEAT", 4611686018427387903L, 1);
         }
+
+        // Make sure that repeat of an empty string doesn't take a long time
+        // This verifies the fix for ENG-12118
+        long startTime = System.nanoTime();
+        cr = client.callProcedure("@AdHoc", "select repeat('', 10000000000000) from P1 limit 1");
+        assertContentOfTable(new Object[][] {{""}}, cr.getResults()[0]);
+        long elapsedNanos = System.nanoTime() - startTime;
+        // It should take less than a minute (much much less) to complete this query
+        assertTrue("Repeat with empty string took too long!", elapsedNanos < 1000000000L * 60L);
     }
 
     public void testReplace() throws NoConnectionsException, IOException, ProcCallException {
@@ -2733,12 +3093,15 @@ public class TestFunctionsSuite extends RegressionSuite {
     // Unicode character to UTF8 string character
     public void testChar() throws NoConnectionsException, IOException, ProcCallException {
         System.out.println("STARTING test CHAR");
+
+        // Hsql has wrong answers.
+        if (isHSQL()) {
+            return;
+        }
+
         Client client = getClient();
         ClientResponse cr;
         VoltTable result;
-
-        // Hsql has wrong answers.
-        if (isHSQL()) return;
 
         cr = client.callProcedure("P1.insert", 1, "Xin@VoltDB", 1, 1.0, new Timestamp(1000000000000L));
         assertEquals(ClientResponse.SUCCESS, cr.getStatus());
@@ -2763,168 +3126,6 @@ public class TestFunctionsSuite extends RegressionSuite {
         result = client.callProcedure("CHAR", null, 1).getResults()[0];
         assertTrue(result.advanceRow());
         assertEquals(null, result.getString(1));
-    }
-
-    public void testCaseWhen() throws Exception {
-        System.out.println("STARTING test Case When...");
-        Client cl = getClient();
-        VoltTable vt;
-        String sql;
-
-        //                           ID, DESC,   NUM, FLOAT, TIMESTAMP
-        cl.callProcedure("R1.insert", 1, "VoltDB", 1, 1.0, new Timestamp(1000000000000L));
-        cl.callProcedure("R1.insert", 2, "Memsql",  5, 5.0, new Timestamp(1000000000000L));
-
-        sql = "SELECT ID, CASE WHEN num < 3 THEN 0 ELSE 8 END FROM R1 ORDER BY 1;";
-        validateTableOfLongs(cl, sql, new long[][] {{1, 0},{2, 8}});
-
-        sql = "SELECT ID, CASE WHEN num < 3 THEN num/2 ELSE num + 10 END FROM R1 ORDER BY 1;";
-        validateTableOfLongs(cl, sql, new long[][] {{1, 0},{2, 15}});
-
-        sql = "SELECT ID, CASE WHEN num > 0 AND num < 5 THEN num * 5 " +
-                "WHEN num >=5 THEN num * 10  ELSE num END FROM R1 ORDER BY 1;";
-        validateTableOfLongs(cl, sql, new long[][] {{1, 5},{2, 50}});
-
-
-        // (2) Test case when Types.
-        sql = "SELECT ID, CASE WHEN num > 0 AND num < 5 THEN NULL " +
-                "WHEN num >=5 THEN num * 10  ELSE num END FROM R1 ORDER BY 1;";
-        vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-        assertEquals(VoltType.BIGINT, vt.getColumnType(1));
-        validateTableOfLongs(vt, new long[][] {{1, Long.MIN_VALUE},{2, 50}});
-
-        sql = "SELECT ID, CASE WHEN num > 0 AND num < 5 THEN NULL " +
-                "WHEN num >=5 THEN NULL  ELSE num END FROM R1 ORDER BY 1;";
-        vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-        assertEquals(VoltType.INTEGER, vt.getColumnType(1));
-        validateTableOfLongs(vt, new long[][] {{1, Long.MIN_VALUE},{2, Long.MIN_VALUE}});
-
-        // Expected failed type cases:
-        try {
-            sql = "SELECT ID, CASE WHEN num > 0 AND num < 5 THEN NULL " +
-                    "WHEN num >=5 THEN NULL ELSE NULL END FROM R1 ORDER BY 1;";
-            vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-            fail();
-        } catch (Exception ex) {
-            assertNotNull(ex);
-            assertTrue(ex.getMessage().contains("data type cast needed for parameter or null literal"));
-        }
-
-        try {
-            // Use String as the casted type
-            sql = "SELECT ID, CASE WHEN num > 0 AND num < 5 THEN NULL " +
-                    "WHEN num >=5 THEN NULL ELSE 'NULL' END FROM R1 ORDER BY 1;";
-            vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-        } catch (Exception ex) {
-            fail();
-        }
-
-        try {
-            sql = "SELECT ID, CASE WHEN num > 0 AND num < 5 THEN NULL " +
-                    "WHEN num >=5 THEN 'I am null'  ELSE num END FROM R1 ORDER BY 1;";
-            vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-            fail();
-        } catch (Exception ex) {
-            assertNotNull(ex);
-            assertTrue(ex.getMessage().contains("incompatible data types in combination"));
-        }
-
-        // Test string types
-        sql = "SELECT ID, CASE WHEN desc > 'Volt' THEN 'Good' ELSE 'Bad' END FROM R1 ORDER BY 1;";
-        vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-        assertEquals(2, vt.getRowCount());
-        vt.advanceRow();
-        assertEquals(vt.getLong(0), 1);
-        assertTrue(vt.getString(1).equals("Good"));
-        vt.advanceRow();
-        assertEquals(vt.getLong(0), 2);
-        if (isHSQL()) {
-            assertTrue(vt.getString(1).contains("Bad"));
-        } else {
-            assertTrue(vt.getString(1).equals("Bad"));
-        }
-
-
-        // Test string concatenation
-        sql = "SELECT ID, desc || ':' ||  CASE WHEN desc > 'Volt' THEN 'Good' ELSE 'Bad' END FROM R1 ORDER BY 1;";
-        vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-        assertEquals(2, vt.getRowCount());
-        vt.advanceRow();
-        assertEquals(vt.getLong(0), 1);
-        assertTrue(vt.getString(1).equals("VoltDB:Good"));
-        vt.advanceRow();
-        assertEquals(vt.getLong(0), 2);
-        if (isHSQL()) {
-            assertTrue(vt.getString(1).contains("Memsql:Bad"));
-        } else {
-            assertTrue(vt.getString(1).equals("Memsql:Bad"));
-        }
-
-        // Test inlined varchar/varbinary value produced by CASE WHEN.
-        // This is regression coverage for ENG-6666.
-        sql = "INSERT INTO INLINED_VC_VB_TABLE (ID, VC1, VC2, VB1, VB2) " +
-            "VALUES (72, 'FOO', 'BAR', 'DEADBEEF', 'CDCDCDCD');";
-        cl.callProcedure("@AdHoc", sql);
-        sql = "SELECT CASE WHEN ID > 11 THEN VC1 ELSE VC2 END FROM INLINED_VC_VB_TABLE WHERE ID = 72;";
-        vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-        vt.advanceRow();
-        assertEquals("FOO", vt.getString(0));
-
-        sql = "SELECT CASE WHEN ID > 11 THEN VB1 ELSE VB2 END FROM INLINED_VC_VB_TABLE WHERE ID = 72;";
-        vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-        vt.advanceRow();
-        assertTrue(VoltType.varbinaryToPrintableString(vt.getVarbinary(0)).contains("DEADBEEF"));
-
-        cl.callProcedure("R1.insert", 3, "ORACLE",  8, 8.0, new Timestamp(1000000000000L));
-        // Test nested case when
-        sql = "SELECT ID, CASE WHEN num < 5 THEN num * 5 " +
-                "WHEN num < 10 THEN CASE WHEN num > 7 THEN num * 10 ELSE num * 8 END " +
-                "END FROM R1 ORDER BY 1;";
-        validateTableOfLongs(cl, sql, new long[][] {{1, 5},{2, 40}, {3, 80}});
-
-
-        // Test case when without ELSE clause
-        sql = "SELECT ID, CASE WHEN num > 3 AND num < 5 THEN 4 " +
-                "WHEN num >=5 THEN num END FROM R1 ORDER BY 1;";
-        vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-        assertEquals(VoltType.INTEGER, vt.getColumnType(1));
-        validateTableOfLongs(vt, new long[][] {{1, Long.MIN_VALUE},{2,5}, {3, 8}});
-
-        sql = "SELECT ID, CASE WHEN num > 3 AND num < 5 THEN 4 " +
-                "WHEN num >=5 THEN num*10 END FROM R1 ORDER BY 1;";
-        vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-        assertEquals(VoltType.BIGINT, vt.getColumnType(1));
-        validateTableOfLongs(vt, new long[][] {{1, Long.MIN_VALUE},{2,50}, {3, 80}});
-
-        // Test NULL
-        cl.callProcedure("R1.insert", 4, "DB2",  null, null, new Timestamp(1000000000000L));
-        sql = "SELECT ID, CASE WHEN num < 3 THEN num/2 ELSE num + 10 END FROM R1 ORDER BY 1;";
-        vt = cl.callProcedure("@AdHoc", sql).getResults()[0];
-        assertEquals(VoltType.INTEGER, vt.getColumnType(1));
-        validateTableOfLongs(vt, new long[][] {{1, 0},{2, 15}, {3, 18}, {4, Long.MIN_VALUE}});
-
-    }
-
-    public void testCaseWhenLikeDecodeFunction() throws Exception {
-        System.out.println("STARTING test Case When like decode function...");
-        Client cl = getClient();
-        String sql;
-
-        //      ID, DESC,   NUM, FLOAT, TIMESTAMP
-        cl.callProcedure("R1.insert", 1, "VoltDB", 1, 1.0, new Timestamp(1000000000000L));
-        cl.callProcedure("R1.insert", 2, "MySQL",  5, 5.0, new Timestamp(1000000000000L));
-
-        sql = "SELECT ID, CASE num WHEN 3 THEN 3*2 WHEN 1 THEN 0 ELSE 10 END FROM R1 ORDER BY 1;";
-        validateTableOfLongs(cl, sql, new long[][] {{1, 0},{2, 10}});
-
-        // No ELSE clause
-        sql = "SELECT ID, CASE num WHEN 1 THEN 10 WHEN 2 THEN 1 END FROM R1 ORDER BY 1;";
-        validateTableOfLongs(cl, sql, new long[][] {{1, 10},{2, Long.MIN_VALUE}});
-
-        // Test NULL
-        cl.callProcedure("R1.insert", 3, "Oracle",  null, null, new Timestamp(1000000000000L));
-        sql = "SELECT ID, CASE num WHEN 5 THEN 50 ELSE num + 10 END FROM R1 ORDER BY 1;";
-        validateTableOfLongs(cl, sql, new long[][] {{1, 11},{2, 50}, {3, Long.MIN_VALUE}});
     }
 
     private static StringBuilder joinStringArray(String[] params, String sep) {
@@ -3489,6 +3690,44 @@ public class TestFunctionsSuite extends RegressionSuite {
         validateRowOfLongs(vt, new long[]{Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE});
     }
 
+    public void testPi() throws Exception {
+        System.out.println("STARTING testPi");
+
+        Client client = getClient();
+        /*
+         *      "CREATE TABLE P1 ( " +
+                "ID INTEGER DEFAULT 0 NOT NULL, " +
+                "DESC VARCHAR(300), " +
+                "NUM INTEGER, " +
+                "RATIO FLOAT, " +
+                "PAST TIMESTAMP DEFAULT NULL, " +
+                "PRIMARY KEY (ID) ); " +
+         */
+        ClientResponse cr = null;
+        VoltTable vt = null;
+
+        cr = client.callProcedure("@AdHoc","INSERT INTO P1 (ID) VALUES(1)");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+        vt = client.callProcedure("@AdHoc", "SELECT PI() * ID FROM P1 WHERE ID = 1;").getResults()[0];
+        assertTrue(vt.advanceRow());
+        assertTrue(Math.abs(vt.getDouble(0) - Math.PI) <= 1.0e-16);
+
+        vt = client.callProcedure("@AdHoc", "SELECT PI * ID FROM P1 WHERE ID = 1;").getResults()[0];
+        assertTrue(vt.advanceRow());
+        assertTrue(Math.abs(vt.getDouble(0) - Math.PI) <= 1.0e-16);
+
+        cr = client.callProcedure("@AdHoc", "TRUNCATE TABLE P1");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+    }
+
+    public void testMultiSignatureFunctionInStoredProcedure() throws Exception {
+        // ENG-10939
+        System.out.println("STARTING testMultiSignatureFunctionInStoredProcedure");
+        Client client = getClient();
+        ClientResponse cr = client.callProcedure("TEST_SUBSTRING_INPROC", 12, "string");
+        assertEquals(ClientResponse.SUCCESS, cr.getStatus());
+    }
+
     //
     // JUnit / RegressionSuite boilerplate
     //
@@ -3641,6 +3880,22 @@ public class TestFunctionsSuite extends RegressionSuite {
         project.addStmtProcedure("WHERE_CEILING_FLOAT",    "select count(*) from NUMBER_TYPES where CEILING(FLOATNUM) = ?");
         project.addStmtProcedure("WHERE_CEILING_DECIMAL",  "select count(*) from NUMBER_TYPES where CEILING(DECIMALNUM) = ?");
 
+        project.addStmtProcedure("DISPLAY_DEGREES", "select DEGREES(INTEGERNUM), DEGREES(TINYNUM), DEGREES(SMALLNUM), DEGREES(BIGNUM), DEGREES(FLOATNUM), DEGREES(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+
+        project.addStmtProcedure("ORDER_DEGREES_INTEGER",  "select INTEGERNUM from NUMBER_TYPES order by DEGREES(INTEGERNUM)");
+        project.addStmtProcedure("ORDER_DEGREES_TINYINT",  "select INTEGERNUM from NUMBER_TYPES order by DEGREES(TINYNUM)");
+        project.addStmtProcedure("ORDER_DEGREES_SMALLINT", "select INTEGERNUM from NUMBER_TYPES order by DEGREES(SMALLNUM)");
+        project.addStmtProcedure("ORDER_DEGREES_BIGINT",   "select INTEGERNUM from NUMBER_TYPES order by DEGREES(BIGNUM)");
+        project.addStmtProcedure("ORDER_DEGREES_FLOAT",    "select INTEGERNUM from NUMBER_TYPES order by DEGREES(FLOATNUM)");
+        project.addStmtProcedure("ORDER_DEGREES_DECIMAL",  "select INTEGERNUM from NUMBER_TYPES order by DEGREES(DECIMALNUM)");
+
+        project.addStmtProcedure("WHERE_DEGREES_INTEGER",  "select count(*) from NUMBER_TYPES where DEGREES(INTEGERNUM) = ?");
+        project.addStmtProcedure("WHERE_DEGREES_TINYINT",  "select count(*) from NUMBER_TYPES where DEGREES(TINYNUM) = ?");
+        project.addStmtProcedure("WHERE_DEGREES_SMALLINT", "select count(*) from NUMBER_TYPES where DEGREES(SMALLNUM) = ?");
+        project.addStmtProcedure("WHERE_DEGREES_BIGINT",   "select count(*) from NUMBER_TYPES where DEGREES(TINYNUM) = ?");
+        project.addStmtProcedure("WHERE_DEGREES_FLOAT",    "select count(*) from NUMBER_TYPES where DEGREES(FLOATNUM) = ?");
+        project.addStmtProcedure("WHERE_DEGREES_DECIMAL",  "select count(*) from NUMBER_TYPES where DEGREES(DECIMALNUM) = ?");
+
         project.addStmtProcedure("DISPLAY_EXP", "select EXP(INTEGERNUM), EXP(TINYNUM), EXP(SMALLNUM), EXP(BIGNUM), EXP(FLOATNUM), EXP(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
 
         project.addStmtProcedure("ORDER_EXP_INTEGER",  "select INTEGERNUM, EXP(INTEGERNUM) from NUMBER_TYPES order by EXP(INTEGERNUM)");
@@ -3739,6 +3994,22 @@ public class TestFunctionsSuite extends RegressionSuite {
         project.addStmtProcedure("WHERE_POWERX07_FLOAT",    "select count(*) from NUMBER_TYPES where ((0.0000001+POWER(FLOATNUM,   0.7)) / (0.0000001+?)) BETWEEN 0.99 and 1.01");
         project.addStmtProcedure("WHERE_POWERX07_DECIMAL",  "select count(*) from NUMBER_TYPES where ((0.0000001+POWER(DECIMALNUM, 0.7)) / (0.0000001+?)) BETWEEN 0.99 and 1.01");
 
+        project.addStmtProcedure("DISPLAY_RADIANS", "select RADIANS(INTEGERNUM), RADIANS(TINYNUM), RADIANS(SMALLNUM), RADIANS(BIGNUM), RADIANS(FLOATNUM), RADIANS(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+
+        project.addStmtProcedure("ORDER_RADIANS_INTEGER",  "select INTEGERNUM from NUMBER_TYPES order by RADIANS(INTEGERNUM)");
+        project.addStmtProcedure("ORDER_RADIANS_TINYINT",  "select INTEGERNUM from NUMBER_TYPES order by RADIANS(TINYNUM)");
+        project.addStmtProcedure("ORDER_RADIANS_SMALLINT", "select INTEGERNUM from NUMBER_TYPES order by RADIANS(SMALLNUM)");
+        project.addStmtProcedure("ORDER_RADIANS_BIGINT",   "select INTEGERNUM from NUMBER_TYPES order by RADIANS(BIGNUM)");
+        project.addStmtProcedure("ORDER_RADIANS_FLOAT",    "select INTEGERNUM from NUMBER_TYPES order by RADIANS(FLOATNUM)");
+        project.addStmtProcedure("ORDER_RADIANS_DECIMAL",  "select INTEGERNUM from NUMBER_TYPES order by RADIANS(DECIMALNUM)");
+        // These WHERE tests fails without the range in values so changed it like below.
+        project.addStmtProcedure("WHERE_RADIANS_INTEGER",  "select count(*) from NUMBER_TYPES where ((0.0000001+RADIANS(INTEGERNUM)) / (0.0000001+?)) BETWEEN 0.99 and 1.01");
+        project.addStmtProcedure("WHERE_RADIANS_TINYINT",  "select count(*) from NUMBER_TYPES where ((0.0000001+RADIANS(TINYNUM)) / (0.0000001+?)) BETWEEN 0.99 and 1.01");
+        project.addStmtProcedure("WHERE_RADIANS_SMALLINT", "select count(*) from NUMBER_TYPES where ((0.0000001+RADIANS(SMALLNUM)) / (0.0000001+?)) BETWEEN 0.99 and 1.01");
+        project.addStmtProcedure("WHERE_RADIANS_BIGINT",   "select count(*) from NUMBER_TYPES where ((0.0000001+RADIANS(BIGNUM)) / (0.0000001+?)) BETWEEN 0.99 and 1.01");
+        project.addStmtProcedure("WHERE_RADIANS_FLOAT",    "select count(*) from NUMBER_TYPES where ((0.0000001+RADIANS(FLOATNUM)) / (0.0000001+?)) BETWEEN 0.99 and 1.01");
+        project.addStmtProcedure("WHERE_RADIANS_DECIMAL",  "select count(*) from NUMBER_TYPES where ((0.0000001+RADIANS(DECIMALNUM)) / (0.0000001+?)) BETWEEN 0.99 and 1.01");
+
         // These are intended for application to non-negative values.
         // Failure tests on negative values can be done separately, possibly via ad hoc.
         project.addStmtProcedure("DISPLAY_SQRT", "select SQRT(INTEGERNUM), SQRT(TINYNUM), SQRT(SMALLNUM), SQRT(BIGNUM), SQRT(FLOATNUM), SQRT(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
@@ -3756,6 +4027,61 @@ public class TestFunctionsSuite extends RegressionSuite {
         project.addStmtProcedure("WHERE_SQRT_BIGINT",   "select count(*) from NUMBER_TYPES where SQRT(TINYNUM) = ?");
         project.addStmtProcedure("WHERE_SQRT_FLOAT",    "select count(*) from NUMBER_TYPES where SQRT(FLOATNUM) = ?");
         project.addStmtProcedure("WHERE_SQRT_DECIMAL",  "select count(*) from NUMBER_TYPES where SQRT(DECIMALNUM) = ?");
+
+        project.addStmtProcedure("DISPLAY_SIN", "select SIN(INTEGERNUM), SIN(TINYNUM), SIN(SMALLNUM), SIN(BIGNUM), SIN(FLOATNUM), SIN(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+        project.addStmtProcedure("DISPLAY_COS", "select COS(INTEGERNUM), COS(TINYNUM), COS(SMALLNUM), COS(BIGNUM), COS(FLOATNUM), COS(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+        project.addStmtProcedure("DISPLAY_TAN", "select TAN(INTEGERNUM), TAN(TINYNUM), TAN(SMALLNUM), TAN(BIGNUM), TAN(FLOATNUM), TAN(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+        project.addStmtProcedure("DISPLAY_COT", "select COT(INTEGERNUM), COT(TINYNUM), COT(SMALLNUM), COT(BIGNUM), COT(FLOATNUM), COT(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+        project.addStmtProcedure("DISPLAY_SEC", "select SEC(INTEGERNUM), SEC(TINYNUM), SEC(SMALLNUM), SEC(BIGNUM), SEC(FLOATNUM), SEC(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+        project.addStmtProcedure("DISPLAY_CSC", "select CSC(INTEGERNUM), CSC(TINYNUM), CSC(SMALLNUM), CSC(BIGNUM), CSC(FLOATNUM), CSC(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+
+        project.addStmtProcedure("DISPLAY_LN", "select LN(INTEGERNUM), LN(TINYNUM), LN(SMALLNUM), LN(BIGNUM), LN(FLOATNUM), LN(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+
+        project.addStmtProcedure("ORDER_LN_INTEGER",  "select INTEGERNUM from NUMBER_TYPES order by LN(INTEGERNUM)");
+        project.addStmtProcedure("ORDER_LN_TINYINT",  "select INTEGERNUM from NUMBER_TYPES order by LN(TINYNUM)");
+        project.addStmtProcedure("ORDER_LN_SMALLINT", "select INTEGERNUM from NUMBER_TYPES order by LN(SMALLNUM)");
+        project.addStmtProcedure("ORDER_LN_BIGINT",   "select INTEGERNUM from NUMBER_TYPES order by LN(BIGNUM)");
+        project.addStmtProcedure("ORDER_LN_FLOAT",    "select INTEGERNUM from NUMBER_TYPES order by LN(FLOATNUM)");
+        project.addStmtProcedure("ORDER_LN_DECIMAL",  "select INTEGERNUM from NUMBER_TYPES order by LN(DECIMALNUM)");
+
+        project.addStmtProcedure("WHERE_LN_INTEGER",  "select count(*) from NUMBER_TYPES where LN(INTEGERNUM) = ?");
+        project.addStmtProcedure("WHERE_LN_TINYINT",  "select count(*) from NUMBER_TYPES where LN(TINYNUM) = ?");
+        project.addStmtProcedure("WHERE_LN_SMALLINT", "select count(*) from NUMBER_TYPES where LN(SMALLNUM) = ?");
+        project.addStmtProcedure("WHERE_LN_BIGINT",   "select count(*) from NUMBER_TYPES where LN(TINYNUM) = ?");
+        project.addStmtProcedure("WHERE_LN_FLOAT",    "select count(*) from NUMBER_TYPES where LN(FLOATNUM) = ?");
+        project.addStmtProcedure("WHERE_LN_DECIMAL",  "select count(*) from NUMBER_TYPES where LN(DECIMALNUM) = ?");
+
+
+        project.addStmtProcedure("DISPLAY_LOG", "select LOG(INTEGERNUM), LOG(TINYNUM), LOG(SMALLNUM), LOG(BIGNUM), LOG(FLOATNUM), LOG(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+
+        project.addStmtProcedure("ORDER_LOG_INTEGER",  "select INTEGERNUM from NUMBER_TYPES order by LOG(INTEGERNUM)");
+        project.addStmtProcedure("ORDER_LOG_TINYINT",  "select INTEGERNUM from NUMBER_TYPES order by LOG(TINYNUM)");
+        project.addStmtProcedure("ORDER_LOG_SMALLINT", "select INTEGERNUM from NUMBER_TYPES order by LOG(SMALLNUM)");
+        project.addStmtProcedure("ORDER_LOG_BIGINT",   "select INTEGERNUM from NUMBER_TYPES order by LOG(BIGNUM)");
+        project.addStmtProcedure("ORDER_LOG_FLOAT",    "select INTEGERNUM from NUMBER_TYPES order by LOG(FLOATNUM)");
+        project.addStmtProcedure("ORDER_LOG_DECIMAL",  "select INTEGERNUM from NUMBER_TYPES order by LOG(DECIMALNUM)");
+
+        project.addStmtProcedure("WHERE_LOG_INTEGER",  "select count(*) from NUMBER_TYPES where LOG(INTEGERNUM) = ?");
+        project.addStmtProcedure("WHERE_LOG_TINYINT",  "select count(*) from NUMBER_TYPES where LOG(TINYNUM) = ?");
+        project.addStmtProcedure("WHERE_LOG_SMALLINT", "select count(*) from NUMBER_TYPES where LOG(SMALLNUM) = ?");
+        project.addStmtProcedure("WHERE_LOG_BIGINT",   "select count(*) from NUMBER_TYPES where LOG(TINYNUM) = ?");
+        project.addStmtProcedure("WHERE_LOG_FLOAT",    "select count(*) from NUMBER_TYPES where LOG(FLOATNUM) = ?");
+        project.addStmtProcedure("WHERE_LOG_DECIMAL",  "select count(*) from NUMBER_TYPES where LOG(DECIMALNUM) = ?");
+
+        project.addStmtProcedure("DISPLAY_LOG10", "select LOG10(INTEGERNUM), LOG10(TINYNUM), LOG10(SMALLNUM), LOG10(BIGNUM), LOG10(FLOATNUM), LOG10(DECIMALNUM) from NUMBER_TYPES order by INTEGERNUM");
+        project.addStmtProcedure("ORDER_LOG10_INTEGER",  "select INTEGERNUM from NUMBER_TYPES order by LOG10(INTEGERNUM)");
+        project.addStmtProcedure("ORDER_LOG10_TINYINT",  "select INTEGERNUM from NUMBER_TYPES order by LOG10(TINYNUM)");
+        project.addStmtProcedure("ORDER_LOG10_SMALLINT", "select INTEGERNUM from NUMBER_TYPES order by LOG10(SMALLNUM)");
+        project.addStmtProcedure("ORDER_LOG10_BIGINT",   "select INTEGERNUM from NUMBER_TYPES order by LOG10(BIGNUM)");
+        project.addStmtProcedure("ORDER_LOG10_FLOAT",    "select INTEGERNUM from NUMBER_TYPES order by LOG10(FLOATNUM)");
+        project.addStmtProcedure("ORDER_LOG10_DECIMAL",  "select INTEGERNUM from NUMBER_TYPES order by LOG10(DECIMALNUM)");
+
+        project.addStmtProcedure("WHERE_LOG10_INTEGER",  "select count(*) from NUMBER_TYPES where LOG10(INTEGERNUM) = ?");
+        project.addStmtProcedure("WHERE_LOG10_TINYINT",  "select count(*) from NUMBER_TYPES where LOG10(TINYNUM) = ?");
+        project.addStmtProcedure("WHERE_LOG10_SMALLINT", "select count(*) from NUMBER_TYPES where LOG10(SMALLNUM) = ?");
+        project.addStmtProcedure("WHERE_LOG10_BIGINT",   "select count(*) from NUMBER_TYPES where LOG10(TINYNUM) = ?");
+        project.addStmtProcedure("WHERE_LOG10_FLOAT",    "select count(*) from NUMBER_TYPES where LOG10(FLOATNUM) = ?");
+        project.addStmtProcedure("WHERE_LOG10_DECIMAL",  "select count(*) from NUMBER_TYPES where LOG10(DECIMALNUM) = ?");
 
         project.addStmtProcedure("DISPLAY_INTEGER", "select CAST(INTEGERNUM AS INTEGER), CAST(TINYNUM AS INTEGER), CAST(SMALLNUM AS INTEGER), CAST(BIGNUM AS INTEGER), CAST(FLOATNUM AS INTEGER), CAST(DECIMALNUM AS INTEGER) from NUMBER_TYPES order by INTEGERNUM");
 
@@ -3957,6 +4283,8 @@ public class TestFunctionsSuite extends RegressionSuite {
 
         project.addStmtProcedure("INSERT_NULL", "insert into P1 values (?, null, null, null, null)");
         // project.addStmtProcedure("UPS", "select count(*) from P1 where UPPER(DESC) > 'L'");
+
+        project.addStmtProcedure("TEST_SUBSTRING_INPROC", "SELECT * FROM INLINED_VC_VB_TABLE WHERE ABS(?) > 1 AND SUBSTRING(CAST(? AS VARCHAR),1,3) = 'str';");
 
         // CONFIG #1: Local Site/Partitions running on JNI backend
         config = new LocalCluster("fixedsql-onesite.jar", 1, 1, 0, BackendTarget.NATIVE_EE_JNI);

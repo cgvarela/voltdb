@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,14 +16,11 @@
  */
 package org.voltcore.messaging;
 
-import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.LinkedList;
-
 import com.google_voltpatches.common.collect.ImmutableList;
 import org.apache.zookeeper_voltpatches.data.Id;
 import org.apache.zookeeper_voltpatches.server.Request;
+import org.voltdb.iv2.TxnEgo;
 
 public class AgreementTaskMessage extends VoltMessage {
 
@@ -31,9 +28,6 @@ public class AgreementTaskMessage extends VoltMessage {
     public long m_txnId;
     public long m_initiatorHSId;
     public long m_lastSafeTxnId;
-
-    private LinkedList<byte[]> m_schemes = new LinkedList<byte[]>();
-    private LinkedList<byte[]> m_ids = new LinkedList<byte[]>();
 
     public AgreementTaskMessage() {}
 
@@ -99,9 +93,10 @@ public class AgreementTaskMessage extends VoltMessage {
 
         assert(buf.capacity() == buf.position());
         buf.limit(buf.position());
-
-        m_ids = null;
-        m_schemes = null;
     }
 
+    @Override
+    public String getMessageInfo() {
+        return "AgreementTaskMessage TxnId:" + TxnEgo.txnIdToString(m_txnId);
+    }
 }

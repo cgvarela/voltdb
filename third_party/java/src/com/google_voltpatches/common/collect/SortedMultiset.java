@@ -16,9 +16,7 @@
 
 package com.google_voltpatches.common.collect;
 
-import com.google_voltpatches.common.annotations.Beta;
 import com.google_voltpatches.common.annotations.GwtCompatible;
-
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -40,13 +38,12 @@ import java.util.Set;
  * specified in terms of {@link Object#equals}.
  * 
  * <p>See the Guava User Guide article on <a href=
- * "http://code.google.com/p/guava-libraries/wiki/NewCollectionTypesExplained#Multiset">
+ * "https://github.com/google/guava/wiki/NewCollectionTypesExplained#multiset">
  * {@code Multiset}</a>.
  * 
  * @author Louis Wasserman
  * @since 11.0
  */
-@Beta
 @GwtCompatible(emulated = true)
 public interface SortedMultiset<E> extends SortedMultisetBridge<E>, SortedIterable<E> {
   /**
@@ -84,7 +81,8 @@ public interface SortedMultiset<E> extends SortedMultisetBridge<E>, SortedIterab
    * 
    * @since 14.0 (present with return type {@code SortedSet} since 11.0)
    */
-  @Override NavigableSet<E> elementSet();
+  @Override
+  NavigableSet<E> elementSet();
   
   /**
    * {@inheritDoc}
@@ -92,7 +90,8 @@ public interface SortedMultiset<E> extends SortedMultisetBridge<E>, SortedIterab
    * <p>The {@code entrySet}'s iterator returns entries in ascending element
    * order according to the this multiset's comparator.
    */
-  @Override Set<Entry<E>> entrySet();
+  @Override
+  Set<Entry<E>> entrySet();
 
   /**
    * {@inheritDoc}
@@ -100,7 +99,8 @@ public interface SortedMultiset<E> extends SortedMultisetBridge<E>, SortedIterab
    * <p>The iterator returns the elements in ascending order according to this
    * multiset's comparator.
    */
-  @Override Iterator<E> iterator();
+  @Override
+  Iterator<E> iterator();
 
   /**
    * Returns a descending view of this multiset. Modifications made to either
@@ -133,8 +133,8 @@ public interface SortedMultiset<E> extends SortedMultisetBridge<E>, SortedIterab
    * {@code tailMultiset(lowerBound, lowerBoundType).headMultiset(upperBound,
    * upperBoundType)}.
    */
-  SortedMultiset<E> subMultiset(E lowerBound, BoundType lowerBoundType,
-      E upperBound, BoundType upperBoundType);
+  SortedMultiset<E> subMultiset(
+      E lowerBound, BoundType lowerBoundType, E upperBound, BoundType upperBoundType);
 
   /**
    * Returns a view of this multiset restricted to the elements greater than

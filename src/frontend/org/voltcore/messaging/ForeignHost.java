@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,10 +24,10 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.util.Set;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-
-import com.google_voltpatches.common.base.Throwables;
 
 import org.voltcore.logging.Level;
 import org.voltcore.logging.VoltLogger;
@@ -42,9 +42,12 @@ import org.voltcore.utils.RateLimitedLogger;
 import org.voltdb.OperationMode;
 import org.voltdb.VoltDB;
 
+import com.google_voltpatches.common.base.Throwables;
+
 public class ForeignHost {
     private static final VoltLogger hostLog = new VoltLogger("HOST");
-    private static final RateLimitedLogger rateLimitedLogger = new RateLimitedLogger(10 * 1000, hostLog, Level.WARN);
+    private static RateLimitedLogger rateLimitedLogger;
+    private static long m_logRate;
 
     final PicoNetwork m_network;
     final FHInputHandler m_handler;
@@ -64,7 +67,12 @@ public class ForeignHost {
 
     private final AtomicInteger m_deadReportsCount = new AtomicInteger(0);
 
+    // used to immediately cut off reads from a foreign host
+    // great way to trigger a heartbeat timout / simulate a network partition
+    private AtomicBoolean m_linkCutForTest = new AtomicBoolean(false);
+
     public static final int POISON_PILL = -1;
+    public static final int STOPNODE_NOTICE = -2;
 
     public static final int CRASH_ALL = 0;
     public static final int CRASH_ME = 1;
@@ -80,6 +88,11 @@ public class ForeignHost {
 
         @Override
         public void handleMessage(ByteBuffer message, Connection c) throws IOException {
+            // if this link is "gone silent" for partition tests, just drop the message on the floor
+            if (m_linkCutForTest.get()) {
+                return;
+            }
+
             handleRead(message, c);
         }
 
@@ -87,11 +100,13 @@ public class ForeignHost {
         public void stopping(Connection c)
         {
             m_isUp = false;
-            if (!m_closing)
+            if (!m_closing && isPrimary())
             {
+                // Log the remote host's action
                 if (!m_hostMessenger.isShuttingDown()) {
-                    VoltDB.dropStackTrace("Received remote hangup from foreign host " + hostnameAndIPAndPort());
-                    hostLog.warn("Received remote hangup from foreign host " + hostnameAndIPAndPort());
+                    String msg = "Received remote hangup from foreign host " + hostnameAndIPAndPort();
+                    VoltDB.dropStackTrace(msg);
+                    CoreUtils.printAsciiArtLog(hostLog, msg, Level.INFO);
                 }
                 m_hostMessenger.reportForeignHostFailed(m_hostId);
             }
@@ -119,6 +134,16 @@ public class ForeignHost {
         }
     }
 
+    private void setLogRate(long deadHostTimeout) {
+        int logRate;
+        if (deadHostTimeout < 30 * 1000)
+            logRate = (int) (deadHostTimeout / 3);
+        else
+            logRate = 10 * 1000;
+        rateLimitedLogger = new RateLimitedLogger(logRate, hostLog, Level.WARN);
+        m_logRate = logRate;
+    }
+
     /** Create a ForeignHost and install in VoltNetwork */
     ForeignHost(HostMessenger host, int hostId, SocketChannel socket, int deadHostTimeout,
             InetSocketAddress listeningAddress, PicoNetwork network)
@@ -133,6 +158,8 @@ public class ForeignHost {
         m_deadHostTimeout = deadHostTimeout;
         m_listeningAddress = listeningAddress;
         m_network = network;
+
+        setLogRate(deadHostTimeout);
     }
 
     public void enableRead(Set<Long> verbotenThreads) {
@@ -146,6 +173,7 @@ public class ForeignHost {
         m_closing = true;
         try {
             m_network.shutdownAsync();
+
         } catch (InterruptedException e) {
             Throwables.propagate(e);
         }
@@ -189,50 +217,55 @@ public class ForeignHost {
     }
 
     /** Send a message to the network. This public method is re-entrant. */
-    void send(
-            final long destinations[],
-            final VoltMessage message)
-    {
+    void send(final long destinations[], final VoltMessage message) {
+        if (!m_isUp) {
+            hostLog.warn("Failed to send VoltMessage because connection to host " +
+                    CoreUtils.getHostIdFromHSId(destinations[0])+ " is closed");
+            return;
+        }
         if (destinations.length == 0) {
             return;
         }
 
-        m_network.enqueue(
-                new DeferredSerialization() {
-                    @Override
-                    public final void serialize(final ByteBuffer buf) throws IOException {
-                        buf.putInt(buf.capacity() - 4);
-                        buf.putLong(message.m_sourceHSId);
-                        buf.putInt(destinations.length);
-                        for (int ii = 0; ii < destinations.length; ii++) {
-                            buf.putLong(destinations[ii]);
+        // if this link is "gone silent" for partition tests, just drop the message on the floor
+        if (!m_linkCutForTest.get()) {
+            m_network.enqueue(
+                    new DeferredSerialization() {
+                        @Override
+                        public final void serialize(final ByteBuffer buf) throws IOException {
+                            buf.putInt(buf.capacity() - 4);
+                            buf.putLong(message.m_sourceHSId);
+                            buf.putInt(destinations.length);
+                            for (int ii = 0; ii < destinations.length; ii++) {
+                                buf.putLong(destinations[ii]);
+                            }
+                            message.flattenToBuffer(buf);
+                            buf.flip();
                         }
-                        message.flattenToBuffer(buf);
-                        buf.flip();
-                    }
 
-                    @Override
-                    public final void cancel() {
-                    /*
-                     * Can this be removed?
-                     */
-                    }
+                        @Override
+                        public final void cancel() {
+                        /*
+                         * Can this be removed?
+                         */
+                        }
 
-                    @Override
-                    public String toString() {
-                        return message.getClass().getName();
-                    }
+                        @Override
+                        public String toString() {
+                            return message.getClass().getName();
+                        }
 
-                    @Override
-                    public int getSerializedSize() {
-                        final int len = 4            /* length prefix */
-                                + 8            /* source hsid */
-                                + 4            /* destinationCount */
-                                + 8 * destinations.length  /* destination list */
-                                + message.getSerializedSize();
-                        return len;
-                    }
-                });
+                        @Override
+                        public int getSerializedSize() {
+                            final int len = 4            /* length prefix */
+                                    + 8            /* source hsid */
+                                    + 4            /* destinationCount */
+                                    + 8 * destinations.length  /* destination list */
+                                    + message.getSerializedSize();
+                            return len;
+                        }
+                    });
+        }
 
         long current_time = EstTime.currentTimeMillis();
         long current_delta = current_time - m_lastMessageMillis.get();
@@ -240,7 +273,7 @@ public class ForeignHost {
          * Try and give some warning when a connection is timing out.
          * Allows you to observe the liveness of the host receiving the heartbeats
          */
-        if (current_delta > 10 * 1000) {
+        if (isPrimary() && current_delta > m_logRate) {
             rateLimitedLogger.log(
                     "Have not received a message from host "
                         + hostnameAndIPAndPort() + " for " + (current_delta / 1000.0) + " seconds",
@@ -250,7 +283,8 @@ public class ForeignHost {
         // set m_isUp to false, so use both that and m_closing to
         // avoid repeat reports of a single node failure
         if ((!m_closing && m_isUp) &&
-            (current_delta > m_deadHostTimeout))
+                isPrimary() &&
+                current_delta > m_deadHostTimeout)
         {
             if (m_deadReportsCount.getAndIncrement() == 0) {
                 hostLog.error("DEAD HOST DETECTED, hostname: " + hostnameAndIPAndPort());
@@ -264,7 +298,6 @@ public class ForeignHost {
         }
     }
 
-
     String hostnameAndIPAndPort() {
         return m_network.getHostnameAndIPAndPort();
     }
@@ -276,11 +309,13 @@ public class ForeignHost {
     /** Deliver a deserialized message from the network to a local mailbox */
     private void deliverMessage(long destinationHSId, VoltMessage message) {
         if (!m_hostMessenger.validateForeignHostId(m_hostId)) {
-            hostLog.warn(String.format("Message (%s) sent to site id: %s @ (%s) at " +
-                    m_hostMessenger.getHostId() + " from " + CoreUtils.hsIdToString(message.m_sourceHSId) +
-                    " which is a known failed host. The message will be dropped\n",
+            hostLog.warn(String.format("Message (%s) sent to site id: %s @ (%s) at %d from %s "
+                    + "which is a known failed host. The message will be dropped\n",
                     message.getClass().getSimpleName(),
-                    CoreUtils.hsIdToString(destinationHSId), m_socket.getRemoteSocketAddress().toString()));
+                    CoreUtils.hsIdToString(destinationHSId),
+                    m_socket.getRemoteSocketAddress().toString(),
+                    m_hostMessenger.getHostId(),
+                    CoreUtils.hsIdToString(message.m_sourceHSId)));
             return;
         }
 
@@ -290,10 +325,12 @@ public class ForeignHost {
          * because we are saying that things can come and go
          */
         if (mailbox == null) {
-            hostLog.info(String.format("Message (%s) sent to unknown site id: %s @ (%s) at " +
-                    m_hostMessenger.getHostId() + " from " + CoreUtils.hsIdToString(message.m_sourceHSId) + "\n",
+            hostLog.info(String.format("Message (%s) sent to unknown site id: %s @ (%s) at %d from %s \n",
                     message.getClass().getSimpleName(),
-                    CoreUtils.hsIdToString(destinationHSId), m_socket.getRemoteSocketAddress().toString()));
+                    CoreUtils.hsIdToString(destinationHSId),
+                    m_socket.getRemoteSocketAddress().toString(),
+                    m_hostMessenger.getHostId(),
+                    CoreUtils.hsIdToString(message.m_sourceHSId)));
             /*
              * If it is for the wrong host, that definitely isn't cool
              */
@@ -306,7 +343,8 @@ public class ForeignHost {
         mailbox.deliver(message);
     }
 
-    /** Read data from the network. Runs in the context of Port when
+    /**
+     * Read data from the network. Runs in the context of PicoNetwork thread when
      * data is available.
      * @throws IOException
      */
@@ -342,6 +380,11 @@ public class ForeignHost {
                 hostLog.error("Invalid Cause in poison pill: " + cause);
             }
             return;
+        } else if (destCount == STOPNODE_NOTICE) {
+            int targetHostId = in.getInt();
+            hostLog.info("Receive StopNode notice for host " + targetHostId);
+            m_hostMessenger.addStopNodeNotice(targetHostId);
+            return;
         }
 
         recvDests = new long[destCount];
@@ -374,6 +417,11 @@ public class ForeignHost {
     }
 
     public void sendPoisonPill(String err, int cause) {
+        // if this link is "gone silent" for partition tests, just drop the message on the floor
+        if (m_linkCutForTest.get()) {
+            return;
+        }
+
         byte errBytes[];
         try {
             errBytes = err.getBytes("UTF-8");
@@ -392,7 +440,35 @@ public class ForeignHost {
         m_network.enqueue(message);
     }
 
+    public FutureTask<Void> sendStopNodeNotice(int targetHostId) {
+        // if this link is "gone silent" for partition tests, just drop the message on the floor
+        if (m_linkCutForTest.get()) {
+            return null;
+        }
+        ByteBuffer message = ByteBuffer.allocate(20);
+        message.putInt(message.capacity() - 4);
+        message.putLong(-1);
+        message.putInt(STOPNODE_NOTICE);
+        message.putInt(targetHostId);
+        message.flip();
+        return m_network.enqueueAndDrain(message);
+    }
+
     public void updateDeadHostTimeout(int timeout) {
         m_deadHostTimeout = timeout;
+        setLogRate(timeout);
+    }
+
+    /**
+     * used to immediately cut off reads from a foreign host
+     * great way to trigger a heartbeat timout / simulate a network partition
+     */
+    void cutLink() {
+        m_linkCutForTest.set(true);
+    }
+
+    public boolean isPrimary() {
+        // Secondary foreign host never time out
+        return m_deadHostTimeout != Integer.MAX_VALUE;
     }
 }

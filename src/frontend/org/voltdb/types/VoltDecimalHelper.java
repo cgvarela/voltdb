@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -26,7 +26,9 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 /**
- * A class for serializing and deserializing Volt's 16-byte fixed precision and scale decimal format. The decimal's
+ * A class for VoltDB decimal numbers.
+ *
+ * The main task of this class is serializing and deserializing Volt's 16-byte fixed precision and scale decimal format. The decimal's
  * are converted to/from Java's {@link java.math.BigDecimal BigDecimal} class. <code>BigDecimal</code> stores values
  * as an unscaled (unscaled means no trailing 0s) fixed point {@link java.math.BigInteger BigInteger} and a separate
  * scale value. An exception (either {@link java.lang.RuntimeException RuntimeException} or
@@ -34,6 +36,8 @@ import java.util.Arrays;
  * 38 is used. {@link java.math.BigDecimal#setScale(int) BigDecimal.setScale(int)} can be used to reduce the scale of
  * a value before serialization.
  *
+ * There is also a static method, stringToDecimal, to convert a string value to an acceptable BigDecimal value
+ * for VoltDB's DECIMAL type.
  */
 public class VoltDecimalHelper {
     /**
@@ -75,7 +79,33 @@ public class VoltDecimalHelper {
         BigInteger.TEN.pow(9),
         BigInteger.TEN.pow(10),
         BigInteger.TEN.pow(11),
-        BigInteger.TEN.pow(12)
+        BigInteger.TEN.pow(12),
+        BigInteger.TEN.pow(13),
+        BigInteger.TEN.pow(14),
+        BigInteger.TEN.pow(15),
+        BigInteger.TEN.pow(16),
+        BigInteger.TEN.pow(17),
+        BigInteger.TEN.pow(18),
+        BigInteger.TEN.pow(19),
+        BigInteger.TEN.pow(20),
+        BigInteger.TEN.pow(21),
+        BigInteger.TEN.pow(22),
+        BigInteger.TEN.pow(23),
+        BigInteger.TEN.pow(24),
+        BigInteger.TEN.pow(25),
+        BigInteger.TEN.pow(26),
+        BigInteger.TEN.pow(27),
+        BigInteger.TEN.pow(28),
+        BigInteger.TEN.pow(29),
+        BigInteger.TEN.pow(30),
+        BigInteger.TEN.pow(31),
+        BigInteger.TEN.pow(32),
+        BigInteger.TEN.pow(33),
+        BigInteger.TEN.pow(34),
+        BigInteger.TEN.pow(35),
+        BigInteger.TEN.pow(36),
+        BigInteger.TEN.pow(37),
+        BigInteger.TEN.pow(38)
     };
 
     private final static String m_roundingEnabledProperty = "BIGDECIMAL_ROUND";
@@ -114,34 +144,6 @@ public class VoltDecimalHelper {
         = new RoundingConfiguration(Boolean.valueOf(System.getProperty(m_roundingEnabledProperty, m_defaultRoundingEnablement)),
                                     RoundingMode.valueOf(System.getProperty(m_roundingModeProperty, m_defaultRoundingMode)));
 
-
-    static public byte[] getUnscaledBytes(BigDecimal bd) throws IOException {
-        if (bd == null) {
-            return Arrays.copyOf(NULL_INDICATOR, NULL_INDICATOR.length);
-        }
-        if (bd.scale() > kDefaultScale) {
-            bd = roundToScale(bd, kDefaultScale, getRoundingMode());
-        }
-        int scale = bd.scale();
-        int precision = bd.precision();
-        final int precisionMinusScale = precision - scale;
-        if ( precisionMinusScale > 26 ) {
-            throw new IOException("Precision of " + bd + " to the left of the decimal point is " +
-                    precisionMinusScale + " and the max is 26");
-        }
-        final int scaleFactor = kDefaultScale - bd.scale();
-        BigInteger unscaledBI = bd.unscaledValue().multiply(scaleFactors[scaleFactor]);
-        boolean isNegative = false;
-        if (unscaledBI.signum() < 0) {
-            isNegative = true;
-        }
-        final byte unscaledValue[] = unscaledBI.toByteArray();
-        if (unscaledValue.length > 16) {
-            throw new IOException("Precision of " + bd + " is >38 digits");
-        }
-        return expandToLength16(unscaledValue, isNegative);
-    }
-
     /**
      * Serialize the null decimal sigil to a the provided {@link java.nio.ByteBuffer ByteBuffer}
      * @param buf <code>ByteBuffer</code> to serialize the decimal into
@@ -162,11 +164,12 @@ public class VoltDecimalHelper {
             return scaledValue;
         }
         byte replacement[] = new byte[16];
-        if (isNegative){
-            java.util.Arrays.fill( replacement, (byte)-1);
+        if (isNegative) {
+            Arrays.fill(replacement, (byte)-1);
         }
-        for (int ii = 15; 15 - ii < scaledValue.length; ii--) {
-            replacement[ii] = scaledValue[ii - (replacement.length - scaledValue.length)];
+        int shift = (16 - scaledValue.length);
+        for (int ii = 0; ii < scaledValue.length; ++ii) {
+            replacement[ii+shift] = scaledValue[ii];
         }
         return replacement;
     }
@@ -190,13 +193,17 @@ public class VoltDecimalHelper {
     }
 
     /**
-     * Round a BigDecimal number to a scale given the rounding mode.
-     * Note that rounding may return the precision.  For example,
-     * rounding 9.99999 and 9.1999 to a scale of 2 gives 10.00 and 9.20.
-     * The latter has precision 3, and the former has precision 4.
-     * @param bd
-     * @param scale
-     * @return
+     * Round a BigDecimal number to a scale, given the rounding mode.
+     * Note that the precision of the result can depend not only on its original
+     * precision and scale and the desired scale, but also on its value.
+     * For example, when rounding up with scale 2:<br>
+     *     9.1999 with input scale 4 and precision 5 returns 9.20 with precision 3 (down 2).<br>
+     *     9.9999 with input scale 4 and precision 5 returns 10.00 with precision 4 (down 1).<br>
+     *     91.9999 with input scale 4 and precision 6 returns 92.00 with precision 4 (down 2).
+     * @param bd the input value of arbitrary scale and precision
+     * @param scale the desired scale of the return value
+     * @param mode the rounding algorithm to use
+     * @return the rounded value approximately equal to bd, but having the desired scale
      */
     static private final BigDecimal roundToScale(BigDecimal bd, int scale, RoundingMode mode) throws RuntimeException
     {
@@ -207,7 +214,7 @@ public class VoltDecimalHelper {
         if (!isRoundingEnabled()) {
             throw new RuntimeException(String.format("Decimal scale %d is greater than the maximum %d", bd.scale(), kDefaultScale));
         }
-        int desiredPrecision = bd.precision() - lostScaleDigits;
+        int desiredPrecision = Math.max(1, bd.precision() - lostScaleDigits);
         MathContext mc = new MathContext(desiredPrecision, mode);
         BigDecimal nbd = bd.round(mc);
         if (nbd.scale() != scale) {
@@ -225,31 +232,33 @@ public class VoltDecimalHelper {
      */
     static public void serializeBigDecimal(BigDecimal bd, ByteBuffer buf)
     {
-          if (bd == null) {
-              serializeNull(buf);
-              return;
-          }
-          if (bd.scale() > 12) {
-              bd = roundToScale(bd, kDefaultScale, getRoundingMode());
-          }
-          int scale = bd.scale();
-          int precision = bd.precision();
-          final int precisionMinusScale = precision - scale;
-          if ( precisionMinusScale > 26) {
-              throw new RuntimeException("Precision of " + bd + " to the left of the decimal point is " +
-                      precisionMinusScale + " and the max is 26");
-          }
-          final int scaleFactor = kDefaultScale - bd.scale();
-          BigInteger unscaledBI = bd.unscaledValue().multiply(scaleFactors[scaleFactor]);
-          boolean isNegative = false;
-          if (unscaledBI.signum() < 0) {
-              isNegative = true;
-          }
-          final byte unscaledValue[] = unscaledBI.toByteArray();
-          if (unscaledValue.length > 16) {
-              throw new RuntimeException("Precision of " + bd + " is >38 digits");
-          }
-          buf.put(expandToLength16(unscaledValue, isNegative));
+        if (bd == null) {
+            serializeNull(buf);
+            return;
+        }
+        int decimalScale = bd.scale();
+        if (decimalScale > kDefaultScale) {
+            bd = roundToScale(bd, kDefaultScale, getRoundingMode());
+            decimalScale = bd.scale();
+        }
+        int overallPrecision = bd.precision();
+        final int wholeNumberPrecision = overallPrecision - decimalScale;
+        if (wholeNumberPrecision > 26) {
+            throw new RuntimeException("Precision of " + bd + " to the left of the decimal point is " +
+                                  wholeNumberPrecision + " and the max is 26");
+        }
+        final int scalingFactor = Math.max(0, kDefaultScale - decimalScale);
+        BigInteger scalableBI = bd.unscaledValue();
+        //* enable to debug */ System.out.println("DEBUG BigDecimal: " + bd);
+        //* enable to debug */ System.out.println("DEBUG unscaled: " + scalableBI);
+        scalableBI = scalableBI.multiply(scaleFactors[scalingFactor]);
+        //* enable to debug */ System.out.println("DEBUG scaled to picos: " + scalableBI);
+        final byte wholePicos[] = scalableBI.toByteArray();
+        if (wholePicos.length > 16) {
+            throw new RuntimeException("Precision of " + bd + " is > 38 digits");
+        }
+        boolean isNegative = (scalableBI.signum() < 0);
+        buf.put(expandToLength16(wholePicos, isNegative));
     }
 
     /**
@@ -301,7 +310,21 @@ public class VoltDecimalHelper {
     }
 
     public static BigDecimal setDefaultScale(BigDecimal bd) {
-        // TODO Auto-generated method stub
         return bd.setScale(kDefaultScale, getRoundingMode());
     }
+
+    /**
+     * Convert a string to a VoltDB DECIMAL number with the default
+     * (and only possible) scale.
+     *
+     * @param valueStr
+     */
+    public static BigDecimal stringToDecimal(String valueStr) {
+        BigInteger bi = new BigInteger(valueStr);
+        BigDecimal bd = new BigDecimal(bi);
+        bd = VoltDecimalHelper.setDefaultScale(bd);
+        return bd;
+    }
+
+
 }

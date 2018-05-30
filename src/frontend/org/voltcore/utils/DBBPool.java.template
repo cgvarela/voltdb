@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -48,6 +48,7 @@ public final class DBBPool {
 #ifndef NO_MEMCHECK
 
     static {
+        System.setProperty("io.netty.leakDetection.level", "ADVANCED");
         final String msg = "Strict java memory checking is enabled, don't do release builds " +
                      "or performance runs with this enabled. Invoke \"ant clean\" and \"ant -Djmemcheck=NO_MEMCHECK\" to disable.";
         HOST.warn(msg);
@@ -492,6 +493,7 @@ public final class DBBPool {
     public static void registerUnsafeMemory(long pointer) {
 #ifdef MEMCHECK_FULL
         m_allocatedStuff.put(pointer, new Throwable("Thread \"" + Thread.currentThread().getName() + "\" registered " + Long.toHexString(pointer) + " here at " + System.currentTimeMillis()));
+        m_deletedStuff.remove(pointer);
 #endif
     }
 #ifdef MEMCHECK_FULL
@@ -546,6 +548,7 @@ public final class DBBPool {
 #ifdef MEMCHECK_FULL
         final long pointer = retcont.address();
         m_allocatedStuff.put(pointer, new Throwable("Thread \"" + Thread.currentThread().getName() + "\" allocated " + Long.toHexString(pointer) + " here at " + System.currentTimeMillis()));
+        m_deletedStuff.remove(pointer);
 #endif
         return retcont;
     }

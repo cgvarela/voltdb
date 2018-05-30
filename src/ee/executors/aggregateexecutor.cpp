@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This file contains original code and/or modifications of original code.
  * Any modifications made by VoltDB Inc. are licensed under the following
@@ -45,24 +45,11 @@
 
 #include "executors/aggregateexecutor.h"
 
-#include "common/ValueFactory.hpp"
-#include "common/common.h"
-#include "common/debuglog.h"
-#include "common/SerializableEEException.h"
-#include "expressions/abstractexpression.h"
 #include "plannodes/aggregatenode.h"
 #include "plannodes/limitnode.h"
 #include "storage/temptable.h"
-#include "storage/tableiterator.h"
 
-#include "boost/foreach.hpp"
-#include "boost/unordered_map.hpp"
-
-#include <algorithm>
-#include <limits>
-#include <set>
-#include <stdint.h>
-#include <utility>
+#include "hyperloglog/hyperloglog.hpp" // for APPROX_COUNT_DISTINCT
 
 namespace voltdb {
 /*
@@ -78,6 +65,12 @@ typedef boost::unordered_set<NValue,
  * It is specified as a parameter class that determines the type of the ifDistinct data member.
  */
 struct Distinct : public AggregateNValueSetType {
+
+    explicit Distinct(Pool* memoryPool)
+        : m_memoryPool(memoryPool)
+    {
+    }
+
     bool excludeValue(const NValue& val)
     {
         // find this value in the set.  If it doesn't exist, add
@@ -86,11 +79,27 @@ struct Distinct : public AggregateNValueSetType {
         iterator setval = find(val);
         if (setval == end())
         {
-            insert(val);
+            if (val.getVolatile()) {
+                // We only come here in the case of inlined VARCHAR or
+                // VARBINARY data.  The tuple backing this NValue may
+                // change, so we need to allocate a copy of the data
+                // for the value stored in the unordered set to remain
+                // valid.
+                NValue newval = val;
+                assert(m_memoryPool != NULL);
+                newval.allocateObjectFromPool(m_memoryPool);
+                insert(newval);
+            }
+            else {
+                insert(val);
+            }
             return false; // Include value just this once.
         }
         return true; // Never again this value;
     }
+
+private:
+    Pool* m_memoryPool;
 };
 
 /**
@@ -99,6 +108,9 @@ struct Distinct : public AggregateNValueSetType {
  * It is specified as a parameter class that determines the type of the ifDistinct data member.
  */
 struct NotDistinct {
+    // Pool argument is provided only so
+    // interface matches Distinct, above.
+    explicit NotDistinct(Pool*) { }
     void clear() { }
     bool excludeValue(const NValue& val)
     {
@@ -110,8 +122,14 @@ struct NotDistinct {
 template<class D>
 class SumAgg : public Agg
 {
-  public:
-    SumAgg() {}
+public:
+    // We're providing a NULL pool argument here to ifDistinct because
+    // SUM only operates on numeric values which don't have the same
+    // issues as inlined strings.
+    SumAgg()
+        : ifDistinct(NULL)
+    {
+    }
 
     virtual void advance(const NValue& val)
     {
@@ -143,7 +161,14 @@ template<class D>
 class AvgAgg : public Agg
 {
 public:
-    AvgAgg() : m_count(0) {}
+    // We're providing a NULL pool argument here to ifDistinct because
+    // AVG only operates on numeric values which don't have the same
+    // issues as inlined strings.
+    AvgAgg()
+        : ifDistinct(NULL)
+        , m_count(0)
+    {
+    }
 
     virtual void advance(const NValue& val)
     {
@@ -187,7 +212,11 @@ template<class D>
 class CountAgg : public Agg
 {
 public:
-    CountAgg() : m_count(0) {}
+    CountAgg(Pool* memoryPool)
+        : ifDistinct(memoryPool)
+        , m_count(0)
+    {
+    }
 
     virtual void advance(const NValue& val)
     {
@@ -256,26 +285,24 @@ public:
         if (!m_haveAdvanced)
         {
             m_value = val;
-            if (m_value.getSourceInlined()) {
-                // If the incoming value is inlined, that means its
-                // data really lives in a record somewhere.  In serial
-                // aggregation, the NValue may be backed by a row that
-                // is reused and updated for each row produced by a
-                // child node.  Because NValue's copy constructor only
-                // does a shallow copy, this can lead wrong answers
-                // when the Agg's NValue changes unexpectedly.  To
-                // avoid this, un-inline the incoming NValue to its
-                // own storage.
-                m_value.allocateObjectFromInlinedValue(m_memoryPool);
-                m_inlineCopiedToOutline = true;
+            if (m_value.getVolatile()) {
+                // In serial aggregation, the NValue may be backed by
+                // a row that is reused and updated for each row
+                // produced by a child node.  Because NValue's copy
+                // constructor only does a shallow copy, this can lead
+                // wrong answers when the Agg's NValue changes
+                // unexpectedly.  To avoid this, copy the
+                // incoming NValue to its own storage.
+                m_value.allocateObjectFromPool(m_memoryPool);
+                m_inlineCopiedToNonInline = true;
             }
             m_haveAdvanced = true;
         }
         else
         {
             m_value = m_value.op_max(val);
-            if (m_value.getSourceInlined()) {
-                m_value.allocateObjectFromInlinedValue(m_memoryPool);
+            if (m_value.getVolatile()) {
+                m_value.allocateObjectFromPool(m_memoryPool);
             }
         }
     }
@@ -283,8 +310,8 @@ public:
     virtual NValue finalize(ValueType type)
     {
         m_value.castAs(type);
-        if (m_inlineCopiedToOutline) {
-            m_value.allocateObjectFromOutlinedValue();
+        if (m_inlineCopiedToNonInline) {
+            m_value.allocateObjectFromPool();
         }
         return m_value;
     }
@@ -310,19 +337,19 @@ public:
         if (!m_haveAdvanced)
         {
             m_value = val;
-            if (m_value.getSourceInlined()) {
+            if (m_value.getVolatile()) {
                 // see comment in MaxAgg above, regarding why we're
                 // doing this.
-                m_value.allocateObjectFromInlinedValue(m_memoryPool);
-                m_inlineCopiedToOutline = true;
+                m_value.allocateObjectFromPool(m_memoryPool);
+                m_inlineCopiedToNonInline = true;
             }
             m_haveAdvanced = true;
         }
         else
         {
             m_value = m_value.op_min(val);
-            if (m_value.getSourceInlined()) {
-                m_value.allocateObjectFromInlinedValue(m_memoryPool);
+            if (m_value.getVolatile()) {
+                m_value.allocateObjectFromPool(m_memoryPool);
             }
         }
     }
@@ -330,14 +357,134 @@ public:
     virtual NValue finalize(ValueType type)
     {
         m_value.castAs(type);
-        if (m_inlineCopiedToOutline) {
-            m_value.allocateObjectFromOutlinedValue();
+        if (m_inlineCopiedToNonInline) {
+            m_value.allocateObjectFromPool();
         }
         return m_value;
     }
 
 private:
     Pool* m_memoryPool;
+};
+
+class ApproxCountDistinctAgg : public Agg {
+public:
+    ApproxCountDistinctAgg()
+        : m_hyperLogLog(registerBitWidth())
+    {
+    }
+
+    virtual void advance(const NValue& val)
+    {
+        if (val.isNull()) {
+            return;
+        }
+
+        // Cannot (yet?) handle variable length types.  This should be
+        // enforced by the front end, so we don't actually expect this
+        // error.
+        //
+        // FLOATs are not handled due to the possibility of different
+        // bit patterns representing the same value (positive/negative
+        // zero, and [de-]normalized numbers).  This is also enforced
+        // in the front end.
+        assert((! isVariableLengthType(ValuePeeker::peekValueType(val)))
+               && ValuePeeker::peekValueType(val) != VALUE_TYPE_POINT
+               && ValuePeeker::peekValueType(val) != VALUE_TYPE_DOUBLE);
+
+        int32_t valLength = 0;
+        const char* data = ValuePeeker::peekPointerToDataBytes(val, &valLength);
+        assert(valLength != 0);
+
+        m_hyperLogLog.add(data, static_cast<uint32_t>(valLength));
+    }
+
+    virtual NValue finalize(ValueType type)
+    {
+        double estimate = m_hyperLogLog.estimate();
+        estimate = ::round(estimate); // round to nearest integer
+        m_value = ValueFactory::getBigIntValue(static_cast<int64_t>(estimate));
+        return m_value;
+    }
+
+    virtual void resetAgg()
+    {
+        hyperLogLog().clear();
+        Agg::resetAgg();
+    }
+
+protected:
+    hll::HyperLogLog& hyperLogLog() {
+        return m_hyperLogLog;
+    }
+
+    static uint8_t registerBitWidth() {
+        // Setting this value higher makes for a more accurate
+        // estimate but means that the hyperloglogs sent to the
+        // coordinator from each partition will be larger.
+        //
+        // This value is called "b" in the hyperloglog code
+        // and papers.  Size of the hyperloglog will be
+        // 2^b + 1 bytes.
+        //
+        // For the version of hyperloglog we use in VoltDB, the max
+        // value allowed for b is 16, so the hyperloglogs sent to the
+        // coordinator will be 65537 bytes apiece, which seems
+        // reasonable.
+        return 16;
+    }
+
+private:
+
+    hll::HyperLogLog m_hyperLogLog;
+};
+
+/// When APPROX_COUNT_DISTINCT is split across two fragments of a
+/// plan, this agg represents the bottom half of the agg.  It's
+/// advance method is inherited from the super class, but it's
+/// finalize method produces a serialized hyperloglog to be accepted
+/// by a HYPERLOGLOGS_TO_CARD agg on the coordinator.
+class ValsToHyperLogLogAgg : public ApproxCountDistinctAgg {
+public:
+    virtual NValue finalize(ValueType type)
+    {
+        assert (type == VALUE_TYPE_VARBINARY);
+        // serialize the hyperloglog as varbinary, to send to
+        // coordinator.
+        //
+        // TODO: We're doing a fair bit of copying here, first to the
+        // string stream, then to the temp varbinary object.  We could
+        // get away with just one copy here.
+        std::ostringstream oss;
+        hyperLogLog().dump(oss);
+        return ValueFactory::getTempBinaryValue(oss.str().c_str(),
+                                                static_cast<int32_t>(oss.str().length()));
+    }
+};
+
+/// When APPROX_COUNT_DISTINCT is split across two fragments of a
+/// plan, this agg represents the top half of the agg.  It's finalize
+/// method is inherited from the super class, but it's advance method
+/// accepts serialized hyperloglogs from each partition.
+class HyperLogLogsToCardAgg : public ApproxCountDistinctAgg {
+public:
+    virtual void advance(const NValue& val)
+    {
+        assert (ValuePeeker::peekValueType(val) == VALUE_TYPE_VARBINARY);
+        assert (!val.isNull());
+
+        // TODO: we're doing some unnecessary copying here to
+        // deserialize the hyperloglog and merge it with the
+        // agg's HLL instance.
+
+        int32_t length;
+        const char* buf = ValuePeeker::peekObject_withoutNull(val, &length);
+        assert (length > 0);
+        std::istringstream iss(std::string(buf, length));
+        hll::HyperLogLog distHll(registerBitWidth());
+        distHll.restore(iss);
+        hyperLogLog().merge(distHll);
+    }
 };
 
 /*
@@ -355,9 +502,9 @@ inline Agg* getAggInstance(Pool& memoryPool, ExpressionType agg_type, bool isDis
         return new (memoryPool) MaxAgg(&memoryPool);
     case EXPRESSION_TYPE_AGGREGATE_COUNT:
         if (isDistinct) {
-            return new (memoryPool) CountAgg<Distinct>();
+            return new (memoryPool) CountAgg<Distinct>(&memoryPool);
         }
-        return new (memoryPool) CountAgg<NotDistinct>();
+        return new (memoryPool) CountAgg<NotDistinct>(&memoryPool);
     case EXPRESSION_TYPE_AGGREGATE_SUM:
         if (isDistinct) {
             return new (memoryPool) SumAgg<Distinct>();
@@ -368,23 +515,30 @@ inline Agg* getAggInstance(Pool& memoryPool, ExpressionType agg_type, bool isDis
             return new (memoryPool) AvgAgg<Distinct>();
         }
         return new (memoryPool) AvgAgg<NotDistinct>();
+    case EXPRESSION_TYPE_AGGREGATE_APPROX_COUNT_DISTINCT:
+        return new (memoryPool) ApproxCountDistinctAgg();
+    case EXPRESSION_TYPE_AGGREGATE_VALS_TO_HYPERLOGLOG:
+        return new (memoryPool) ValsToHyperLogLogAgg();
+    case EXPRESSION_TYPE_AGGREGATE_HYPERLOGLOGS_TO_CARD:
+        return new (memoryPool) HyperLogLogsToCardAgg();
     default:
-    {
-        char message[128];
-        snprintf(message, sizeof(message), "Unknown aggregate type %d", agg_type);
-        throw SerializableEEException(VOLT_EE_EXCEPTION_TYPE_EEEXCEPTION, message);
-    }
+        {
+            char message[128];
+            snprintf(message, sizeof(message), "Unknown aggregate type %d", agg_type);
+            throw SerializableEEException(VOLT_EE_EXCEPTION_TYPE_EEEXCEPTION, message);
+        }
     }
 }
 
-bool AggregateExecutorBase::p_init(AbstractPlanNode*, TempTableLimits* limits)
+bool AggregateExecutorBase::p_init(AbstractPlanNode*, const ExecutorVector& executorVector)
 {
     AggregatePlanNode* node = dynamic_cast<AggregatePlanNode*>(m_abstractNode);
     assert(node);
 
     m_inputExpressions = node->getAggregateInputExpressions();
     for (int i = 0; i < m_inputExpressions.size(); i++) {
-        VOLT_DEBUG("\nAGG INPUT EXPRESSION: %s\n",
+        VOLT_DEBUG("AGG INPUT EXPRESSION[%d]: %s",
+                   i,
                    m_inputExpressions[i] ? m_inputExpressions[i]->debug().c_str() : "null");
     }
 
@@ -407,7 +561,7 @@ bool AggregateExecutorBase::p_init(AbstractPlanNode*, TempTableLimits* limits)
     }
 
     if (!node->isInline()) {
-        setTempOutputTable(limits);
+        setTempOutputTable(executorVector);
     }
     m_partialSerialGroupByColumns = node->getPartialGroupByColumns();
 
@@ -427,7 +581,7 @@ bool AggregateExecutorBase::p_init(AbstractPlanNode*, TempTableLimits* limits)
         for (int ii = 0; ii < m_groupByExpressions.size(); ii++) {
             if (std::find(m_partialSerialGroupByColumns.begin(),
                           m_partialSerialGroupByColumns.end(), ii)
-                       == m_partialSerialGroupByColumns.end() )
+                == m_partialSerialGroupByColumns.end() )
             {
                 // Find the partial hash group by columns
                 m_partialHashGroupByColumns.push_back(ii);;
@@ -467,7 +621,7 @@ inline TupleSchema* AggregateExecutorBase::constructGroupBySchema(bool partial) 
                                           groupByColumnInBytes);
 }
 
-inline void AggregateExecutorBase::executeAggBase(const NValueArray& params)
+inline void AggregateExecutorBase::initCountingPredicate(const NValueArray& params, CountingPostfilter* parentPostfilter)
 {
     VOLT_DEBUG("started AGGREGATE");
     assert(dynamic_cast<AggregatePlanNode*>(m_abstractNode));
@@ -475,14 +629,13 @@ inline void AggregateExecutorBase::executeAggBase(const NValueArray& params)
     //
     // OPTIMIZATION: NESTED LIMIT for serial aggregation
     //
-    m_limit = -1;
-    m_offset = -1;
-    m_tupleSkipped = 0;
-    m_earlyReturn = false;
+    int limit = CountingPostfilter::NO_LIMIT;
+    int offset = CountingPostfilter::NO_OFFSET;
     LimitPlanNode* inlineLimitNode = dynamic_cast<LimitPlanNode*>(m_abstractNode->getInlinePlanNode(PLAN_NODE_TYPE_LIMIT));
     if (inlineLimitNode) {
-        inlineLimitNode->getLimitAndOffsetByReference(params, m_limit, m_offset);
+        inlineLimitNode->getLimitAndOffsetByReference(params, limit, offset);
     }
+    m_postfilter = CountingPostfilter(m_tmpOutputTable, m_postPredicate, limit, offset, parentPostfilter);
 }
 
 /// Helper method responsible for inserting the results of the
@@ -490,7 +643,7 @@ inline void AggregateExecutorBase::executeAggBase(const NValueArray& params)
 /// through any additional columns from the input table.
 inline bool AggregateExecutorBase::insertOutputTuple(AggregateRow* aggregateRow)
 {
-    if (m_earlyReturn) {
+    if (!m_postfilter.isUnderLimit()) {
         return false;
     }
 
@@ -507,30 +660,16 @@ inline bool AggregateExecutorBase::insertOutputTuple(AggregateRow* aggregateRow)
     VOLT_TRACE("Setting passthrough columns");
     BOOST_FOREACH(int output_col_index, m_passThroughColumns) {
         tempTuple.setNValue(output_col_index,
-                         m_outputColumnExpressions[output_col_index]->eval(&(aggregateRow->m_passThroughTuple)));
+                            m_outputColumnExpressions[output_col_index]->eval(&(aggregateRow->m_passThroughTuple)));
     }
 
-    bool inserted = false;
-    if (m_postPredicate == NULL || m_postPredicate->eval(&tempTuple, NULL).isTrue()) {
-        if (m_limit >= 0) {
-            // If there is an inlined limit for serial aggregate and
-            // it is possible for LIMIT 0.
-            if (m_offset > 0 && m_tupleSkipped < m_offset) {
-                m_tupleSkipped++;
-                return false;
-            }
-            if (m_tmpOutputTable->tempTableTupleCount() == m_limit) {
-                m_earlyReturn = true;
-                return false;
-            }
-        }
-
-        m_tmpOutputTable->insertTupleNonVirtual(tempTuple);
-        inserted = true;
+    bool needInsert = m_postfilter.eval(&tempTuple, NULL);
+    if (needInsert) {
+        m_tmpOutputTable->insertTempTuple(tempTuple);
     }
 
     VOLT_TRACE("output_table:\n%s", m_tmpOutputTable->debug().c_str());
-    return inserted;
+    return needInsert;
 }
 
 inline void AggregateExecutorBase::advanceAggs(AggregateRow* aggregateRow, const TableTuple& tuple)
@@ -582,13 +721,16 @@ TableTuple& AggregateExecutorBase::swapWithInprogressGroupByKeyTuple() {
 }
 
 TableTuple AggregateExecutorBase::p_execute_init(const NValueArray& params,
-        ProgressMonitorProxy* pmp, const TupleSchema * schema, TempTable* newTempTable)
+                                                 ProgressMonitorProxy* pmp,
+                                                 const TupleSchema * schema,
+                                                 AbstractTempTable* newTempTable,
+                                                 CountingPostfilter* parentPostfilter)
 {
     if (newTempTable != NULL) {
         m_tmpOutputTable = newTempTable;
     }
     m_memoryPool.purge();
-    executeAggBase(params);
+    initCountingPredicate(params, parentPostfilter);
     m_pmp = pmp;
 
     m_nextGroupByKeyStorage.init(m_groupByKeySchema, &m_memoryPool);
@@ -601,8 +743,7 @@ TableTuple AggregateExecutorBase::p_execute_init(const NValueArray& params,
     // set the schema first because of the NON-null check in MOVE function
     m_inProgressGroupByKeyTuple.move(NULL);
 
-    char * storage = reinterpret_cast<char*>(
-            m_memoryPool.allocateZeroes(schema->tupleLength() + TUPLE_HEADER_SIZE));
+    char * storage = reinterpret_cast<char*>(m_memoryPool.allocateZeroes(schema->tupleLength() + TUPLE_HEADER_SIZE));
     return TableTuple(storage, schema);
 }
 
@@ -619,12 +760,15 @@ void AggregateExecutorBase::p_execute_finish()
 AggregateHashExecutor::~AggregateHashExecutor() {}
 
 TableTuple AggregateHashExecutor::p_execute_init(const NValueArray& params,
-        ProgressMonitorProxy* pmp, const TupleSchema * schema, TempTable* newTempTable)
+                                                 ProgressMonitorProxy* pmp,
+                                                 const TupleSchema * schema,
+                                                 AbstractTempTable* newTempTable,
+                                                 CountingPostfilter* parentPostfilter)
 {
     VOLT_TRACE("hash aggregate executor init..");
     m_hash.clear();
 
-    return AggregateExecutorBase::p_execute_init(params, pmp, schema, newTempTable);
+    return AggregateExecutorBase::p_execute_init(params, pmp, schema, newTempTable, parentPostfilter);
 }
 
 bool AggregateHashExecutor::p_execute(const NValueArray& params)
@@ -637,22 +781,21 @@ bool AggregateHashExecutor::p_execute(const NValueArray& params)
     const TupleSchema * inputSchema = input_table->schema();
     assert(inputSchema);
     TableIterator it = input_table->iteratorDeletingAsWeGo();
-    ProgressMonitorProxy pmp(m_engine, this);
+    ProgressMonitorProxy pmp(m_engine->getExecutorContext(), this);
 
-    TableTuple nextTuple = AggregateHashExecutor::p_execute_init(params, &pmp, inputSchema);
+    TableTuple nextTuple = AggregateHashExecutor::p_execute_init(params, &pmp, inputSchema, NULL);
 
     VOLT_TRACE("looping..");
     while (it.next(nextTuple)) {
-        assert(m_earlyReturn == false); // hash aggregation can not early return for limit
+        assert(m_postfilter.isUnderLimit()); // hash aggregation can not early return for limit
         AggregateHashExecutor::p_execute_tuple(nextTuple);
     }
     AggregateHashExecutor::p_execute_finish();
 
-    cleanupInputTempTable(input_table);
     return true;
 }
 
-bool AggregateHashExecutor::p_execute_tuple(const TableTuple& nextTuple) {
+void AggregateHashExecutor::p_execute_tuple(const TableTuple& nextTuple) {
     m_pmp->countdownProgress();
     initGroupByKeyTuple(nextTuple);
     AggregateRow* aggregateRow;
@@ -668,8 +811,7 @@ bool AggregateHashExecutor::p_execute_tuple(const TableTuple& nextTuple) {
 
         initAggInstances(aggregateRow);
 
-        char* storage = reinterpret_cast<char*>(
-                m_memoryPool.allocateZeroes(m_inputSchema->tupleLength() + TUPLE_HEADER_SIZE));
+        char* storage = reinterpret_cast<char*>(m_memoryPool.allocateZeroes(m_inputSchema->tupleLength() + TUPLE_HEADER_SIZE));
         TableTuple passThroughTupleSource = TableTuple(storage, m_inputSchema);
 
         aggregateRow->recordPassThroughTuple(passThroughTupleSource, nextTuple);
@@ -679,7 +821,7 @@ bool AggregateHashExecutor::p_execute_tuple(const TableTuple& nextTuple) {
 
         if (m_aggTypes.size() == 0) {
             insertOutputTuple(aggregateRow);
-            return false;
+            return;
         }
     } else {
         // otherwise, the agg row is the second item of the pair...
@@ -687,11 +829,6 @@ bool AggregateHashExecutor::p_execute_tuple(const TableTuple& nextTuple) {
     }
     // update the aggregation calculation.
     advanceAggs(aggregateRow, nextTuple);
-
-    if (m_earlyReturn) {
-        return true;
-    }
-    return false;
 }
 
 void AggregateHashExecutor::p_execute_finish() {
@@ -717,18 +854,19 @@ AggregateSerialExecutor::~AggregateSerialExecutor() {}
 
 
 TableTuple AggregateSerialExecutor::p_execute_init(const NValueArray& params,
-        ProgressMonitorProxy* pmp, const TupleSchema * schema, TempTable* newTempTable)
+                                                   ProgressMonitorProxy* pmp,
+                                                   const TupleSchema * schema,
+                                                   AbstractTempTable* newTempTable,
+                                                   CountingPostfilter* parentPostfilter)
 {
     VOLT_TRACE("serial aggregate executor init..");
-    TableTuple nextInputTuple = AggregateExecutorBase::p_execute_init(
-            params, pmp, schema, newTempTable);
+    TableTuple nextInputTuple = AggregateExecutorBase::p_execute_init(params, pmp, schema, newTempTable, parentPostfilter);
 
     m_aggregateRow = new (m_memoryPool, m_aggTypes.size()) AggregateRow();
     m_noInputRows = true;
     m_failPrePredicateOnFirstRow = false;
 
-    char* storage = reinterpret_cast<char*>(
-            m_memoryPool.allocateZeroes(schema->tupleLength() + TUPLE_HEADER_SIZE));
+    char* storage = reinterpret_cast<char*>(m_memoryPool.allocateZeroes(schema->tupleLength() + TUPLE_HEADER_SIZE));
     m_passThroughTupleSource = TableTuple(storage, schema);
 
     // for next input tuple
@@ -744,24 +882,20 @@ bool AggregateSerialExecutor::p_execute(const NValueArray& params)
     TableIterator it = input_table->iteratorDeletingAsWeGo();
     TableTuple nextTuple(input_table->schema());
 
-    ProgressMonitorProxy pmp(m_engine, this);
-    AggregateSerialExecutor::p_execute_init(params, &pmp, input_table->schema());
+    ProgressMonitorProxy pmp(m_engine->getExecutorContext(), this);
+    AggregateSerialExecutor::p_execute_init(params, &pmp, input_table->schema(), NULL);
 
-    while (it.next(nextTuple)) {
+    while (m_postfilter.isUnderLimit() && it.next(nextTuple)) {
         m_pmp->countdownProgress();
         AggregateSerialExecutor::p_execute_tuple(nextTuple);
-        if (m_earlyReturn) {
-            break;
-        }
     }
     AggregateSerialExecutor::p_execute_finish();
     VOLT_TRACE("finalizing..");
 
-    cleanupInputTempTable(input_table);
     return true;
 }
 
-bool AggregateSerialExecutor::p_execute_tuple(const TableTuple& nextTuple) {
+void AggregateSerialExecutor::p_execute_tuple(const TableTuple& nextTuple) {
     // Use the first input tuple to "prime" the system.
     if (m_noInputRows) {
         // ENG-1565: for this special case, can have only one input row, apply the predicate here
@@ -776,7 +910,7 @@ bool AggregateSerialExecutor::p_execute_tuple(const TableTuple& nextTuple) {
             m_failPrePredicateOnFirstRow = true;
         }
         m_noInputRows = false;
-        return false;
+        return;
     }
 
     TableTuple& nextGroupByKeyTuple = swapWithInprogressGroupByKeyTuple();
@@ -797,19 +931,13 @@ bool AggregateSerialExecutor::p_execute_tuple(const TableTuple& nextTuple) {
             break;
         }
     }
-
     // update the aggregation calculation.
     advanceAggs(m_aggregateRow, nextTuple);
-
-    if (m_earlyReturn) {
-        return true;
-    }
-    return false;
 }
 
 void AggregateSerialExecutor::p_execute_finish()
 {
-    if (!m_earlyReturn) {
+    if (m_postfilter.isUnderLimit()) {
         if (m_noInputRows || m_failPrePredicateOnFirstRow) {
             VOLT_TRACE("finalizing after no input rows..");
             // No input rows means either no group rows (when grouping) or an empty table row (otherwise).
@@ -842,11 +970,13 @@ void AggregateSerialExecutor::p_execute_finish()
 AggregatePartialExecutor::~AggregatePartialExecutor() {}
 
 TableTuple AggregatePartialExecutor::p_execute_init(const NValueArray& params,
-        ProgressMonitorProxy* pmp, const TupleSchema * schema, TempTable* newTempTable)
+                                                    ProgressMonitorProxy* pmp,
+                                                    const TupleSchema * schema,
+                                                    AbstractTempTable* newTempTable,
+                                                    CountingPostfilter* parentPostfilter)
 {
     VOLT_TRACE("partial aggregate executor init..");
-    TableTuple nextInputTuple = AggregateExecutorBase::p_execute_init(
-            params, pmp, schema, newTempTable);
+    TableTuple nextInputTuple = AggregateExecutorBase::p_execute_init(params, pmp, schema, newTempTable, parentPostfilter);
 
     m_atTheFirstRow = true;
     m_nextPartialGroupByKeyStorage.init(m_groupByKeyPartialHashSchema, &m_memoryPool);
@@ -868,20 +998,16 @@ bool AggregatePartialExecutor::p_execute(const NValueArray& params)
     TableIterator it = input_table->iteratorDeletingAsWeGo();
     TableTuple nextTuple(input_table->schema());
 
-    ProgressMonitorProxy pmp(m_engine, this);
-    AggregatePartialExecutor::p_execute_init(params, &pmp, input_table->schema());
+    ProgressMonitorProxy pmp(m_engine->getExecutorContext(), this);
+    AggregatePartialExecutor::p_execute_init(params, &pmp, input_table->schema(), NULL);
 
-    while (it.next(nextTuple)) {
+    while (m_postfilter.isUnderLimit() && it.next(nextTuple)) {
         m_pmp->countdownProgress();
         AggregatePartialExecutor::p_execute_tuple(nextTuple);
-        if (m_earlyReturn) {
-            break;
-        }
     }
     AggregatePartialExecutor::p_execute_finish();
     VOLT_TRACE("finalizing..");
 
-    cleanupInputTempTable(input_table);
     return true;
 }
 
@@ -899,7 +1025,7 @@ inline void AggregatePartialExecutor::initPartialHashGroupByKeyTuple(const Table
     }
 }
 
-bool AggregatePartialExecutor::p_execute_tuple(const TableTuple& nextTuple) {
+void AggregatePartialExecutor::p_execute_tuple(const TableTuple& nextTuple) {
     TableTuple& nextGroupByKeyTuple = swapWithInprogressGroupByKeyTuple();
 
     initGroupByKeyTuple(nextTuple);
@@ -940,7 +1066,7 @@ bool AggregatePartialExecutor::p_execute_tuple(const TableTuple& nextTuple) {
         initAggInstances(aggregateRow);
 
         char* storage = reinterpret_cast<char*>(
-                        m_memoryPool.allocateZeroes(m_inputSchema->tupleLength() + TUPLE_HEADER_SIZE));
+                                                m_memoryPool.allocateZeroes(m_inputSchema->tupleLength() + TUPLE_HEADER_SIZE));
         TableTuple passThroughTupleSource = TableTuple (storage, m_inputSchema);
         aggregateRow->recordPassThroughTuple(passThroughTupleSource, nextTuple);
         // The map is referencing the current key tuple for use by the new group,
@@ -953,11 +1079,6 @@ bool AggregatePartialExecutor::p_execute_tuple(const TableTuple& nextTuple) {
 
     // update the aggregation calculation.
     advanceAggs(aggregateRow, nextTuple);
-
-    if (m_earlyReturn) {
-        return true;
-    }
-    return false;
 }
 // TODO: Refactoring the last half of the above function with HASH aggregation
 
@@ -979,5 +1100,4 @@ void AggregatePartialExecutor::p_execute_finish()
 
     AggregateExecutorBase::p_execute_finish();
 }
-
 }

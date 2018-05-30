@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -22,6 +22,8 @@
 package org.voltdb.catalog;
 
 import java.lang.reflect.Field;
+import java.util.Collection;
+import java.util.Set;
 
 
 /**
@@ -29,6 +31,7 @@ import java.lang.reflect.Field;
  * have a name and a path (from the root). They have fields and children.
  * All fields are simple types. All children are CatalogType instances.
  *
+ * MUST BE THREAD SAFE, MUITIPLE THREADS ACCESS IT!
  */
 public abstract class CatalogType implements Comparable<CatalogType> {
 
@@ -36,25 +39,32 @@ public abstract class CatalogType implements Comparable<CatalogType> {
 
         T m_value = null;
         String m_unresolvedPath = null;
+        Object m_lock = new Object();
 
         public void setUnresolved(String path) {
-            // if null: value will be set to null
-            m_value = null;
-            m_unresolvedPath = path;
+            synchronized (m_lock) {
+                // if null: value will be set to null
+                m_value = null;
+                m_unresolvedPath = path;
+            }
         }
 
         public void set(T value) {
-            m_value = value;
-            m_unresolvedPath = null;
+            synchronized (m_lock) {
+                m_value = value;
+                m_unresolvedPath = null;
+            }
         }
 
         @SuppressWarnings("unchecked")
         T resolve() {
-            if (m_unresolvedPath != null) {
-                m_value = (T) getCatalog().getItemForRef(m_unresolvedPath);
-                m_unresolvedPath = null;
+            synchronized (m_lock) {
+                if (m_unresolvedPath != null) {
+                    m_value = (T) getCatalog().getItemForPath(m_unresolvedPath);
+                    m_unresolvedPath = null;
+                }
+                return m_value;
             }
-            return m_value;
         }
 
         public T get() {
@@ -261,18 +271,30 @@ public abstract class CatalogType implements Comparable<CatalogType> {
         sb.append("\n");
     }
 
-    void writeFieldCommands(StringBuilder sb) {
+    void writeFieldCommands(StringBuilder sb, Set<String> whiteListFields) {
         int i = 0;
         for (String field : getFields()) {
-            writeCommandForField(sb, field, i == 0);
-            ++i;
+            if (whiteListFields == null || whiteListFields.contains(field)) {
+                writeCommandForField(sb, field, i == 0);
+                ++i;
+            }
         }
     }
 
     void writeChildCommands(StringBuilder sb)  {
+        writeChildCommands(sb, null, null);
+    }
+
+    /**
+     * Write catalog commands of the children in the white list.
+     * @param whiteList A white list of CatalogType classes
+     */
+    void writeChildCommands(StringBuilder sb, Collection<Class<? extends CatalogType> > whiteList, Set<String> whiteListFields)  {
         for (String childCollection : getChildCollections()) {
             CatalogMap<? extends CatalogType> map = getCollection(childCollection);
-            map.writeCommandsForMembers(sb);
+            if (whiteList == null || whiteList.contains(map.m_cls)) {
+                map.writeCommandsForMembers(sb, whiteListFields);
+            }
         }
     }
 
@@ -357,4 +379,3 @@ public abstract class CatalogType implements Comparable<CatalogType> {
         }
     }
 }
-

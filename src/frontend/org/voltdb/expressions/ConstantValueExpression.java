@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -26,6 +26,7 @@ import org.voltdb.planner.PlanningErrorException;
 import org.voltdb.types.ExpressionType;
 import org.voltdb.types.TimestampType;
 import org.voltdb.utils.Encoder;
+import org.voltdb.utils.VoltTypeUtil;
 
 /**
  *
@@ -42,14 +43,6 @@ public class ConstantValueExpression extends AbstractValueExpression {
 
     public ConstantValueExpression() {
         super(ExpressionType.VALUE_CONSTANT);
-    }
-
-    @Override
-    public Object clone() {
-        ConstantValueExpression clone = (ConstantValueExpression)super.clone();
-        clone.m_value = m_value;
-        clone.m_isNull = m_isNull;
-        return clone;
     }
 
     @Override
@@ -119,14 +112,12 @@ public class ConstantValueExpression extends AbstractValueExpression {
     @Override
     public void toJSONString(JSONStringer stringer) throws JSONException {
         super.toJSONString(stringer);
-        stringer.key(Members.ISNULL.name());
-        stringer.value(m_isNull);
+        stringer.keySymbolValuePair(Members.ISNULL.name(), m_isNull);
         stringer.key(Members.VALUE.name());
-        if (m_isNull)
-        {
+        if (m_isNull) {
             stringer.value("NULL");
+            return;
         }
-        else
         {
             switch (m_valueType)
             {
@@ -201,7 +192,7 @@ public class ConstantValueExpression extends AbstractValueExpression {
             // For now, for partitioning purposes, leave constants for string columns as they are,
             // and process matches for integral columns via constant-to-string-to-bigInt conversion.
             String stringValue = ((ConstantValueExpression) constExpr).getValue();
-            if (voltType.isInteger()) {
+            if (voltType.isBackendIntegerType()) {
                 try {
                     return new Long(stringValue);
                 } catch (NumberFormatException nfe) {
@@ -308,8 +299,17 @@ public class ConstantValueExpression extends AbstractValueExpression {
         if (neededType == VoltType.TIMESTAMP) {
             if (m_valueType == VoltType.STRING) {
                 try {
-                    // Convert date value in whatever format is supported by TimeStampType
-                    // into VoltDB native microsecond count.
+                    // Convert date value in whatever format is supported by
+                    // TimeStampType into VoltDB native microsecond count.
+                    // TODO: Should datetime string be supported as the new
+                    // canonical internal format for timestamp constants?
+                    // Historically, the long micros value made sense because
+                    // it was initially the only way and later the most
+                    // direct way to initialize timestamp values in the EE.
+                    // But now that long value can not be used to "explain"
+                    // an expression as a valid SQL timestamp value for DDL
+                    // round trips, forcing a reverse conversion back through
+                    // TimeStampType to a datetime string.
                     TimestampType ts = new TimestampType(m_value);
                     m_value = String.valueOf(ts.getTime());
                 }
@@ -343,7 +343,7 @@ public class ConstantValueExpression extends AbstractValueExpression {
             return;
         }
 
-        if (neededType.isInteger()) {
+        if (neededType.isBackendIntegerType()) {
             long value = 0;
             try {
                 if (getValueType() == VoltType.VARBINARY) {
@@ -409,13 +409,9 @@ public class ConstantValueExpression extends AbstractValueExpression {
             m_valueSize = columnType.getLengthInBytesForFixedTypes();
             return;
         }
-        if (columnType.isInteger()) {
-            try {
-                Long.parseLong(getValue());
-            } catch (NumberFormatException e) {
-                // DECIMAL is not OK, because the value may be bigger/smaller than our decimal range.
-                columnType = VoltType.FLOAT;
-            }
+        if (columnType.isBackendIntegerType()) {
+            columnType = VoltTypeUtil.getNumericLiteralType(columnType, getValue());
+
             m_valueType = columnType;
             m_valueSize = columnType.getLengthInBytesForFixedTypes();
         }
@@ -466,6 +462,24 @@ public class ConstantValueExpression extends AbstractValueExpression {
         }
         if (m_valueType == VoltType.STRING) {
             return "'" + m_value + "'";
+        }
+        if (m_valueType == VoltType.TIMESTAMP) {
+            try {
+                // Convert the datetime value in its canonical internal form,
+                // currently a count of epoch microseconds,
+                // through TimeStampType into a timestamp string.
+                long micros = Long.valueOf(m_value);
+                TimestampType ts = new TimestampType(micros);
+                return "'" + ts.toString() + "'";
+            }
+            // It couldn't be converted to timestamp.
+            catch (IllegalArgumentException e) {
+                throw new PlanningErrorException("Value (" + getValue() +
+                                                 ") has an invalid format for a constant " +
+                                                 VoltType.TIMESTAMP.toSQLString() + " value");
+
+            }
+
         }
         return m_value;
     }

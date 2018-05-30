@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -24,6 +24,7 @@
 package org.voltdb.jdbc;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -41,17 +42,19 @@ import java.sql.Statement;
 import java.sql.Time;
 import java.sql.Timestamp;
 
+import org.voltdb.BackendTarget;
+import org.voltdb.ServerThread;
+import org.voltdb.VoltDB.Configuration;
+import org.voltdb.client.ClientConfig;
+import org.voltdb.compiler.VoltProjectBuilder;
+import org.voltdb.utils.Encoder;
+import org.voltdb.utils.MiscUtils;
+
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.voltdb.BackendTarget;
-import org.voltdb.ServerThread;
-import org.voltdb.VoltDB.Configuration;
-import org.voltdb.compiler.VoltProjectBuilder;
-import org.voltdb.utils.Encoder;
-import org.voltdb.utils.MiscUtils;
 
 public class TestJDBCQueries {
     private static final String TEST_XML = "jdbcparameterstest.xml";
@@ -59,7 +62,6 @@ public class TestJDBCQueries {
     static String testjar;
     static ServerThread server;
     static Connection conn;
-    static Connection myconn;
     static VoltProjectBuilder pb;
 
     static class Data
@@ -126,10 +128,128 @@ public class TestJDBCQueries {
             new Data("TIMESTAMP", 0,
                         new String[] {"9999999999999", "0", "1"},
                         new String[] {""}),
+            new Data("GEOGRAPHY_POINT", 0,
+                        new String[] {"point(-122.0 37.1)", "point(-100.0 49.1)", "point(-10.0 -49.1)"},
+                        new String[] {"pt(foo)"}),
+            new Data("GEOGRAPHY", 2048,
+                        new String[] {"polygon((0 0, 1 1, 1 0, 0 0))", "polygon((0 0, 3 3, 3 0, 0 0))", "polygon((0 0, 6 6, 6 0, 0 0))"},
+                        new String[] {"plygn(3"}),
+    };
+
+    static enum GetType {
+        BYTE,
+        SHORT,
+        INT,
+        LONG,
+        FLOAT,
+        DOUBLE,
+        BIGDECIMAL
+    }
+
+    static class GetNumberData {
+        final String[] insertData;
+        final GetType[] getType;
+        final Boolean testSuccess;
+
+        GetNumberData(String[] insertData, GetType[] getType, Boolean testSuccess) {
+            this.insertData = insertData;
+            this.getType = getType;
+            this.testSuccess = testSuccess;
+        }
+    }
+
+    static GetNumberData[] getNumberData = new GetNumberData[] {
+        new GetNumberData(
+                new String[] {"1", "1", "1", "1", "1", "1", "1"},
+                new GetType[] {GetType.BYTE, GetType.BYTE, GetType.BYTE,
+                        GetType.BYTE, GetType.BYTE, GetType.BYTE, GetType.BYTE},
+                true),
+        new GetNumberData(
+                new String[] {"1", "1", "1", "1", "1", "1", "1"},
+                new GetType[] {GetType.SHORT, GetType.SHORT, GetType.SHORT,
+                        GetType.SHORT, GetType.SHORT, GetType.SHORT, GetType.SHORT},
+                true),
+        new GetNumberData(
+                new String[] {"1", "1", "1", "1", "1", "1", "1"},
+                new GetType[] {GetType.INT, GetType.INT, GetType.INT,
+                        GetType.INT, GetType.INT, GetType.INT, GetType.INT},
+                true),
+        new GetNumberData(
+                new String[] {"1", "1", "1", "1", "1", "1", "1"},
+                new GetType[] {GetType.LONG, GetType.LONG, GetType.LONG,
+                        GetType.LONG, GetType.LONG, GetType.LONG, GetType.LONG},
+                true),
+        new GetNumberData(
+                new String[] {"1", "1", "1", "1", "1", "1", "1"},
+                new GetType[] {GetType.FLOAT, GetType.FLOAT, GetType.FLOAT,
+                        GetType.FLOAT, GetType.FLOAT, GetType.FLOAT, GetType.FLOAT},
+                true),
+        new GetNumberData(
+                new String[] {"1", "1", "1", "1", "1", "1", "1"},
+                new GetType[] {GetType.DOUBLE, GetType.DOUBLE, GetType.DOUBLE,
+                        GetType.DOUBLE, GetType.DOUBLE, GetType.DOUBLE, GetType.DOUBLE},
+                true),
+        new GetNumberData(
+                new String[] {"1", "1", "1", "1", "1", "1", "1"},
+                new GetType[] {GetType.BIGDECIMAL, GetType.BIGDECIMAL, GetType.BIGDECIMAL,
+                        GetType.BIGDECIMAL, GetType.BIGDECIMAL, GetType.BIGDECIMAL, GetType.BIGDECIMAL},
+                true),
+        new GetNumberData(
+                new String[] {Byte.toString(Byte.MAX_VALUE), Short.toString(Short.MAX_VALUE),
+                        Integer.toString(Integer.MAX_VALUE), Long.toString(Long.MAX_VALUE), Double.toString(Float.MAX_VALUE),
+                        Double.toString(Double.MAX_VALUE), new BigDecimal(Integer.MAX_VALUE).toString()},
+                new GetType[] {GetType.BYTE, GetType.SHORT, GetType.INT,
+                        GetType.LONG, GetType.FLOAT, GetType.DOUBLE, GetType.BIGDECIMAL},
+                true),
+        new GetNumberData(
+                new String[] {null, null, null, null, null, null, null},
+                new GetType[] {GetType.BYTE, GetType.SHORT, GetType.INT,
+                        GetType.LONG, GetType.FLOAT, GetType.DOUBLE, GetType.BIGDECIMAL},
+                true),
+        new GetNumberData(
+                new String[] {"-1", "-1", "-1", "-1", "-1", "-1", "-1"},
+                new GetType[] {GetType.BYTE, GetType.SHORT, GetType.INT,
+                        GetType.LONG, GetType.FLOAT, GetType.DOUBLE, GetType.BIGDECIMAL},
+                true),
+        new GetNumberData(
+                new String[] {"0", "0", "0", "0", "0", "0", "0"},
+                new GetType[] {GetType.BYTE, GetType.SHORT, GetType.INT,
+                        GetType.LONG, GetType.FLOAT, GetType.DOUBLE, GetType.BIGDECIMAL},
+                true),
+        new GetNumberData(
+                new String[] {"1", "1", "1", Long.toString(Long.MAX_VALUE), "1", "1", "1"},
+                new GetType[] {GetType.BYTE, GetType.BYTE, GetType.BYTE,
+                        GetType.BYTE, GetType.BYTE, GetType.BYTE, GetType.BYTE},
+                false),
+        new GetNumberData(
+                new String[] {"1", "1", "1", Long.toString(Long.MAX_VALUE), "1", "1", "1"},
+                new GetType[] {GetType.SHORT, GetType.SHORT, GetType.SHORT,
+                        GetType.SHORT, GetType.SHORT, GetType.SHORT, GetType.SHORT},
+                false),
+        new GetNumberData(
+                new String[] {"1", "1", "1", Long.toString(Long.MAX_VALUE), "1", "1", "1"},
+                new GetType[] {GetType.INT, GetType.INT, GetType.INT,
+                        GetType.INT, GetType.INT, GetType.INT, GetType.INT},
+                false),
+        new GetNumberData(
+                new String[] {"1", "1", "1", "1", "1", Double.toString(Double.MAX_VALUE), "1"},
+                new GetType[] {GetType.FLOAT, GetType.FLOAT, GetType.FLOAT,
+                        GetType.FLOAT, GetType.FLOAT, GetType.FLOAT, GetType.FLOAT},
+                false)
     };
 
     // Define Voter schema as well.
     public static final String voter_schema =
+            "CREATE TABLE all_numbers" +
+            "(" +
+            "  v1 tinyint" +
+            ", v2 smallint" +
+            ", v3 integer" +
+            ", v4 bigint" +
+            ", v5 float" +
+            ", v6 float" +
+            ", v7 decimal" +
+            ");" +
             "CREATE TABLE contestants" +
             "(" +
             "  contestant_number integer     NOT NULL" +
@@ -273,8 +393,12 @@ public class TestJDBCQueries {
         server.waitForInitialization();
 
         Class.forName("org.voltdb.jdbc.Driver");
-        conn = DriverManager.getConnection("jdbc:voltdb://localhost:21212");
-        myconn = null;
+        if(ClientConfig.ENABLE_SSL_FOR_TEST) {
+            conn = DriverManager.getConnection("jdbc:voltdb://localhost:21212?" + JDBCTestCommons.SSL_URL_SUFFIX);
+        }
+        else {
+            conn = DriverManager.getConnection("jdbc:voltdb://localhost:21212");
+        }
     }
 
     private static void stopServer() throws SQLException {
@@ -282,13 +406,99 @@ public class TestJDBCQueries {
             conn.close();
             conn = null;
         }
-        if (myconn != null) {
-            myconn.close();
-            myconn = null;
-        }
         if (server != null) {
             try { server.shutdown(); } catch (InterruptedException e) { /*empty*/ }
             server = null;
+        }
+    }
+
+    @Test
+    public void testGetNumberValues() throws Exception {
+        String insertStatement = "insert into all_numbers values(?, ?, ?, ?, ?, ?, ?)";
+        String selectStatement = "select * from all_numbers";
+        String deleteStatement = "delete from all_numbers";
+        for (GetNumberData data : getNumberData) {
+            PreparedStatement ins = conn.prepareStatement(insertStatement);
+            for (int i = 0; i < 7; i++) {
+                ins.setString(i+1, data.insertData[i]);
+            }
+            if (ins.executeUpdate() != 1) {
+                if (data.testSuccess)
+                    fail();
+                else
+                    continue;
+            }
+
+            Statement sel = conn.createStatement();
+            sel.execute(selectStatement);
+            ResultSet rs = sel.getResultSet();
+            rs.next();
+            for (int i = 0; i < 7; i++) {
+                try {
+                    switch(data.getType[i]) {
+                    case BYTE:
+                        Byte resByte = new Byte(rs.getByte(i+1));
+                        if (rs.wasNull())
+                            assertEquals(resByte, new Byte("0"));
+                        else
+                            assertEquals(resByte, new Byte(data.insertData[i]));
+                        break;
+                    case SHORT:
+                        Short resShort = new Short(rs.getShort(i+1));
+                        if (rs.wasNull())
+                            assertEquals(resShort, new Short("0"));
+                        else
+                            assertEquals(resShort, new Short(data.insertData[i]));
+                        break;
+                    case INT:
+                        Integer resInt = rs.getInt(i+1);
+                        if (rs.wasNull())
+                            assertEquals(resInt, new Integer("0"));
+                        else
+                            assertEquals(resInt, new Integer(data.insertData[i]));
+                        break;
+                    case LONG:
+                        Long resLong = rs.getLong(i+1);
+                        if (rs.wasNull())
+                            assertEquals(resLong, new Long("0"));
+                        else
+                            assertEquals(resLong, new Long(data.insertData[i]));
+                        break;
+                    case FLOAT:
+                        Float resFloat = rs.getFloat(i+1);
+                        if (rs.wasNull())
+                            assertEquals(resFloat, new Float("0"));
+                        else
+                            assertEquals(resFloat, new Float(data.insertData[i]));
+                        break;
+                    case DOUBLE:
+                        Double resDouble = rs.getDouble(i+1);
+                        if (rs.wasNull())
+                            assertEquals(resDouble, new Double("0"));
+                        else
+                            assertEquals(resDouble, new Double(data.insertData[i]));
+                        break;
+                    case BIGDECIMAL:
+                        BigDecimal resDec = rs.getBigDecimal(i+1);
+                        if (rs.wasNull())
+                            assertNull(resDec);
+                        else {
+                            int scale = resDec.scale();
+                            assertEquals(resDec, new BigDecimal(data.insertData[i]).setScale(scale));
+                        }
+                        break;
+                    }
+                } catch (Exception e) {
+                    if (data.testSuccess) {
+                        e.printStackTrace();
+                        fail();
+                    } else
+                        break;
+                }
+            }
+
+            Statement del = conn.createStatement();
+            del.execute(deleteStatement);
         }
     }
 
@@ -360,6 +570,9 @@ public class TestJDBCQueries {
                     case java.sql.Types.DECIMAL:
                         expectValStr = String.valueOf(rs
                                 .getBigDecimal(columnIndex));
+                        break;
+                    case java.sql.Types.OTHER:
+                        expectValStr = rs.getObject(columnIndex).toString();
                         break;
                     default:
                         throw new IllegalArgumentException("Invalid type '" + colType + "'");
@@ -478,6 +691,25 @@ public class TestJDBCQueries {
             System.err.printf("ERROR: %s\n", e.getMessage());
             fail();
         }
+    }
+
+    @Test
+    public void testQueryBatchRepeat() throws Exception
+    {
+
+        String q = String.format("insert into %s(id) values(?)", data[2].tablename);
+        PreparedStatement pStmt = conn.prepareStatement(q);
+
+        for (int i = 1; i < 5000; i++) {
+            pStmt.setInt(1, i);
+            pStmt.addBatch();
+            if (i % 200 == 0) {
+                int[] resultCodes = pStmt.executeBatch();
+                // The batch will be reset to empty , per ENG-8531.
+                assertEquals(200, resultCodes.length);
+            }
+        }
+
     }
 
     @Test
@@ -671,7 +903,7 @@ public class TestJDBCQueries {
             // This query does work, per ENG-7306.
             String sql = "select * from votes;";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
         }
         catch (SQLException e) {
             System.err.println("ERROR(BASIC SELECT): " + e.getMessage());
@@ -683,7 +915,7 @@ public class TestJDBCQueries {
             // This query does work, per ENG-7306.
             String sql = "select * from (select * from contestants C1) alias;";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
         }
         catch (SQLException e) {
             System.err.println("ERROR(SUB-SELECT with no spaces): " + e.getMessage());
@@ -695,7 +927,7 @@ public class TestJDBCQueries {
             // Add a space before the sub-select. Reported in ENG-7306
             String sql = "select * from ( select * from contestants C1) alias;";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
         }
         catch (SQLException e) {
             System.err.println("ERROR(SUB-SELECT with spaces): " + e.getMessage());
@@ -748,7 +980,7 @@ public class TestJDBCQueries {
         {
             String sql = "ALTER TABLE CONTESTANTS ADD UNIQUE(contestant_name) ;";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
             System.err.println("ERROR(executeQuery(ALTER TABLE) succeeded, should have failed)");
             fail();
         }
@@ -788,7 +1020,7 @@ public class TestJDBCQueries {
         {
             String sql = "create table t2(id integer not null, num integer not null);";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
             System.err.println("ERROR(executeQuery(CREATE TABLE) succeeded, should have failed)");
             fail();
         }
@@ -836,7 +1068,7 @@ public class TestJDBCQueries {
         {
             String sql = "CREATE PROCEDURE CountContestants2 AS SELECT COUNT(*) FROM contestants;";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
             System.err.println("ERROR(executeQuery(CREATE PROCEDURE) succeeded, should have failed)");
             fail();
         }
@@ -865,7 +1097,7 @@ public class TestJDBCQueries {
         {
             String sql = "drop table drop_table1;";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
             System.err.println("ERROR(executeQuery(DROP) succeeded, should have failed)");
             fail();
         }
@@ -906,7 +1138,7 @@ public class TestJDBCQueries {
         {
             String sql = "truncate table votes;";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
             System.err.println("ERROR(executeQuery(TRUNCATE TABLE) succeeded, should have failed)");
             fail();
         }
@@ -947,7 +1179,7 @@ public class TestJDBCQueries {
         {
             String sql = " upsert into contestants (contestant_number, contestant_name) values (23, 'Bruce Springsteen')";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
             System.err.println("ERROR(executeQuery(UPSERT) succeeded, should have failed)");
             fail();
         }
@@ -1000,7 +1232,7 @@ public class TestJDBCQueries {
         {
             String sql = "update votes set CONTESTANT_NUMBER = 7 where PHONE_NUMBER = 2150002906;";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
             System.err.println("ERROR(executeQuery(UPDATE) succeeded, should have failed)");
             fail();
         }
@@ -1041,7 +1273,7 @@ public class TestJDBCQueries {
         {
             String sql = "delete from votes where   PHONE_NUMBER = 3082086134      ";
             java.sql.Statement query = conn.createStatement();
-            ResultSet rs = query.executeQuery(sql);
+            query.executeQuery(sql);
             System.err.println("ERROR(executeQuery(DELETE) succeeded, should have failed)");
             fail();
         }

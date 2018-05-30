@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -42,10 +42,11 @@ import org.voltdb.expressions.OperatorExpression;
 import org.voltdb.expressions.ParameterValueExpression;
 import org.voltdb.expressions.RowSubqueryExpression;
 import org.voltdb.expressions.ScalarValueExpression;
-import org.voltdb.expressions.SelectSubqueryExpression;
 import org.voltdb.expressions.TupleValueExpression;
+import org.voltdb.expressions.WindowFunctionExpression;
 import org.voltdb.planner.parseinfo.BranchNode;
 import org.voltdb.planner.parseinfo.JoinNode;
+import org.voltdb.planner.parseinfo.StmtCommonTableScanShared;
 import org.voltdb.planner.parseinfo.StmtTableScan;
 import org.voltdb.planner.parseinfo.StmtTargetTableScan;
 import org.voltdb.plannodes.LimitPlanNode;
@@ -56,11 +57,11 @@ import org.voltdb.types.JoinType;
 
 public class ParsedSelectStmt extends AbstractParsedStmt {
 
-    public ArrayList<ParsedColInfo> m_displayColumns = new ArrayList<ParsedColInfo>();
-    private ArrayList<ParsedColInfo> m_orderColumns = new ArrayList<ParsedColInfo>();
-    public AbstractExpression m_having = null;
-    public ArrayList<ParsedColInfo> m_groupByColumns = new ArrayList<ParsedColInfo>();
-    public ArrayList<ParsedColInfo> m_distinctGroupByColumns = null;
+    public ArrayList<ParsedColInfo> m_displayColumns = new ArrayList<>();
+    private ArrayList<ParsedColInfo> m_orderColumns = new ArrayList<>();
+    private AbstractExpression m_having = null;
+    private List<ParsedColInfo> m_groupByColumns = new ArrayList<>();
+    private ArrayList<ParsedColInfo> m_distinctGroupByColumns = null;
     private boolean m_groupAndOrderByPermutationWasTested = false;
     private boolean m_groupAndOrderByPermutationResult = false;
 
@@ -73,13 +74,13 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
     // This list contains the core information for aggregation.
     // It collects aggregate expression, group by expression from display columns,
     // group by columns, having, order by columns.
-    public ArrayList<ParsedColInfo> m_aggResultColumns = new ArrayList<ParsedColInfo>();
+    public ArrayList<ParsedColInfo> m_aggResultColumns = new ArrayList<>();
     // It represents the group by expression and replace TVE if it's complex group by.
     public Map<String, AbstractExpression> m_groupByExpressions = null;
 
     private ArrayList<ParsedColInfo> m_avgPushdownDisplayColumns = null;
     private ArrayList<ParsedColInfo> m_avgPushdownAggResultColumns = null;
-    private ArrayList<ParsedColInfo> m_avgPushdownGroupByColumns = null;
+    private List<ParsedColInfo> m_avgPushdownGroupByColumns = null;
     private ArrayList<ParsedColInfo> m_avgPushdownDistinctGroupByColumns = null;
     private ArrayList<ParsedColInfo> m_avgPushdownOrderColumns = null;
     private AbstractExpression m_avgPushdownHaving = null;
@@ -140,6 +141,7 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             return m_limitParameterId;
         }
     }
+
     LimitOffset m_limitOffset = new LimitOffset();
 
     private boolean m_distinct = false;
@@ -153,14 +155,21 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
     private boolean m_hasLargeNumberOfTableJoins = false;
     // this list is the join order either from the user or parser if it has large number of table joins.
     private final ArrayList<JoinNode> m_joinOrderList = new ArrayList<>();
+    private boolean m_hasPartitionColumnsInWindowedAggregates = false;
+    // If this statement is the query for a materialized view, and
+    // some expression has operations which are unsafe to create
+    // with non-empty source tables, then this string will have
+    // the error message.  If this is null, the view can be created
+    // with populated tables with no problem.
+    private String m_mvUnSafeErrorMessage = null;
 
     /**
      * Class constructor
      * @param paramValues
      * @param db
      */
-    public ParsedSelectStmt(String[] paramValues, Database db) {
-        super(paramValues, db);
+    public ParsedSelectStmt(AbstractParsedStmt parent, String[] paramValues, Database db) {
+        super(parent, paramValues, db);
     }
 
     @Override
@@ -170,37 +179,54 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             m_distinct = Boolean.parseBoolean(node);
         }
 
-        VoltXMLElement limitElement = null, offsetElement = null, havingElement = null;
-        VoltXMLElement displayElement = null, orderbyElement = null, groupbyElement = null;
+        VoltXMLElement limitElement = null;
+        VoltXMLElement offsetElement = null;
+        VoltXMLElement havingElement = null;
+        VoltXMLElement displayElement = null;
+        VoltXMLElement orderbyElement = null;
+        VoltXMLElement groupbyElement = null;
         for (VoltXMLElement child : stmtNode.children) {
             if (child.name.equalsIgnoreCase("limit")) {
+                assert(limitElement == null);
                 limitElement = child;
-            } else if (child.name.equalsIgnoreCase("offset")) {
+            }
+            else if (child.name.equalsIgnoreCase("offset")) {
+                assert(offsetElement == null);
                 offsetElement = child;
-            } else if (child.name.equalsIgnoreCase("columns")) {
+            }
+            else if (child.name.equalsIgnoreCase("columns")) {
+                assert(displayElement == null);
                 displayElement = child;
-            } else if (child.name.equalsIgnoreCase("ordercolumns")) {
+            }
+            else if (child.name.equalsIgnoreCase("ordercolumns")) {
+                assert(orderbyElement == null);
                 orderbyElement = child;
-            } else if (child.name.equalsIgnoreCase("groupcolumns")) {
+            }
+            else if (child.name.equalsIgnoreCase("groupcolumns")) {
+                assert(groupbyElement == null);
                 groupbyElement = child;
-            } else if (child.name.equalsIgnoreCase("having")) {
+            }
+            else if (child.name.equalsIgnoreCase("having")) {
+                assert(havingElement == null);
                 havingElement = child;
             }
         }
         parseLimitAndOffset(limitElement, offsetElement, m_limitOffset);
 
         if (m_aggregationList == null) {
-            m_aggregationList = new ArrayList<AbstractExpression>();
+            m_aggregationList = new ArrayList<>();
         }
-        // We want to extract display first, groupBy second before processing orderBy
-        // Because groupBy and orderBy need display columns to tag its columns
-        // OrderBy needs groupBy columns to stop recursively finding TVEs for pass-through columns.
+        // We want to extract display first, groupBy second before processing
+        // orderBy because groupBy and orderBy need display columns to tag
+        // their columns and orderBy needs groupBy columns to stop recursively
+        // finding TVEs for pass-through columns.
         assert(displayElement != null);
         parseDisplayColumns(displayElement, false);
 
         // rewrite DISTINCT
         // function may need to change the groupbyElement by rewriting.
-        groupbyElement = processDistinct(displayElement, groupbyElement, havingElement);
+        groupbyElement = processDistinct(displayElement,
+                groupbyElement, havingElement);
 
         if (groupbyElement != null) {
             parseGroupByColumns(groupbyElement);
@@ -215,16 +241,30 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             parseOrderColumns(orderbyElement, false);
         }
 
-        // At this point, we have collected all aggregations in the select statement.
-        // We do not need aggregationList container in parseXMLtree
-        // Make it null to prevent others adding elements to it when parsing the tree
+        // At this point, we have collected all aggregations in the select
+        // statement. We do not need aggregationList container in parseXMLtree
+        // Make it null to prevent others adding elements to it when parsing
+        // the tree.
         m_aggregationList = null;
 
         if (needComplexAggregation()) {
             fillUpAggResultColumns();
-        } else {
+        }
+        else {
             m_aggResultColumns = m_displayColumns;
         }
+
+        // If we have seen any windowed expressions we will have
+        // saved them in m_windowFunctionExpressions by now.  We need to
+        // verify their validity.
+        verifyWindowFunctionExpressions();
+
+        /*
+         * Calculate the content determinism message before we place the TVEs in
+         * the columns. After the TVEs are placed the actual expressions are
+         * hard to find.
+         */
+        calculateContentDeterminismMessage();
         placeTVEsinColumns();
 
         // prepare the limit plan node if it needs one.
@@ -235,38 +275,40 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
         // Prepare for the AVG push-down optimization only if it might be required.
         if (mayNeedAvgPushdown()) {
-            processAvgPushdownOptimization(displayElement, groupbyElement, havingElement, orderbyElement);
+            processAvgPushdownOptimization(displayElement,
+                    groupbyElement, havingElement, orderbyElement);
         }
-
         prepareMVBasedQueryFix();
     }
 
     private void processAvgPushdownOptimization (VoltXMLElement displayElement,
-            VoltXMLElement groupbyElement, VoltXMLElement havingElement, VoltXMLElement orderbyElement) {
+            VoltXMLElement groupbyElement, VoltXMLElement havingElement,
+            VoltXMLElement orderbyElement) {
 
         ArrayList<ParsedColInfo> tmpDisplayColumns = m_displayColumns;
-        m_displayColumns = new ArrayList<ParsedColInfo>();
+        m_displayColumns = new ArrayList<>();
         ArrayList<ParsedColInfo> tmpAggResultColumns = m_aggResultColumns;
-        m_aggResultColumns = new ArrayList<ParsedColInfo>();
-        ArrayList<ParsedColInfo> tmpGroupByColumns = m_groupByColumns;
-        m_groupByColumns = new ArrayList<ParsedColInfo>();
+        m_aggResultColumns = new ArrayList<>();
+        List<ParsedColInfo> tmpGroupByColumns = m_groupByColumns;
+        m_groupByColumns = new ArrayList<>();
         ArrayList<ParsedColInfo> tmpDistinctGroupByColumns = m_distinctGroupByColumns;
-        m_distinctGroupByColumns = new ArrayList<ParsedColInfo>();
+        m_distinctGroupByColumns = new ArrayList<>();
         ArrayList<ParsedColInfo> tmpOrderColumns = m_orderColumns;
-        m_orderColumns = new ArrayList<ParsedColInfo>();
+        m_orderColumns = new ArrayList<>();
         AbstractExpression tmpHaving = m_having;
 
         boolean tmpHasComplexAgg = hasComplexAgg();
         NodeSchema tmpProjectSchema = m_projectSchema;
         NodeSchema tmpDistinctProjectSchema = m_distinctProjectSchema;
 
-        m_aggregationList = new ArrayList<AbstractExpression>();
+        m_aggregationList = new ArrayList<>();
         assert(displayElement != null);
         parseDisplayColumns(displayElement, true);
 
         // rewrite DISTINCT
         // function may need to change the groupbyElement by rewriting.
-        groupbyElement = processDistinct(displayElement, groupbyElement, havingElement);
+        groupbyElement = processDistinct(displayElement,
+                groupbyElement, havingElement);
 
         if (groupbyElement != null) {
             parseGroupByColumns(groupbyElement);
@@ -326,36 +368,45 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
      */
     private void prepareMVBasedQueryFix() {
 
-        // ENG-5386: Edge cases query returning correct answers with aggregation push down does not need reAggregation work.
+        // ENG-5386: Edge cases query returning correct answers with
+        // aggregation push down does not need reAggregation work.
         if (m_hasComplexGroupby) {
             m_mvFixInfo.setEdgeCaseQueryNoFixNeeded(false);
         }
 
         // Handle joined query case case.
-        // MV partitioned table without partition column can only join with replicated tables.
-        // For all tables in this query, the # of tables that need to be fixed should not exceed one.
-        for (StmtTableScan mvTableScan: m_tableAliasMap.values()) {
-            Set<SchemaColumn> mvNewScanColumns = new HashSet<SchemaColumn>();
+        // MV partitioned table without partition column can only join with
+        // replicated tables. For all tables in this query, the # of tables
+        // that need to be fixed should not exceed one.
+        for (StmtTableScan mvTableScan: allScans()) {
+            Set<SchemaColumn> mvNewScanColumns = new HashSet<>();
 
             Collection<SchemaColumn> columns = mvTableScan.getScanColumns();
             // For a COUNT(*)-only scan, a table may have no scan columns.
-            // For a joined query without processed columns from table TB, TB has no scan columns
+            // For a joined query without processed columns from table TB,
+            // TB has no scan columns
             if (columns != null) {
                 mvNewScanColumns.addAll(columns);
             }
-            // ENG-5669: HAVING aggregation and order by aggregation also need to be checked.
-            if (m_mvFixInfo.processMVBasedQueryFix(mvTableScan, mvNewScanColumns, m_joinTree, m_aggResultColumns, groupByColumns())) {
+            // ENG-5669: HAVING aggregation and order by aggregation
+            // also need to be checked.
+            if (m_mvFixInfo.processMVBasedQueryFix(mvTableScan,
+                    mvNewScanColumns, m_joinTree,
+                    m_aggResultColumns, groupByColumns())) {
                 break;
             }
         }
     }
 
     private boolean needComplexAggregation () {
-        if (!hasAggregateExpression() && !isGrouped()) {
+        if (!m_hasAggregateExpression && !isGrouped()) {
             m_hasComplexAgg = false;
             return false;
         }
-        if (hasComplexAgg()) return true;
+
+        if (hasComplexAgg()) {
+            return true;
+        }
 
         int numDisplayCols = m_displayColumns.size();
         if (m_aggResultColumns.size() > numDisplayCols) {
@@ -363,59 +414,73 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             return true;
         }
 
+        // Disqualify the case of duplicate columns in the SELECT list
+        HashSet<ParsedColInfo> tmpContainer = new HashSet<>();
+
         for (ParsedColInfo col : m_displayColumns) {
-            if (!m_aggResultColumns.contains(col)) {
-                // Now Only TVEs in displayColumns are left for AggResultColumns
-                if (col.expression instanceof TupleValueExpression) {
-                    m_aggResultColumns.add(col);
-                } else {
-                    // Col must be complex expression (like: TVE + 1, TVE + AGG)
-                    m_hasComplexAgg = true;
-                    return true;
-                }
-            }
-        }
-        // size of aggResultColumns list should be the same as numDisplayCols
-        // as it would be a substitue of DisplayCols.
-        if (m_aggResultColumns.size() != numDisplayCols) {
-            // Display columns have duplicated Aggs or TVEs (less than case)
-            // Display columns have several pass-through columns if group by primary key (larger than case)
-            m_hasComplexAgg = true;
-            return true;
-        }
-
-        // Case: Groupby cols do not appear in SELECT list
-        // Find duplicates
-        HashSet <ParsedColInfo> tmpContainer = new HashSet<ParsedColInfo>();
-
-        for (int i=0; i < numDisplayCols; i++) {
-            ParsedColInfo icol = m_displayColumns.get(i);
-            if (tmpContainer.contains(icol)) {
+            if ( ! tmpContainer.add(col)) {
+                // duplicate display column.
                 m_hasComplexAgg = true;
                 return true;
-            } else {
-                tmpContainer.add(icol);
             }
+
+            AbstractExpression expr = col.expression;
+            boolean isNewAgg = true;
+            for (ParsedColInfo existingAggCol : m_aggResultColumns) {
+                AbstractExpression existingExpr = existingAggCol.expression;
+
+                if (expr.equals(existingExpr)) {
+                    isNewAgg = false;
+                    break;
+                }
+            }
+
+            if ( ! isNewAgg) {
+                continue;
+            }
+
+            // Now Only TVEs in displayColumns are left for AggResultColumns
+            if ( ! (col.expression instanceof TupleValueExpression)) {
+                // Col has complex expression (like: TVE + 1, TVE + AGG)
+                m_hasComplexAgg = true;
+                return true;
+            }
+
+            m_aggResultColumns.add(col);
+        }
+
+        // The size of the aggResultColumns list should be the same as
+        // numDisplayCols as it would be a substitute of DisplayCols.
+        if (m_aggResultColumns.size() != numDisplayCols) {
+            // Display columns have several pass-through columns if group by
+            // primary key or a HAVING clause using aggs that are
+            // not in the SELECT list (larger than case).
+            m_hasComplexAgg = true;
+            return true;
         }
 
         return false;
     }
 
     /**
-     * Continue adding TVEs from DisplayColumns that are left in function needComplexAggregation().
+     * Continue adding TVEs from DisplayColumns that are left in
+     * function needComplexAggregation().
      * After this function, aggResultColumns construction work.
      */
     private void fillUpAggResultColumns () {
-        for (ParsedColInfo col: m_displayColumns) {
-            if (!m_aggResultColumns.contains(col)) {
-                if (col.expression instanceof TupleValueExpression) {
-                    m_aggResultColumns.add(col);
-                } else {
-                    // Col must be complex expression (like: TVE + 1, TVE + AGG)
-                    List<TupleValueExpression> tveList = new ArrayList<TupleValueExpression>();
-                    findAllTVEs(col.expression, tveList);
-                    insertTVEsToAggResultColumns(tveList);
-                }
+        for (ParsedColInfo col : m_displayColumns) {
+            if (m_aggResultColumns.contains(col)) {
+                continue;
+            }
+
+            if (col.expression instanceof TupleValueExpression) {
+                m_aggResultColumns.add(col);
+            }
+            else {
+                // Col must be complex expression (like: TVE + 1, TVE + AGG)
+                List<TupleValueExpression> tveList = new ArrayList<>();
+                findAllTVEs(col.expression, tveList);
+                insertTVEsToAggResultColumns(tveList);
             }
         }
     }
@@ -426,26 +491,30 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
      */
     private void placeTVEsinColumns () {
         // Build the association between the table column with its index
-        Map <AbstractExpression, Integer> aggTableIndexMap = new HashMap <AbstractExpression,Integer>();
-        Map <Integer, ParsedColInfo> indexToColumnMap = new HashMap <Integer, ParsedColInfo>();
+        Map<AbstractExpression, Integer> aggTableIndexMap = new HashMap<>();
+        Map<Integer, ParsedColInfo> indexToColumnMap = new HashMap<>();
         int index = 0;
-        for (ParsedColInfo col: m_aggResultColumns) {
+        for (ParsedColInfo col : m_aggResultColumns) {
             aggTableIndexMap.put(col.expression, index);
             if (col.alias == null) {
                 // hack any unique string
-                col.alias = "$$_" + col.expression.getExpressionType().symbol() + "_$$_" + index;
+                col.alias = "$$_" +
+                        col.expression.getExpressionType().symbol() +
+                        "_$$_" +
+                        index;
             }
             indexToColumnMap.put(index, col);
             index++;
         }
 
         // Replace TVE for group by columns
-        m_groupByExpressions = new HashMap<String, AbstractExpression>();
-        for (ParsedColInfo groupbyCol: m_groupByColumns) {
-            assert(aggTableIndexMap.get(groupbyCol.expression) != null);
+        m_groupByExpressions = new HashMap<>();
+        for (ParsedColInfo groupbyCol : m_groupByColumns) {
+            AbstractExpression expr = groupbyCol.expression;
+            assert(aggTableIndexMap.get(expr) != null);
 
-            AbstractExpression expr = groupbyCol.expression.replaceWithTVE(aggTableIndexMap, indexToColumnMap);
-            m_groupByExpressions.put(groupbyCol.alias,expr);
+            expr = expr.replaceWithTVE(aggTableIndexMap, indexToColumnMap);
+            m_groupByExpressions.put(groupbyCol.alias, expr);
         }
 
         if (m_having != null) {
@@ -458,10 +527,11 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         for (ParsedColInfo col : m_displayColumns) {
             AbstractExpression expr = col.expression;
             if (hasComplexAgg()) {
-                expr = col.expression.replaceWithTVE(aggTableIndexMap, indexToColumnMap);
+                expr = expr.replaceWithTVE(aggTableIndexMap, indexToColumnMap);
             }
-            SchemaColumn schema_col = new SchemaColumn(col.tableName, col.tableAlias, col.columnName, col.alias, expr);
-            m_projectSchema.addColumn(schema_col);
+            m_projectSchema.addColumn(col.tableName, col.tableAlias,
+                    col.columnName, col.alias,
+                    expr, col.differentiator);
         }
 
         // DISTINCT group by expressions are already TVEs when set
@@ -471,15 +541,18 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
     /**
      * Replace TVE for order by columns.
-     * Restrictions: Order by clause must operate on display column list, except for columns that are
+     * Restrictions: Order by clause must operate on display column list,
+     * except for columns that are
      * (1) GROUP BY columns list without DISTINCT,
      * (2) in tables or joined tables without GROUP BY or DISTINCT clause.
      *
-     * Display columns means exact columns/expressions in the select list or tag alias.
+     * Display columns means exact columns/expressions
+     * in the select list or tag alias.
      * Order by clause can be columns or expressions on the columns.
      */
-    private void placeTVEsForOrderby(Map <AbstractExpression, Integer> aggTableIndexMap,
-            Map <Integer, ParsedColInfo> indexToColumnMap) {
+    private void placeTVEsForOrderby(
+            Map<AbstractExpression, Integer> aggTableIndexMap,
+            Map<Integer, ParsedColInfo> indexToColumnMap) {
         // Detect the edge order by case
         detectComplexOrderby();
 
@@ -487,15 +560,18 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             // Case that ORDER BY is below Projection node
             boolean replaceAll = hasComplexAgg() || hasComplexGroupby();
             for (ParsedColInfo orderCol : m_orderColumns) {
-                if (replaceAll || orderCol.expression.hasAnySubexpressionOfClass(AggregateExpression.class)) {
-                    orderCol.expression = orderCol.expression.replaceWithTVE(aggTableIndexMap, indexToColumnMap);
+                AbstractExpression expr = orderCol.expression;
+                if (replaceAll ||
+                        expr.hasAnySubexpressionOfClass(AggregateExpression.class)) {
+                    orderCol.expression = expr.replaceWithTVE(aggTableIndexMap, indexToColumnMap);
                 }
             }
-        } else if (hasAggregateOrGroupby()) {
+        }
+        else if (hasAggregateOrGroupby()) {
             // Case that ORDER BY is above Projection node
 
-            Map <AbstractExpression, Integer> displayIndexMap = new HashMap <AbstractExpression,Integer>();
-            Map <Integer, ParsedColInfo> displayIndexToColumnMap = new HashMap <Integer, ParsedColInfo>();
+            Map<AbstractExpression, Integer> displayIndexMap = new HashMap<>();
+            Map<Integer, ParsedColInfo> displayIndexToColumnMap = new HashMap<>();
 
             int orderByIndex = 0;
             for (ParsedColInfo col : m_displayColumns) {
@@ -507,7 +583,8 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
             // place the TVEs from Display columns in the ORDER BY expression
             for (ParsedColInfo orderCol : m_orderColumns) {
-                AbstractExpression expr = orderCol.expression.replaceWithTVE(displayIndexMap, displayIndexToColumnMap);
+                AbstractExpression expr = orderCol.expression;
+                expr = expr.replaceWithTVE(displayIndexMap, displayIndexToColumnMap);
                 orderCol.expression = expr;
             }
         }
@@ -520,21 +597,23 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
      * @param aggColumns
      * @param cookedCol
      */
-    private void insertAggExpressionsToAggResultColumns (List<AbstractExpression> aggColumns, ParsedColInfo cookedCol) {
+    private void insertAggExpressionsToAggResultColumns (
+            List<AbstractExpression> aggColumns, ParsedColInfo cookedCol) {
         for (AbstractExpression expr: aggColumns) {
             assert(expr instanceof AggregateExpression);
-            if (! expr.findAllSubexpressionsOfClass(SelectSubqueryExpression.class).isEmpty()) {
+            if (expr.hasSubquerySubexpression()) {
                 throw new PlanningErrorException(
-                        "SQL Aggregate with subquery expression is not allowed.");
+                        "SQL Aggregate function calls with subquery expression arguments are not allowed.");
             }
 
             ParsedColInfo col = new ParsedColInfo();
-            col.expression = (AbstractExpression) expr.clone();
+            col.expression = expr.clone();
             assert(col.expression instanceof AggregateExpression);
             if (col.expression.getExpressionType() == ExpressionType.AGGREGATE_AVG) {
                 m_hasAverage = true;
             }
-            if (aggColumns.size() == 1 && cookedCol.expression.equals(aggColumns.get(0))) {
+            if (aggColumns.size() == 1 &&
+                    cookedCol.expression.equals(aggColumns.get(0))) {
                 col.alias = cookedCol.alias;
                 col.tableName = cookedCol.tableName;
                 col.tableAlias = cookedCol.tableAlias;
@@ -547,8 +626,8 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             // Try to check complexAggs earlier
             m_hasComplexAgg = true;
             // Aggregation column use the the hacky stuff
-            col.tableName = "VOLT_TEMP_TABLE";
-            col.tableAlias = "VOLT_TEMP_TABLE";
+            col.tableName = TEMP_TABLE_NAME;
+            col.tableAlias = TEMP_TABLE_NAME;
             col.columnName = "";
             if (!m_aggResultColumns.contains(col)) {
                 m_aggResultColumns.add(col);
@@ -557,7 +636,8 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         }
     }
 
-    private void insertTVEsToAggResultColumns (List<TupleValueExpression> colCollection) {
+    private void insertTVEsToAggResultColumns (
+            List<TupleValueExpression> colCollection) {
         // TVEs do not need to take care
         for (TupleValueExpression tve: colCollection) {
             ParsedColInfo col = new ParsedColInfo();
@@ -573,24 +653,23 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
     }
 
     // Concat elements to the XXXColumns list
-    private static void insertToColumnList (List<ParsedColInfo>columnList,
-            List<ParsedColInfo> newCols) {
-        for (ParsedColInfo col: newCols) {
+    private static void insertToColumnList(
+            List<ParsedColInfo> columnList, List<ParsedColInfo> newCols) {
+        for (ParsedColInfo col : newCols) {
             if (!columnList.contains(col)) {
                 columnList.add(col);
             }
         }
     }
 
-    private static boolean isNewtoColumnList(List<ParsedColInfo>columnList, AbstractExpression expr) {
-        boolean isNew = true;
-        for (ParsedColInfo ic: columnList) {
+    private static boolean isNewtoColumnList(
+            List<ParsedColInfo> columnList, AbstractExpression expr) {
+        for (ParsedColInfo ic : columnList) {
             if (ic.expression.equals(expr)) {
-                isNew = false;
-                break;
+                return false;
             }
         }
-        return isNew;
+        return true;
     }
 
     /**
@@ -598,19 +677,25 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
      * @param expr
      * @param tveList
      */
-    private void findAllTVEs(AbstractExpression expr, List<TupleValueExpression> tveList) {
-        if (!isNewtoColumnList(m_aggResultColumns, expr))
+    private void findAllTVEs(
+            AbstractExpression expr, List<TupleValueExpression> tveList) {
+        if (!isNewtoColumnList(m_aggResultColumns, expr)) {
             return;
+        }
+
         if (expr instanceof TupleValueExpression) {
             tveList.add((TupleValueExpression) expr.clone());
             return;
         }
+
         if ( expr.getLeft() != null) {
             findAllTVEs(expr.getLeft(), tveList);
         }
+
         if (expr.getRight() != null) {
             findAllTVEs(expr.getRight(), tveList);
         }
+
         if (expr.getArgs() != null) {
             for (AbstractExpression ae: expr.getArgs()) {
                 findAllTVEs(ae, tveList);
@@ -619,18 +704,20 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
     }
 
     private void updateAvgExpressions () {
-        List<AbstractExpression> optimalAvgAggs = new ArrayList<AbstractExpression>();
+        List<AbstractExpression> optimalAvgAggs = new ArrayList<>();
         Iterator<AbstractExpression> itr = m_aggregationList.iterator();
-        while(itr.hasNext()) {
+        while (itr.hasNext()) {
             AbstractExpression aggExpr = itr.next();
             assert(aggExpr instanceof AggregateExpression);
             if (aggExpr.getExpressionType() == ExpressionType.AGGREGATE_AVG) {
                 itr.remove();
 
-                AbstractExpression left = new AggregateExpression(ExpressionType.AGGREGATE_SUM);
-                left.setLeft(aggExpr.getLeft());
-                AbstractExpression right = new AggregateExpression(ExpressionType.AGGREGATE_COUNT);
-                right.setLeft(aggExpr.getLeft());
+                AbstractExpression left =
+                        new AggregateExpression(ExpressionType.AGGREGATE_SUM);
+                left.setLeft(aggExpr.getLeft().clone());
+                AbstractExpression right =
+                        new AggregateExpression(ExpressionType.AGGREGATE_COUNT);
+                right.setLeft(aggExpr.getLeft().clone());
 
                 optimalAvgAggs.add(left);
                 optimalAvgAggs.add(right);
@@ -639,7 +726,10 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         m_aggregationList.addAll(optimalAvgAggs);
     }
 
-    static void parseLimitAndOffset(VoltXMLElement limitNode, VoltXMLElement offsetNode, LimitOffset limitOffset) {
+    static void parseLimitAndOffset(
+            VoltXMLElement limitNode,
+            VoltXMLElement offsetNode,
+            LimitOffset limitOffset) {
         String node;
         if (limitNode != null) {
             // Parse limit
@@ -650,8 +740,10 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
                 VoltXMLElement valueNode = limitNode.children.get(0);
                 String isParam = valueNode.attributes.get("isparam");
                 if ((isParam != null) && (isParam.equalsIgnoreCase("true"))) {
-                    limitOffset.m_limitParameterId = Long.parseLong(valueNode.attributes.get("id"));
-                } else {
+                    limitOffset.m_limitParameterId =
+                            Long.parseLong(valueNode.attributes.get("id"));
+                }
+                else {
                     node = limitNode.attributes.get("limit");
                     assert(node != null);
                     limitOffset.m_limit = Long.parseLong(node);
@@ -667,8 +759,10 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
                     VoltXMLElement valueNode = offsetNode.children.get(0);
                     String isParam = valueNode.attributes.get("isparam");
                     if ((isParam != null) && (isParam.equalsIgnoreCase("true"))) {
-                        limitOffset.m_offsetParameterId = Long.parseLong(valueNode.attributes.get("id"));
-                    } else {
+                        limitOffset.m_offsetParameterId =
+                                Long.parseLong(valueNode.attributes.get("id"));
+                    }
+                    else {
                         node = offsetNode.attributes.get("offset");
                         assert(node != null);
                         limitOffset.m_offset = Long.parseLong(node);
@@ -678,23 +772,64 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         }
 
         // limit and offset can't have both value and parameter
-        if (limitOffset.m_limit != -1) assert limitOffset.m_limitParameterId == -1 : "Parsed value and param. limit.";
-        if (limitOffset.m_offset != 0) assert limitOffset.m_offsetParameterId == -1 : "Parsed value and param. offset.";
-    }
-
-    private void parseDisplayColumns(VoltXMLElement columnsNode, boolean isDistributed) {
-        for (VoltXMLElement child : columnsNode.children) {
-            parseDisplayColumn(child, isDistributed);
+        if (limitOffset.m_limit != -1) {
+            assert limitOffset.m_limitParameterId == -1 : "Parsed value and param. limit.";
+        }
+        if (limitOffset.m_offset != 0) {
+            assert limitOffset.m_offsetParameterId == -1 : "Parsed value and param. offset.";
         }
     }
 
-    private void parseDisplayColumn(VoltXMLElement child, boolean isDistributed) {
+    private void parseDisplayColumns(VoltXMLElement columnsNode,
+            boolean isDistributed) {
+        try {
+            m_parsingInDisplayColumns = true;
+            int index = 0;
+            for (VoltXMLElement child : columnsNode.children) {
+                parseDisplayColumn(index, child, isDistributed);
+                ++index;
+            }
+        }
+        finally {
+            m_parsingInDisplayColumns = false;
+        }
+    }
+
+    private void setParsedColumnNamesAndAliases(ParsedColInfo col, VoltXMLElement columnRefElmt) {
+        if (col.expression instanceof TupleValueExpression) {
+            // Set the column data from the TVE itself rather than from the VoltXML.
+            // For example, the original select
+            // SELECT TA.CA FROM (SELECT C CA FROM T) TA;
+            // could be simplified to be as simple as
+            // SELECT TA.C CA FROM T TA;
+            // The TVE will reflect this change while the VoltXML won't
+            TupleValueExpression tvexpr = (TupleValueExpression) col.expression;
+            col.columnName = tvexpr.getColumnName();
+            col.tableName = tvexpr.getTableName();
+            col.tableAlias = tvexpr.getTableAlias();
+            col.alias = tvexpr.getColumnAlias();
+            return;
+        }
+
+        col.columnName = columnRefElmt.attributes.get("column");
+        col.tableName = columnRefElmt.attributes.get("table");
+        col.tableAlias = columnRefElmt.attributes.get("tablealias");
+        col.alias = columnRefElmt.attributes.get("alias");
+    }
+
+    private void parseDisplayColumn(int index, VoltXMLElement child,
+            boolean isDistributed) {
         ParsedColInfo col = new ParsedColInfo();
         m_aggregationList.clear();
+        // This index calculation is only used for sanity checking
+        // materialized views (which use the parsed select statement but
+        // don't go through the planner pass that does more involved
+        // column index resolution).
+        col.index = index;
+
+        // Parse the expression.  We may substitute for this later
+        // on, but it's a place to start.
         AbstractExpression colExpr = parseExpressionTree(child);
-        if (colExpr instanceof ConstantValueExpression) {
-            assert(colExpr.getValueType() != VoltType.NUMERIC);
-        }
         assert(colExpr != null);
 
         if (isDistributed) {
@@ -702,59 +837,44 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             updateAvgExpressions();
         }
         ExpressionUtil.finalizeValueTypes(colExpr);
+        if (colExpr instanceof ConstantValueExpression) {
+            assert(colExpr.getValueType() != VoltType.NUMERIC);
+        }
+
+        if (colExpr.getValueType() == VoltType.BOOLEAN) {
+            throw new PlanningErrorException(
+                    "A SELECT clause does not allow a BOOLEAN expression. " +
+                    "consider using CASE WHEN to decode the BOOLEAN expression " +
+                    "into a value of some other type.");
+        }
 
         // ENG-6291: If parent is UNION, voltdb wants to make inline varchar to be outlined
-        if(isParentUnionClause() && AbstractExpression.hasInlineVarType(colExpr)) {
+        if (isParentUnionClause() && AbstractExpression.hasInlineVarType(colExpr)) {
             AbstractExpression expr = new OperatorExpression();;
             expr.setExpressionType(ExpressionType.OPERATOR_CAST);
+
             VoltType voltType = colExpr.getValueType();
+            // We don't support parameterized casting,
+            // such as specifically to "VARCHAR(3)" vs. VARCHAR,
+            // so assume max length for variable-length types
+            // (VARCHAR and VARBINARY).
+            int size = expr.getInBytes() ?
+                    voltType.getMaxLengthInBytes() :
+                    VoltType.MAX_VALUE_LENGTH_IN_CHARACTERS;
             expr.setValueType(voltType);
+            expr.setValueSize(size);
             expr.setInBytes(colExpr.getInBytes());
 
-            // We don't support parameterized casting, such as specifically to "VARCHAR(3)" vs. VARCHAR,
-            // so assume max length for variable-length types (VARCHAR and VARBINARY).
-            expr.setValueSize(expr.getInBytes() ? voltType.getMaxLengthInBytes() : VoltType.MAX_VALUE_LENGTH_IN_CHARACTERS);
             expr.setLeft(colExpr);
 
             // switch the new expression for CAST
             colExpr = expr;
         }
 
-        if (child.name.equals("columnref")) {
-            col.expression = colExpr;
-            col.columnName = child.attributes.get("column");
-            col.tableName = child.attributes.get("table");
-            col.tableAlias = child.attributes.get("tablealias");
-            if (col.tableAlias == null) {
-                col.tableAlias = col.tableName;
-            }
-        }
-        else if (child.name.equals("tablesubquery")) {
-            // Scalar subquery like 'select c, (select count(*) from t1) from t2;'
-            ScalarValueExpression sve = (ScalarValueExpression)colExpr;
+        // Remember the column expression.
+        col.expression = colExpr;
 
-            col.columnName = child.attributes.get("alias");
-            col.tableName = sve.getSubqueryScan().getTableName();
-            col.tableAlias = sve.getSubqueryScan().getTableAlias();
-            col.expression = colExpr;
-        }
-        else
-        {
-            col.expression = colExpr;
-            // XXX hacky, assume all non-column refs come from a temp table
-            col.tableName = "VOLT_TEMP_TABLE";
-            col.tableAlias = "VOLT_TEMP_TABLE";
-            col.columnName = "";
-        }
-        col.alias = child.attributes.get("alias");
-        if (col.alias == null) {
-            col.alias = col.columnName;
-        }
-        // This index calculation is only used for sanity checking
-        // materialized views (which use the parsed select statement but
-        // don't go through the planner pass that does more involved
-        // column index resolution).
-        col.index = m_displayColumns.size();
+        calculateColumnNames(child, col);
 
         insertAggExpressionsToAggResultColumns(m_aggregationList, col);
         if (m_aggregationList.size() >= 1) {
@@ -770,10 +890,127 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             }
         }
 
+        // The differentiator is used when ParsedColInfo is converted to a
+        // SchemaColumn object, to differentiate between columns that have the
+        // same name within a table (which can happen for subqueries or joins).
+        col.differentiator = index;
         m_displayColumns.add(col);
     }
 
+    private void calculateColumnNames(VoltXMLElement child, ParsedColInfo col) {
+        // Calculate the names.
+        if (child.name.equals("columnref")) {
+            setParsedColumnNamesAndAliases(col, child);
+        }
+        else if (child.name.equals("tablesubquery")) {
+            // Scalar subquery like 'select c, (select count(*) from t1) from t2;'
+            ScalarValueExpression sve = (ScalarValueExpression)col.expression;
+            col.tableName = sve.getSubqueryScan().getTableName();
+            col.tableAlias = sve.getSubqueryScan().getTableAlias();
+            col.columnName = child.attributes.get("alias");
+            col.alias = child.attributes.get("alias");
+        }
+        else {
+            // XXX hacky, label all non-column non-subquery refs
+            // as coming from a temp table -- and hope it doesn't matter.
+            col.tableName = TEMP_TABLE_NAME;
+            col.tableAlias = TEMP_TABLE_NAME;
+            col.columnName = child.attributes.get("alias");
+            col.alias = child.attributes.get("alias");
+        }
+        // Default aliases to names if they are not set
+        if (col.tableAlias == null) {
+            col.tableAlias = col.tableName;
+        }
+        if (col.alias == null) {
+            col.alias = col.columnName;
+        }
+    }
+
+    /**
+     * Verify the validity of the windowed expressions.
+     *
+     * @return
+     */
+    private void verifyWindowFunctionExpressions() {
+        // Check for windowed expressions.
+        if (m_windowFunctionExpressions.size() > 0) {
+            if (m_windowFunctionExpressions.size() > 1) {
+                throw new PlanningErrorException(
+                        "Only one windowed function call may appear in a selection list.");
+            }
+            if (m_hasAggregateExpression) {
+                throw new PlanningErrorException(
+                        "Use of window functions (in an OVER clause) isn't supported with other aggregate functions on the SELECT list.");
+            }
+            if (m_windowFunctionExpressions.get(0).hasSubqueryArgs()) {
+                throw new PlanningErrorException("Window function calls with subquery expression arguments are not allowed.");
+            }
+
+            WindowFunctionExpression windowFunctionExpression = m_windowFunctionExpressions.get(0);
+            List<AbstractExpression> orderByExpressions =
+                    windowFunctionExpression.getOrderByExpressions();
+            ExpressionType exprType = windowFunctionExpression.getExpressionType();
+            String aggName = exprType.symbol().toUpperCase();
+            switch (exprType) {
+            case AGGREGATE_WINDOWED_RANK:
+            case AGGREGATE_WINDOWED_DENSE_RANK:
+                if (orderByExpressions.size() == 0) {
+                    throw new PlanningErrorException(
+                            "Windowed " + aggName +
+                            " function call expressions require an ORDER BY specification.");
+                }
+
+                VoltType valType = orderByExpressions.get(0).getValueType();
+                assert(valType != null);
+                if (!valType.isAnyIntegerType() && (valType != VoltType.TIMESTAMP)) {
+                    throw new PlanningErrorException(
+                            "Windowed function call expressions can have only integer or TIMESTAMP value types in the ORDER BY expression of their window.");
+                }
+                break;
+            case AGGREGATE_WINDOWED_COUNT:
+                if (windowFunctionExpression.getAggregateArguments().size() > 1) {
+                    throw new PlanningErrorException(
+                            String.format("Windowed COUNT must have either exactly one argument or else a star for an argument"));
+                }
+                // Any type is ok, so we won't inspect the type.
+                break;
+            case AGGREGATE_WINDOWED_MAX:
+            case AGGREGATE_WINDOWED_MIN:
+                if (windowFunctionExpression.getAggregateArguments().size() != 1) {
+                    throw new PlanningErrorException(
+                            String.format("Windowed %s must have exactly one argument", aggName));
+                }
+                // Any type is ok, so we won't inspect the type.
+                break;
+            case AGGREGATE_WINDOWED_SUM:
+                if (windowFunctionExpression.getAggregateArguments().size() != 1) {
+                    throw new PlanningErrorException(
+                            String.format("Windowed SUM must have exactly one numeric argument"));
+                }
+                AbstractExpression arg = windowFunctionExpression.getAggregateArguments().get(0);
+                VoltType vt = arg.getValueType();
+                assert(vt != null);
+                if (! vt.isNumber()) {
+                    throw new PlanningErrorException(
+                                "Windowed SUM must have exactly one numeric argument");
+                }
+                break;
+            default:
+                {
+                    String opName = (exprType == null) ? "NULL" : exprType.symbol();
+                    throw new PlanningErrorException("Unknown windowed aggregate function type: " +
+                            opName);
+                }
+            }
+        }
+    }
+
     private void parseGroupByColumns(VoltXMLElement columnsNode) {
+        if (hasWindowFunctionExpression()) {
+            throw new PlanningErrorException(
+                    "Use of both a windowed function call and GROUP BY in a single query is not supported.");
+        }
         for (VoltXMLElement child : columnsNode.children) {
             parseGroupByColumn(child);
         }
@@ -786,12 +1023,12 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         ExpressionUtil.finalizeValueTypes(groupbyCol.expression);
         groupbyCol.groupBy = true;
 
-        if (groupByNode.name.equals("columnref"))
-        {
-            groupbyCol.alias = groupByNode.attributes.get("alias");
-            groupbyCol.columnName = groupByNode.attributes.get("column");
-            groupbyCol.tableName = groupByNode.attributes.get("table");
-            groupbyCol.tableAlias = groupByNode.attributes.get("tablealias");
+        if (groupbyCol.expression.getValueType() == VoltType.BOOLEAN) {
+            throw new PlanningErrorException(
+                    "A GROUP BY clause does not allow a BOOLEAN expression.");
+        }
+        if (groupByNode.name.equals("columnref")) {
+            setParsedColumnNamesAndAliases(groupbyCol, groupByNode);
             if (groupbyCol.tableAlias == null) {
                 groupbyCol.tableAlias = groupbyCol.tableName;
             }
@@ -804,42 +1041,42 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
                 groupbyCol.index = catalogColumn.getIndex();
             }
         }
-        else
-        {
+        else {
             // XXX hacky, assume all non-column refs come from a temp table
-            groupbyCol.tableName = "VOLT_TEMP_TABLE";
-            groupbyCol.tableAlias = "VOLT_TEMP_TABLE";
+            groupbyCol.tableName = TEMP_TABLE_NAME;
+            groupbyCol.tableAlias = TEMP_TABLE_NAME;
             groupbyCol.columnName = "";
             m_hasComplexGroupby = true;
         }
 
-        // find the matching columns in display list
-        for (int i = 0; i < m_displayColumns.size(); ++i) {
-            ParsedColInfo col = m_displayColumns.get(i);
-            if (col.expression.equals(groupbyCol.expression)) {
-                groupbyCol.alias = col.alias;
-                groupbyCol.groupByInDisplay = true;
-
-                col.groupBy = true;
-                break;
+        // find the matching columns in selection list
+        for (ParsedColInfo col : m_displayColumns) {
+            if (! col.expression.equals(groupbyCol.expression)) {
+                continue;
             }
+            groupbyCol.alias = col.alias;
+            groupbyCol.groupByInDisplay = true;
+            col.groupBy = true;
+            break;
         }
 
         m_groupByColumns.add(groupbyCol);
     }
 
-    private void parseOrderColumns(VoltXMLElement columnsNode, boolean isDistributed) {
+    private void parseOrderColumns(
+            VoltXMLElement columnsNode, boolean isDistributed) {
         for (VoltXMLElement child : columnsNode.children) {
             parseOrderColumn(child, isDistributed);
         }
     }
 
-    private void parseOrderColumn(VoltXMLElement orderByNode, final boolean isDistributed) {
-
+    private void parseOrderColumn(
+            VoltXMLElement orderByNode, final boolean isDistributed) {
         // Aggregation list needs to be cleared before parsing the order by expression
         m_aggregationList.clear();
 
-        ParsedColInfo.ExpressionAdjuster adjuster = new ParsedColInfo.ExpressionAdjuster() {
+        ParsedColInfo.ExpressionAdjuster adjuster =
+                new ParsedColInfo.ExpressionAdjuster() {
             @Override
             public AbstractExpression adjust(AbstractExpression expr) {
                 if (isDistributed) {
@@ -852,23 +1089,26 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             }
         };
 
-        ParsedColInfo order_col = ParsedColInfo.fromOrderByXml(this, orderByNode, adjuster);
+        ParsedColInfo order_col =
+                ParsedColInfo.fromOrderByXml(this, orderByNode, adjuster);
 
         AbstractExpression order_exp = order_col.expression;
         assert(order_exp != null);
 
         // guards against subquery inside of order by clause
-        if (! order_exp.findAllSubexpressionsOfClass(SelectSubqueryExpression.class).isEmpty()) {
+        if (order_exp.hasSubquerySubexpression()) {
             throw new PlanningErrorException(
-                    "ORDER BY clause with subquery expression is not allowed.");
+                    "ORDER BY clauses with subquery expressions are not allowed.");
         }
 
-        // Mark the order by column if it is in displayColumns
-        // The ORDER BY column MAY be identical to a simple display column, in which case,
+        // Mark the order by column if it is in displayColumns. The ORDER BY
+        // column MAY be identical to a simple display column, in which case,
         // tagging the actual display column as being also an order by column
-        // helps later when trying to determine ORDER BY coverage (for determinism).
+        // helps later when trying to determine ORDER BY coverage
+        // (for determinism).
         for (ParsedColInfo col : m_displayColumns) {
-            if (col.alias.equals(order_col.alias) || col.expression.equals(order_exp)) {
+            if (col.alias.equals(order_col.alias) ||
+                    col.expression.equals(order_exp)) {
                 col.orderBy = true;
                 col.ascending = order_col.ascending;
 
@@ -885,8 +1125,9 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         if (m_aggregationList.size() >= 1) {
             m_hasAggregateExpression = true;
         }
-        // Add TVEs in ORDER BY statement if we have, stop recursive finding when we have it in AggResultColumns
-        List<TupleValueExpression> tveList = new ArrayList<TupleValueExpression>();
+        // Add TVEs in ORDER BY statement if we have,
+        // stop recursive finding when we have it in AggResultColumns
+        List<TupleValueExpression> tveList = new ArrayList<>();
         findAllTVEs(order_col.expression, tveList);
         insertTVEsToAggResultColumns(tveList);
         m_orderColumns.add(order_col);
@@ -897,9 +1138,10 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         assert(havingNode.children.size() == 1);
         m_having = parseConditionTree(havingNode.children.get(0));
         assert(m_having != null);
-        if (! m_having.findAllSubexpressionsOfClass(SelectSubqueryExpression.class).isEmpty()) {
+        if (m_having.hasSubquerySubexpression()) {
+            m_aggregationList.clear();
             throw new PlanningErrorException(
-                    "SQL HAVING with subquery expression is not allowed.");
+                    "SQL HAVING clauses with subquery expressions are not allowed.");
         }
         if (isDistributed) {
             m_having = m_having.replaceAVG();
@@ -907,32 +1149,46 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         }
         ExpressionUtil.finalizeValueTypes(m_having);
         m_having = ExpressionUtil.evaluateExpression(m_having);
-        // If the condition is a trivial CVE(TRUE) (after the evaluation) simply drop it
+        // If the condition is a trivial CVE(TRUE)
+        // (after the evaluation) simply drop it
         if (ConstantValueExpression.isBooleanTrue(m_having)) {
+            m_aggregationList.clear();
             m_having = null;
         }
 
-        if (m_aggregationList.size() >= 1) {
-            m_hasAggregateExpression = true;
+        if (m_aggregationList.isEmpty()) {
+            return;
         }
 
+        m_hasAggregateExpression = true;
+
         for (AbstractExpression expr: m_aggregationList) {
-            ParsedColInfo col = new ParsedColInfo();
-            col.expression = (AbstractExpression) expr.clone();
-            assert(col.expression instanceof AggregateExpression);
-            if (col.expression.getExpressionType() == ExpressionType.AGGREGATE_AVG) {
+            assert(expr instanceof AggregateExpression);
+            if (expr.getExpressionType() == ExpressionType.AGGREGATE_AVG) {
                 m_hasAverage = true;
             }
 
-            col.tableName = "VOLT_TEMP_TABLE";
-            col.tableAlias = "VOLT_TEMP_TABLE";
-            col.columnName = "";
+            boolean isNewAgg = true;
+            for (ParsedColInfo existingAggCol : m_aggResultColumns) {
+                AbstractExpression existingExpr = existingAggCol.expression;
 
-            if (!m_aggResultColumns.contains(col)) {
-                // Try to check complexAggs earlier
-                m_hasComplexAgg = true;
-                ExpressionUtil.finalizeValueTypes(col.expression);
+                if (expr.equals(existingExpr)) {
+                    isNewAgg = false;
+                    break;
+                }
+            }
+
+            if (isNewAgg) {
+                ExpressionUtil.finalizeValueTypes(expr);
+
+                ParsedColInfo col = new ParsedColInfo();
+                col.expression = expr.clone();
+                col.tableName = TEMP_TABLE_NAME;
+                col.tableAlias = TEMP_TABLE_NAME;
+                col.columnName = "";
+
                 m_aggResultColumns.add(col);
+                m_hasComplexAgg = true;
             }
         }
     }
@@ -940,15 +1196,16 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
     private VoltXMLElement processDistinct(VoltXMLElement displayElement,
             VoltXMLElement groupbyElement, VoltXMLElement havingElement) {
         // process DISTINCT clause
-        if (! m_distinct) {
+        if ( ! m_distinct) {
             return groupbyElement;
         }
 
         // DISTINCT without GROUP BY
         if (groupbyElement == null || groupbyElement.children.isEmpty()) {
             // Tricky: rewrote DISTINCT without GROUP BY with GROUP BY clause
-            if ( ! hasAggregateExpression()) {
-                // attribute "id" is the only one that differs from a real GROUP BY query
+            if ( ! m_hasAggregateExpression) {
+                // attribute "id" is the only one that differs from a real
+                // GROUP BY query
                 groupbyElement = displayElement.duplicate();
             }
             // When it is table aggregate, it's also safe to drop DISTINCT.
@@ -956,13 +1213,16 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             return groupbyElement;
         }
         // DISTINCT with GROUP BY
-        m_distinctGroupByColumns = new ArrayList<ParsedColInfo>();
+        m_distinctGroupByColumns = new ArrayList<>();
         m_distinctProjectSchema = new NodeSchema();
 
         // Iterate the Display columns
-        for (ParsedColInfo col: m_displayColumns) {
+        for (ParsedColInfo col : m_displayColumns) {
             TupleValueExpression tve = new TupleValueExpression(
-                    col.tableName, col.tableAlias, col.columnName, col.alias, col.index);
+                    col.tableName, col.tableAlias,
+                    col.columnName, col.alias,
+                    col.index, col.differentiator);
+            tve.setTypeSizeAndInBytes(col.asSchemaColumn());
 
             ParsedColInfo pcol = new ParsedColInfo();
             pcol.tableName = col.tableName;
@@ -972,18 +1232,19 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             pcol.expression = tve;
             m_distinctGroupByColumns.add(pcol);
 
-            // ParsedColInfo, TVE, SchemaColumn, NodeSchema ??? Could it be more complicated ???
-            SchemaColumn schema_col = new SchemaColumn(
-                    col.tableName, col.tableAlias, col.columnName, col.alias, tve);
-            m_distinctProjectSchema.addColumn(schema_col);
+            m_distinctProjectSchema.addColumn(col.tableName, col.tableAlias,
+                    col.columnName, col.alias,
+                    tve, col.differentiator);
         }
 
         return groupbyElement;
     }
 
     /**
-     * Check if the LimitPlanNode can be pushed down.  The LimitPlanNode may have a LIMIT
-     * clause only, OFFSET clause only, or both.  Offset only cannot be pushed down.
+     * Check if the LimitPlanNode can be pushed down.
+     * The LimitPlanNode may have a LIMIT clause only,
+     * OFFSET clause only, or both.
+     * Offset only cannot be pushed down.
      * @return
      */
     private boolean canPushdownLimit() {
@@ -1002,8 +1263,8 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         return limitCanPushdown;
     }
 
-    public static void prepareLimitPlanNode (AbstractParsedStmt stmt, LimitOffset limitOffset) {
-
+    public static void prepareLimitPlanNode(
+            AbstractParsedStmt stmt, LimitOffset limitOffset) {
         int limitParamIndex = stmt.parameterCountIndexById(limitOffset.m_limitParameterId);
         int offsetParamIndex = stmt.parameterCountIndexById(limitOffset.m_offsetParameterId);
 
@@ -1019,18 +1280,29 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
         if (limitOffset.m_limitCanPushdown) {
             limitOffset.m_limitNodeDist = new LimitPlanNode();
-            // Offset on a pushed-down limit node makes no sense, just defaults to 0
-            // -- the original offset must be factored into the pushed-down limit as a pad on the limit.
+            // Offset on a pushed-down limit node makes no sense,
+            // just defaults to 0
+            // -- the original offset must be factored into the pushed-down
+            // limit as a pad on the limit.
             if (limitOffset.m_limit != -1) {
-                limitOffset.m_limitNodeDist.setLimit((int) (limitOffset.m_limit + limitOffset.m_offset));
+                limitOffset.m_limitNodeDist.setLimit(
+                        (int) (limitOffset.m_limit + limitOffset.m_offset));
             }
 
             if (limitOffset.hasLimitOrOffsetParameters()) {
-                AbstractExpression left = stmt.getParameterOrConstantAsExpression(limitOffset.m_offsetParameterId, limitOffset.m_offset);
+                AbstractExpression left =
+                        stmt.getParameterOrConstantAsExpression(
+                                limitOffset.m_offsetParameterId,
+                                limitOffset.m_offset);
                 assert (left != null);
-                AbstractExpression right = stmt.getParameterOrConstantAsExpression(limitOffset.m_limitParameterId, limitOffset.m_limit);
+                AbstractExpression right =
+                        stmt.getParameterOrConstantAsExpression(
+                                limitOffset.m_limitParameterId,
+                                limitOffset.m_limit);
                 assert (right != null);
-                OperatorExpression expr = new OperatorExpression(ExpressionType.OPERATOR_PLUS, left, right);
+                OperatorExpression expr =
+                        new OperatorExpression(ExpressionType.OPERATOR_PLUS,
+                                left, right);
                 expr.setValueType(VoltType.INTEGER);
                 expr.setValueSize(VoltType.INTEGER.getLengthInBytesForFixedTypes());
                 limitOffset.m_limitNodeDist.setLimitExpression(expr);
@@ -1087,64 +1359,71 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
      * @param inListExpr TVE for the columns from the IN list
      * @return modified subquery
      */
-    protected static void rewriteInSubqueryAsExists(ParsedSelectStmt selectStmt, AbstractExpression inListExpr) {
-        List<AbstractExpression> whereList = new ArrayList<AbstractExpression>();
-        List<AbstractExpression> havingList = new ArrayList<AbstractExpression>();
+    protected static void rewriteInSubqueryAsExists(
+            ParsedSelectStmt selectStmt, AbstractExpression inListExpr) {
+        List<AbstractExpression> whereList = new ArrayList<>();
+        List<AbstractExpression> havingList = new ArrayList<>();
 
         // multi-column IN expression is a RowSubqueryExpression
         // where each arg represents an individual column
         List<AbstractExpression> inExprList = null;
         if (inListExpr instanceof RowSubqueryExpression) {
             inExprList = inListExpr.getArgs();
-        } else {
-            inExprList = new ArrayList<AbstractExpression>();
+        }
+        else {
+            inExprList = new ArrayList<>();
             inExprList.add(inListExpr);
         }
         int idx = 0;
         assert(inExprList.size() == selectStmt.m_displayColumns.size());
-        selectStmt.m_aggregationList = new ArrayList<AbstractExpression>();
+        selectStmt.m_aggregationList = new ArrayList<>();
 
-        // Iterate over the columns from the IN list and the subquery output schema
+        // Iterate over the columns from the IN list
+        // and the subquery output schema
         // For each pair create a new equality expression.
-        // If the output column is part of the aggregate expression, the new expression
-        // must be added to the subquery's HAVING expressions. If not, it should be added
-        // to the WHERE expressions
+        // If the output column is part of the aggregate expression, the
+        // new expression must be added to the subquery's HAVING expressions.
+        // If not, it should be added to the WHERE expressions
         for (AbstractExpression expr : inExprList) {
             ParsedColInfo colInfo = selectStmt.m_displayColumns.get(idx++);
             assert(colInfo.expression != null);
-            // The TVE and the aggregated expressions from the IN clause will be
-            // parameters to the child select statement once the IN expression is
-            // replaced with the EXISTS one
+            // The TVE and the aggregated expressions from the IN clause will
+            // be parameters to the child select statement once the IN
+            // expression is replaced with the EXISTS one.
             expr = selectStmt.replaceExpressionsWithPve(expr);
-            // Finalize the expression. The subquery's own expressions are already finalized
-            // but not the expressions from the IN list
+            // Finalize the expression. The subquery's own expressions
+            // are already finalized but not the expressions from the IN list
             ExpressionUtil.finalizeValueTypes(expr);
 
             // Create new compare equal expression
-            AbstractExpression equalityExpr = new ComparisonExpression(ExpressionType.COMPARE_EQUAL,
-                    expr, (AbstractExpression) colInfo.expression.clone());
+            AbstractExpression equalityExpr =
+                    new ComparisonExpression(ExpressionType.COMPARE_EQUAL,
+                            expr, colInfo.expression.clone());
             // Check if this column contains aggregate expression
             if (ExpressionUtil.containsAggregateExpression(colInfo.expression)) {
-                // we are not creating any new aggregate expressions so
-                // the aggregation list doen't need to be updated. Only HAVING expression itself
+                // We are not creating any new aggregate expressions so
+                // the aggregation list doen't need to be updated.
+                // Only the HAVING expression itself
                 havingList.add(equalityExpr);
-            } else {
+            }
+            else {
                 whereList.add(equalityExpr);
             }
         }
         // Add new WHERE expressions
-        if (!whereList.isEmpty()) {
+        if ( ! whereList.isEmpty()) {
             if (selectStmt.m_joinTree.getWhereExpression() != null) {
                 whereList.add(selectStmt.m_joinTree.getWhereExpression());
             }
-            selectStmt.m_joinTree.setWhereExpression(ExpressionUtil.combine(whereList));
+            selectStmt.m_joinTree.setWhereExpression(
+                    ExpressionUtil.combinePredicates(whereList));
         }
         // Add new HAVING expressions
         if (!havingList.isEmpty()) {
             if (selectStmt.m_having != null) {
                 havingList.add(selectStmt.m_having);
             }
-            selectStmt.m_having = ExpressionUtil.combine(havingList);
+            selectStmt.m_having = ExpressionUtil.combinePredicates(havingList);
             // reprocess HAVING expressions
             ExpressionUtil.finalizeValueTypes(selectStmt.m_having);
         }
@@ -1153,7 +1432,8 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
         if (selectStmt.needComplexAggregation()) {
             selectStmt.fillUpAggResultColumns();
-        } else {
+        }
+        else {
             selectStmt.m_aggResultColumns = selectStmt.m_displayColumns;
         }
         selectStmt.placeTVEsinColumns();
@@ -1161,31 +1441,36 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
     /**
      * Simplify the EXISTS expression:
+     *  0. LIMIT 0 => FALSE
      *  1. EXISTS ( table-agg-without-having-groupby) => TRUE
-     *  2. Replace the display columns with a single dummy column "1" and GROUP BY expressions
+     *  2. Remove any ORDER BY columns
      *  3. Drop DISTINCT expression
      *  4. Add LIMIT 1
-     *  5. Remove ORDER BY expressions if HAVING expression is not present
      *
      * @param selectStmt
      * @return existsExpr
      */
-    protected AbstractExpression simplifyExistsSubqueryStmt(AbstractExpression originalExistExpr) {
-        // Verify the edge case of EXISTS ( table-agg-without-having-groupby) for which
-        // the correct handling is to optimize out the exists clause entirely as trivially true or
-        // false if limit = 0 or offset > 0
+    protected AbstractExpression simplifyExistsSubqueryStmt(
+            AbstractExpression originalExistExpr) {
+        // Verify the edge case of EXISTS ( table-agg-without-having-groupby)
+        // for which the correct handling is to optimize out the exists
+        // clause entirely as trivially true or false
+        // if limit = 0 or offset > 0
         if (m_limitOffset.getLimit() == 0) {
             return ConstantValueExpression.getFalse();
         }
+
         // Except for "limit 0 offset ?" which is already covered,
-        // can't optimize away the entire expression if there are limit and/or offset parameters
+        // can't optimize away the entire expression if there are
+        // limit and/or offset parameters
         if (m_having == null &&
                 m_groupByColumns.isEmpty() &&
                 ! hasLimitOrOffsetParameters() &&
                 displaysAgg()) {
             if (m_limitOffset.getOffset() == 0) {
                 return ConstantValueExpression.getTrue();
-            } else {
+            }
+            else {
                 return ConstantValueExpression.getFalse();
             }
         }
@@ -1193,46 +1478,8 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         // Remove ORDER BY columns
         m_orderColumns.clear();
 
-        // Can drop GROUP BY expressions if there are no HAVING/OFFSET expressions
-        if (m_having == null && !hasOffset()) {
-            m_groupByColumns.clear();
-            m_groupByExpressions.clear();
-        }
-
-        // Remove all non-aggregate display columns if GROUP BY is empty
-        if (m_groupByColumns.isEmpty()) {
-            Iterator<ParsedColInfo >iter = m_displayColumns.iterator();
-            while(iter.hasNext()) {
-                ParsedColInfo col = iter.next();
-                if (!col.expression.hasAnySubexpressionOfClass(AggregateExpression.class)) {
-                    iter.remove();
-                }
-            }
-        }
-
-        // If m_displayColumns is empty from the previous step
-        // add a single dummy column
-        if (m_displayColumns.isEmpty()) {
-            ParsedColInfo col = new ParsedColInfo();
-            col.expression = ConstantValueExpression.makeExpression(VoltType.NUMERIC, "1");
-            ExpressionUtil.finalizeValueTypes(col.expression);
-
-            col.tableName = "VOLT_TEMP_TABLE";
-            col.tableAlias = "VOLT_TEMP_TABLE";
-            col.columnName = "$$_EXISTS_$$";
-            col.alias = "$$_EXISTS_$$";
-            col.index = 0;
-            m_projectSchema = null;
-            m_displayColumns.add(col);
-        }
-
-        if (m_aggResultColumns.isEmpty()) {
-            m_hasAggregateExpression = false;
-            m_hasAverage = false;
-        }
-
+        // Redo TVE placement since we've cleared the ORDER BY columns.
         placeTVEsinColumns();
-        needComplexAggregation();
 
         // Drop DISTINCT expression
         m_distinct = false;
@@ -1255,6 +1502,10 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         return m_joinOrderList;
     }
 
+    public AbstractExpression getHavingPredicate() {
+        return m_having;
+    }
+
     @Override
     void postParse(String sql, String joinOrder) {
         super.postParse(sql, joinOrder);
@@ -1267,9 +1518,12 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
         // prepare the join order if needed
         if (m_joinOrder == null &&
-                m_tableAliasListAsJoinOrder.size() > StatementCompiler.DEFAULT_MAX_JOIN_TABLES) {
-            // When there are large number of table joins, give up the all permutations.
-            // By default, try the join order with the SQL query table order first.
+                m_tableAliasListAsJoinOrder.size() >
+                StatementCompiler.DEFAULT_MAX_JOIN_TABLES) {
+            // When there are large number of table joins,
+            // give up the all permutations.
+            // By default, try the join order with the
+            // SQL query table order first.
             m_hasLargeNumberOfTableJoins = true;
 
             StringBuilder sb = new StringBuilder();
@@ -1283,12 +1537,14 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
                 return;
             }
 
-            // The input join order is not vailid
-            // Find one valid join order to run, which may not be the most efficient.
+            // The input join order is not valid
+            // Find one valid join order to run,
+            // which may not be the most efficient.
             ArrayDeque<JoinNode> joinOrderQueue =
                     SelectSubPlanAssembler.queueJoinOrders(m_joinTree, false);
 
-            // Currently, we get one join order, but it is easy to change the hard coded number
+            // Currently, we get one join order,
+            // but it is easy to change the hard coded number
             // to get more join orders for large table joins.
             assert(joinOrderQueue.size() == 1);
             assert(m_joinOrderList.size() == 0);
@@ -1297,24 +1553,31 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
     }
 
     private boolean tryAddOneJoinOrder(String joinOrder) {
-        ArrayList<String> tableAliases = new ArrayList<String>();
+        ArrayList<String> tableAliases = new ArrayList<>();
         //Don't allow dups for now since self joins aren't supported
-        HashSet<String> dupCheck = new HashSet<String>();
-        // Calling trim() up front is important only in the case of a trailing comma.
-        // It allows a trailing comma followed by whitespace as in "A,B, " to be ignored
-        // like a normal trailing comma as in "A,B,". The alternatives would be to treat
-        // these as different cases (strange) or to complain about both -- which could be
-        // accomplished by appending an additional space to the join order here
-        // instead of calling trim.
+        HashSet<String> dupCheck = new HashSet<>();
+        // Calling trim() up front is important only in the case of a
+        // trailing comma.
+        // It allows a trailing comma followed by whitespace as in "A,B, "
+        // to be ignored like a normal trailing comma as in "A,B,".
+        // The alternatives would be to treat these as different cases
+        // (strange) or to complain about both -- which could be
+        // accomplished by appending an additional space to the join
+        // order here instead of calling trim.
         for (String element : joinOrder.trim().split(",")) {
             String alias = element.trim().toUpperCase();
             tableAliases.add(alias);
             if (!dupCheck.add(alias)) {
-                if (m_hasLargeNumberOfTableJoins) return false;
+                if (m_hasLargeNumberOfTableJoins) {
+                    return false;
+                }
 
                 StringBuilder sb = new StringBuilder();
-                sb.append("The specified join order \"").append(joinOrder);
-                sb.append("\" contains a duplicate element \"").append(alias).append("\".");
+                sb.append("The specified join order \"")
+                .append(joinOrder)
+                .append("\" contains a duplicate element \"")
+                .append(alias)
+                .append("\".");
                 throw new PlanningErrorException(sb.toString());
             }
         }
@@ -1322,22 +1585,30 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         //TODO: now that the table aliases list is built, the remaining validations
         // here and in isValidJoinOrder should be combined in one AbstractParsedStmt function
         // that generates a JoinNode tree or throws an exception.
-        if (m_tableAliasMap.size() != tableAliases.size()) {
-            if (m_hasLargeNumberOfTableJoins) return false;
+        if (getScanCount() != tableAliases.size()) {
+            if (m_hasLargeNumberOfTableJoins) {
+                return false;
+            }
 
             StringBuilder sb = new StringBuilder();
-            sb.append("The specified join order \"");
-            sb.append(joinOrder).append("\" does not contain the correct number of elements\n");
-            sb.append("Expected ").append(m_tableList.size());
-            sb.append(" but found ").append(tableAliases.size()).append(" elements.");
+            sb.append("The specified join order \"")
+            .append(joinOrder)
+            .append("\" does not contain the correct number of elements\n")
+            .append("Expected ")
+            .append(m_tableList.size())
+            .append(" but found ")
+            .append(tableAliases.size())
+            .append(" elements.");
             throw new PlanningErrorException(sb.toString());
         }
 
-        Set<String> aliasSet = m_tableAliasMap.keySet();
-        Set<String> specifiedNames = new HashSet<String>(tableAliases);
+        Set<String> aliasSet = getScanAliases();
+        Set<String> specifiedNames = new HashSet<>(tableAliases);
         specifiedNames.removeAll(aliasSet);
         if (specifiedNames.isEmpty() == false) {
-            if (m_hasLargeNumberOfTableJoins) return false;
+            if (m_hasLargeNumberOfTableJoins) {
+                return false;
+            }
 
             StringBuilder sb = new StringBuilder();
             sb.append("The specified join order \"");
@@ -1352,7 +1623,8 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             sb.append(" which ");
             if (specifiedNames.size() == 1) {
                 sb.append("doesn't ");
-            } else {
+            }
+            else {
                 sb.append("don't ");
             }
             sb.append("exist in the FROM clause");
@@ -1362,7 +1634,8 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         // Now check whether the specified join order is valid or not
         if ( ! isValidJoinOrder(tableAliases)) {
             if (m_hasLargeNumberOfTableJoins) return false;
-            throw new PlanningErrorException("The specified join order is invalid for the given query");
+            throw new PlanningErrorException(
+                    "The specified join order is invalid for the given query");
         }
 
         // Inserted one join tree to the list
@@ -1373,35 +1646,44 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
     /**
      * Validate the specified join order against the join tree.
-     * In general, outer joins are not associative and commutative. Not all orders are valid.
-     * In case of a valid join order, the initial join tree is rebuilt to match the specified order
+     * In general, outer joins are not associative and commutative.
+     * Not all orders are valid.
+     * In case of a valid join order, the initial join tree is
+     * rebuilt to match the specified order
      * @param tables list of table aliases(or tables) to join
      * @return true if the join order is valid
      */
-    private boolean isValidJoinOrder(List<String> tableAliases)
-    {
+    private boolean isValidJoinOrder(List<String> tableAliases) {
         assert(m_joinTree != null);
 
-        // Split the original tree into the sub-trees having the same join type for all nodes
+        // Split the original tree into the sub-trees
+        // having the same join type for all nodes
         List<JoinNode> subTrees = m_joinTree.extractSubTrees();
 
-        // For a sub-tree with inner joins only any join order is valid. The only requirement is that
-        // each and every table from that sub-tree constitute an uninterrupted sequence in the specified join order
-        // The outer joins are associative but changing the join order precedence
-        // includes moving ON clauses to preserve the initial SQL semantics. For example,
-        // T1 right join T2 on T1.C1 = T2.C1 left join T3 on T2.C2=T3.C2 can be rewritten as
+        // For a sub-tree with inner joins only, any join order is valid.
+        // The only requirement is that each and every table from that
+        // sub-tree constitute an uninterrupted sequence in the specified
+        // join order.
+        // The outer joins are associative but changing the join order
+        // precedence includes moving ON clauses to preserve the initial
+        // SQL semantics.
+        // For example,
+        // T1 right join T2 on T1.C1 = T2.C1 left join T3 on T2.C2=T3.C2
+        // can be rewritten as
         // T1 right join (T2 left join T3 on T2.C2=T3.C2) on T1.C1 = T2.C1
-        // At the moment, such transformations are not supported. The specified joined order must
-        // match the SQL order
+        // At the moment, such transformations are not supported.
+        // The specified joined order must match the SQL order.
         int tableNameIdx = 0;
-        List<JoinNode> finalSubTrees = new ArrayList<JoinNode>();
-        // we need to process the sub-trees last one first because the top sub-tree is the first one on the list
+        List<JoinNode> finalSubTrees = new ArrayList<>();
+        // Ee need to process the sub-trees last one first because
+        // the top sub-tree is the first one on the list.
         for (int i = subTrees.size() - 1; i >= 0; --i) {
             JoinNode subTree = subTrees.get(i);
             // Get all tables for the subTree
             List<JoinNode> subTableNodes = subTree.generateLeafNodesJoinOrder();
             JoinNode joinOrderSubTree;
-            if ((subTree instanceof BranchNode) && ((BranchNode)subTree).getJoinType() != JoinType.INNER) {
+            if ((subTree instanceof BranchNode) &&
+                    ((BranchNode)subTree).getJoinType() != JoinType.INNER) {
                 // add the sub-tree as is
                 joinOrderSubTree = subTree;
                 for (JoinNode tableNode : subTableNodes) {
@@ -1412,10 +1694,12 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
                         }
                     }
                 }
-            } else {
-                // Collect all the "real" tables from the sub-tree skipping the nodes representing
+            }
+            else {
+                // Collect all the "real" tables from the sub-tree
+                // skipping the nodes representing
                 // the sub-trees with the different join type (id < 0)
-                Map<String, JoinNode> nodeNameMap = new HashMap<String, JoinNode>();
+                Map<String, JoinNode> nodeNameMap = new HashMap<>();
                 for (JoinNode tableNode : subTableNodes) {
                     if (tableNode.getId() >= 0) {
                         nodeNameMap.put(tableNode.getTableAlias(), tableNode);
@@ -1423,29 +1707,33 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
                 }
 
                 // rearrange the sub tree to match the order
-                List<JoinNode> joinOrderSubNodes = new ArrayList<JoinNode>();
+                List<JoinNode> joinOrderSubNodes = new ArrayList<>();
                 for (int j = 0; j < subTableNodes.size(); ++j) {
                     if (subTableNodes.get(j).getId() >= 0) {
                         assert(tableNameIdx < tableAliases.size());
                         String tableAlias = tableAliases.get(tableNameIdx);
-                        if (tableAlias == null || ! nodeNameMap.containsKey(tableAlias)) {
+                        if (tableAlias == null ||
+                                ! nodeNameMap.containsKey(tableAlias)) {
                             return false;
                         }
                         joinOrderSubNodes.add(nodeNameMap.get(tableAlias));
                         ++tableNameIdx;
-                    } else {
+                    }
+                    else {
                         // It's dummy node
                         joinOrderSubNodes.add(subTableNodes.get(j));
                     }
                 }
-                joinOrderSubTree = JoinNode.reconstructJoinTreeFromTableNodes(joinOrderSubNodes);
+                joinOrderSubTree = JoinNode.reconstructJoinTreeFromTableNodes(
+                        joinOrderSubNodes, JoinType.INNER);
                 //Collect all the join/where conditions to reassign them later
                 AbstractExpression combinedWhereExpr = subTree.getAllFilters();
                 if (combinedWhereExpr != null) {
-                    joinOrderSubTree.setWhereExpression((AbstractExpression)combinedWhereExpr.clone());
+                    joinOrderSubTree.setWhereExpression(
+                            combinedWhereExpr.clone());
                 }
-                // The new tree root node id must match the original one to be able to reconnect the
-                // subtrees
+                // The new tree root node id must match the original one
+                // to be able to reconnect the subtrees
                 joinOrderSubTree.setId(subTree.getId());
             }
             finalSubTrees.add(0, joinOrderSubTree);
@@ -1454,6 +1742,10 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         JoinNode newNode = JoinNode.reconstructJoinTreeFromSubTrees(finalSubTrees);
         m_joinOrderList.add(newNode);
         return true;
+    }
+
+    public boolean hasWindowFunctionExpression() {
+        return m_windowFunctionExpressions.size() > 0;
     }
 
     public boolean hasAggregateExpression() {
@@ -1500,9 +1792,41 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         m_hasPartitionColumnInDistinctGroupby = true;
     }
 
+    /**
+     * Return true iff all windowed aggregate expressions have a
+     * partition key in their partition by columns.
+     *
+     * @return
+     */
+    public boolean hasPartitionColumnInWindowFunctionExpression() {
+        if (getWindowFunctionExpressions().size() == 0) {
+            return true;
+        }
+        return m_hasPartitionColumnsInWindowedAggregates;
+    }
+
+    /**
+     * Call this if we discover that some partition by column of a windowed
+     * aggregate is a column on which a table is partitioned.
+     */
+    public void setHasPartitionColumnInWindowedAggregate() {
+        m_hasPartitionColumnsInWindowedAggregates = true;
+    }
+
     @Override
+    /**
+     * Return true if this ParsedSelectStmt has order by columns
+     */
     public boolean hasOrderByColumns() {
         return ! m_orderColumns.isEmpty();
+    }
+
+    public void setUnsafeDDLMessage(String msg) {
+        m_mvUnSafeErrorMessage = msg;
+    }
+
+    public String getUnsafeMVMessage() {
+        return m_mvUnSafeErrorMessage;
     }
 
     /**
@@ -1531,17 +1855,19 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         }
 
         // HAVING clause does not matter
-        Set <AbstractExpression> missingGroupBySet = new HashSet <AbstractExpression>();
-        for (ParsedColInfo col: m_groupByColumns) {
+        Set<AbstractExpression> missingGroupBySet = new HashSet<>();
+        for (ParsedColInfo col : m_groupByColumns) {
             if (col.groupByInDisplay) {
                 continue;
             }
-            if (col.expression.hasAnySubexpressionOfClass(ParameterValueExpression.class)) {
+            if (col.expression.hasAnySubexpressionOfClass(
+                    ParameterValueExpression.class)) {
                 // group by expression has ParameterValueExpression
                 assert(hasComplexGroupby());
 
                 // hsql has already guarded invalid ORDER BY expression.
-                // let's be pessimistic about these cases to place Projection above ORDER BY.
+                // let's be pessimistic about these cases to place Projection
+                // above ORDER BY.
                 m_isComplexOrderBy = true;
                 return;
             }
@@ -1567,7 +1893,8 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
     /**
      * DISTINCT without GROUP BY is completely rewrote with a GROUP BY query.
-     * DISTINCT with GROUP BY is not tricky, it needs another GROUP BY on the original GROUP BY.
+     * DISTINCT with GROUP BY is not tricky, it needs another GROUP BY
+     * on the original GROUP BY.
      * @return true if query has a DISTINCT with GROUP BY
      */
     public boolean hasDistinctWithGroupBy() {
@@ -1584,6 +1911,10 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
     public List<ParsedColInfo> groupByColumns() {
         return Collections.unmodifiableList(m_groupByColumns);
+    }
+
+    public List<ParsedColInfo> distinctGroupByColumns() {
+        return Collections.unmodifiableList(m_distinctGroupByColumns);
     }
 
     @Override
@@ -1608,44 +1939,61 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         return m_limitOffset.m_limitCanPushdown;
     }
 
+    /**
+     * Returns true if this select statement can be proved to always produce
+     * its result rows in the same order every time that it is executed.
+     */
     @Override
-    public boolean isOrderDeterministic()
-    {
+    public boolean isOrderDeterministic() {
         if ( ! hasTopLevelScans()) {
-            // This currently applies to parent queries that do all their scanning in subqueries and so
-            // take on the order determinism of their subqueries. This might have to be rethought to allow
-            // ordering in parent queries to effect determinism of unordered "FROM CLAUSE" subquery results.
+            // This currently applies to parent queries that do all their
+            // scanning in subqueries and so take on the order determinism of
+            // their subqueries. This might have to be rethought to allow
+            // ordering in parent queries to effect determinism of unordered
+            // "FROM CLAUSE" subquery results.
             return true;
         }
+
         if (hasAOneRowResult()) {
             return true;
         }
+
         if ( ! hasOrderByColumns() ) {
             return false;
         }
 
-        // The nonOrdered expression list is used as a short-cut -- if an expression has been
-        // determined to be non-ordered when encountered as a GROUP BY expression,
+        // The nonOrdered expression list is used as a short-cut
+        // -- if an expression has been determined to be
+        // non-ordered when encountered as a GROUP BY expression,
         // it will also be non-ordered when encountered in the select list.
-        ArrayList<AbstractExpression> nonOrdered = new ArrayList<AbstractExpression>();
+        ArrayList<AbstractExpression> nonOrdered = new ArrayList<>();
 
         if (isGrouped()) {
-            // Does the ordering of a statements's GROUP BY columns ensure determinism?
-            // All display columns and order-by expressions are functionally dependent on the GROUP BY
-            // columns even if the display column's values are not ordered or unique,
-            // so ordering by ALL of the GROUP BY columns is enough to get full determinism,
+            // Does the ordering of a statements's GROUP BY columns
+            // ensure determinism?
+            // All display columns and order-by expressions
+            // are functionally dependent on the GROUP BY
+            // columns even if the display column's values
+            // are not ordered or unique,
+            // so ordering by ALL of the GROUP BY columns is enough
+            // to get full determinism,
             // EVEN if ordering by other (dependent) expressions,
-            // regardless of the placement of non-GROUP BY expressions in the ORDER BY list.
+            // regardless of the placement of non-GROUP BY expressions
+            // in the ORDER BY list.
             if (orderByColumnsDetermineAllColumns(m_groupByColumns, nonOrdered)) {
                 return true;
             }
+
             if (orderByColumnsDetermineAllDisplayColumns(nonOrdered)) {
                 return true;
             }
-        } else {
+
+        }
+        else {
             if (orderByColumnsDetermineAllDisplayColumns(nonOrdered)) {
                 return true;
             }
+
             if (orderByColumnsCoverUniqueKeys()) {
                 return true;
             }
@@ -1654,48 +2002,80 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
     }
 
     @Override
-    public boolean isOrderDeterministicInSpiteOfUnorderedSubqueries()
-    {
+    public boolean isOrderDeterministicInSpiteOfUnorderedSubqueries() {
         if (hasAOneRowResult()) {
             return true;
         }
+
         if ( ! hasOrderByColumns() ) {
             return false;
         }
 
         // This is a trivial empty container.
-        // In other code paths, it would list expressions that have been pre-determined to be nonOrdered.
-        ArrayList<AbstractExpression> nonOrdered = new ArrayList<AbstractExpression>();
+        // In other code paths, it would list expressions
+        // that have been pre-determined to be nonOrdered.
+        ArrayList<AbstractExpression> nonOrdered = new ArrayList<>();
 
         if (orderByColumnsDetermineAllDisplayColumns(nonOrdered)) {
             return true;
         }
+
         return false;
     }
 
-    private boolean orderByColumnsDetermineAllDisplayColumns(List<AbstractExpression> nonOrdered)
-    {
-        return orderByColumnsDetermineAllDisplayColumns(m_displayColumns, m_orderColumns, nonOrdered);
-    }
-
-    private boolean orderByColumnsDetermineAllColumns(ArrayList<ParsedColInfo> candidateColumns,
-            ArrayList<AbstractExpression> outNonOrdered) {
-        return orderByColumnsDetermineAllColumns(m_orderColumns, candidateColumns, outNonOrdered);
-    }
-
-    static boolean orderByColumnsDetermineAllDisplayColumns(List<ParsedColInfo> displayColumns,
-            List<ParsedColInfo> orderColumns,
-            List<AbstractExpression> nonOrdered)
-    {
-        ArrayList<ParsedColInfo> candidateColumns = new ArrayList<ParsedColInfo>();
-        for (ParsedColInfo displayCol : displayColumns) {
-            if (displayCol.orderBy) {
-                continue;
+    private boolean orderByColumnsDetermineAllDisplayColumns(
+            List<AbstractExpression> nonOrdered) {
+        List<ParsedColInfo> unorderedDisplayColumns = new ArrayList<>();
+        for (ParsedColInfo col : m_displayColumns) {
+            if (! col.orderBy) {
+                unorderedDisplayColumns.add(col);
             }
+        }
+
+        return orderByColumnsDetermineAllDisplayColumns(
+                unorderedDisplayColumns, m_orderColumns, nonOrdered);
+    }
+
+    private boolean orderByColumnsDetermineAllColumns(
+            List<ParsedColInfo> candidateColumns,
+            List<AbstractExpression> outNonOrdered) {
+
+        List<ParsedColInfo> filteredCandidateColumns = new ArrayList<>();
+        for (ParsedColInfo col : candidateColumns) {
+            if ( ! col.orderBy) {
+                filteredCandidateColumns.add(col);
+            }
+        }
+
+        return orderByColumnsDetermineAllColumns(
+                m_orderColumns, filteredCandidateColumns, outNonOrdered);
+    }
+
+    /**
+     * Returns true if the specified set of "display columns" passed in by caller
+     * will be determistically ordered if sorting by the specified set of columns
+     * from an "ORDER BY" clause.  Note that the ORDER BY columns could be from an
+     * set operator (UNION, INTERSECT, etc) that has this select statement as a child.
+     *
+     * @param displayColumns  The set of display columns whose order we care about
+     * @param orderColumns    The columns that we are ordering by
+     * @param nonOrdered      Columns whose values are known to appear in
+     *                        non-deterministic order
+     * @return true if the given order by columns will determine
+     *         the order of the given display columns
+     */
+    boolean orderByColumnsDetermineAllDisplayColumns(
+            List<ParsedColInfo> displayColumns,
+            List<ParsedColInfo> orderColumns,
+            List<AbstractExpression> nonOrdered) {
+        ArrayList<ParsedColInfo> candidateColumns = new ArrayList<>();
+        for (ParsedColInfo displayCol : displayColumns) {
             if (displayCol.groupBy) {
                 AbstractExpression displayExpr = displayCol.expression;
-                // Round up the usual suspects -- if there were uncooperative GROUP BY expressions,
-                // they will often also be uncooperative display column expressions.
+                // Round up the usual suspects
+                // -- if there were uncooperative GROUP BY expressions,
+                // they will often also be uncooperative
+                // display column expressions.
                 for (AbstractExpression nonStarter : nonOrdered) {
                     if (displayExpr.equals(nonStarter)) {
                         return false;
@@ -1706,37 +2086,38 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             }
             candidateColumns.add(displayCol);
         }
-        return orderByColumnsDetermineAllColumns(orderColumns, candidateColumns, null);
+        return orderByColumnsDetermineAllColumns(
+                orderColumns, candidateColumns, null);
     }
 
-    private static boolean orderByColumnsDetermineAllColumns(List<ParsedColInfo> orderColumns,
-                                                      List<ParsedColInfo> candidateColumns,
-                                                      List<AbstractExpression> outNonOrdered) {
+    private boolean orderByColumnsDetermineAllColumns(
+            List<ParsedColInfo> orderColumns,
+            List<ParsedColInfo> candidateColumns,
+            List<AbstractExpression> outNonOrdered) {
         HashSet<AbstractExpression> orderByExprs = null;
         ArrayList<AbstractExpression> candidateExprHardCases = null;
-        // First try to get away with a brute force N by M search for exact equalities.
-        for (ParsedColInfo candidateCol : candidateColumns)
-        {
-            if (candidateCol.orderBy) {
-                continue;
-            }
+        // First try to get away with a brute force
+        // N by M search for exact equalities.
+        for (ParsedColInfo candidateCol : candidateColumns) {
             AbstractExpression candidateExpr = candidateCol.expression;
             if (orderByExprs == null) {
-                orderByExprs = new HashSet<AbstractExpression>();
+                orderByExprs = new HashSet<>();
                 for (ParsedColInfo orderByCol : orderColumns) {
                     orderByExprs.add(orderByCol.expression);
                 }
+                addHonoraryOrderByExpressions(orderByExprs, candidateColumns);
             }
             if (orderByExprs.contains(candidateExpr)) {
                 continue;
             }
             if (candidateExpr instanceof TupleValueExpression) {
-                // Simple column references can only be exactly equal to but not "based on" an ORDER BY.
+                // Simple column references can only be
+                // exactly equal to but not "based on" an ORDER BY.
                 return false;
             }
 
             if (candidateExprHardCases == null) {
-                candidateExprHardCases = new ArrayList<AbstractExpression>();
+                candidateExprHardCases = new ArrayList<>();
             }
             candidateExprHardCases.add(candidateExpr);
         }
@@ -1745,19 +2126,22 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             return true;
         }
 
-        // Plan B. profile the ORDER BY list and try to include/exclude the hard cases on that basis.
-        HashSet<AbstractExpression> orderByTVEs = new HashSet<AbstractExpression>();
-        ArrayList<AbstractExpression> orderByNonTVEs = new ArrayList<AbstractExpression>();
-        ArrayList<List<AbstractExpression>> orderByNonTVEBaseTVEs = new ArrayList<List<AbstractExpression>>();
-        HashSet<AbstractExpression> orderByAllBaseTVEs = new HashSet<AbstractExpression>();
+        // Plan B. profile the ORDER BY list and try to include/exclude
+        // the hard cases on that basis.
+        HashSet<AbstractExpression> orderByTVEs = new HashSet<>();
+        ArrayList<AbstractExpression> orderByNonTVEs = new ArrayList<>();
+        ArrayList<List<TupleValueExpression>> orderByNonTVEBaseTVEs = new ArrayList<>();
+        HashSet<AbstractExpression> orderByAllBaseTVEs = new HashSet<>();
 
         for (AbstractExpression orderByExpr : orderByExprs) {
             if (orderByExpr instanceof TupleValueExpression) {
                 orderByTVEs.add(orderByExpr);
                 orderByAllBaseTVEs.add(orderByExpr);
-            } else {
+            }
+            else {
                 orderByNonTVEs.add(orderByExpr);
-                List<AbstractExpression> baseTVEs = orderByExpr.findBaseTVEs();
+                List<TupleValueExpression> baseTVEs =
+                        orderByExpr.findAllTupleValueSubexpressions();
                 orderByNonTVEBaseTVEs.add(baseTVEs);
                 orderByAllBaseTVEs.addAll(baseTVEs);
             }
@@ -1765,49 +2149,86 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
         boolean result = true;
 
-        for (AbstractExpression candidateExpr : candidateExprHardCases)
-        {
-            Collection<AbstractExpression> candidateBases = candidateExpr.findBaseTVEs();
+        for (AbstractExpression candidateExpr : candidateExprHardCases) {
+            Collection<TupleValueExpression> candidateBases =
+                    candidateExpr.findAllTupleValueSubexpressions();
             if (orderByTVEs.containsAll(candidateBases)) {
                 continue;
             }
             if (orderByAllBaseTVEs.containsAll(candidateBases) == false) {
                 if (outNonOrdered == null) {
-                    // Short-circuit if the remaining non-qualifying expressions are not of interest.
+                    // Short-circuit if the remaining non-qualifying
+                    // expressions are not of interest.
                     return false;
                 }
+
                 result = false;
                 outNonOrdered.add(candidateExpr);
                 continue;
             }
+
             // At this point, if the candidateExpr is a match,
-            // then it is based on but not equal to one or more orderByNonTVE(s) and optionally orderByTVE(s).
-            // The simplest example is like "SELECT a+(b-c) ... ORDER BY a, b-c;"
-            // If it is a non-match, it is an original expression based on orderByAllBaseTVEs
-            // The simplest example is like "SELECT a+b ... ORDER BY a, b-c;"
+            // then it is based on but not equal to one or more
+            // orderByNonTVE(s) and optionally orderByTVE(s).
+            // The simplest example is like
+            // "SELECT a+(b-c) ... ORDER BY a, b-c;"
+            // If it is a non-match,
+            // it is an original expression based on orderByAllBaseTVEs
+            // The simplest example is like
+            // "SELECT a+b ... ORDER BY a, b-c;"
             // TODO: process REALLY HARD CASES
             // TODO: issue a warning, short-term?
             // For now, err on the side of non-determinism.
             if (outNonOrdered == null) {
-                // Short-circuit if the remaining non-qualifying expressions are not of interest.
+                // Short-circuit if the remaining
+                // non-qualifying expressions are not of interest.
                 return false;
             }
+
             outNonOrdered.add(candidateExpr);
             result = false;
         }
         return result;
     }
 
-    private boolean hasAOneRowResult()
-    {
+    /**
+     * This is a very simple version of the above method for when an ORDER BY
+     * clause appears on a UNION.  Does the ORDER BY clause reference every item
+     * on the display list?  If so, then the order is deterministic.
+     *
+     * Note that in this method we don't do more sophisticated analysis
+     * (like using value equivalence, or knowledge of unique indexes)
+     * because we want to prove that *every* child of a UNION is deterministic,
+     * not just this one.
+     *
+     * @param orderColumns  ORDER BY columns on the UNION
+     * @return  true if all items on display list are in the UNION's ORDER BY
+     */
+    public boolean orderByColumnsDetermineAllDisplayColumnsForUnion(
+            List<ParsedColInfo> orderColumns) {
+        Set<AbstractExpression> orderExprs = new HashSet<>();
+        for (ParsedColInfo col : orderColumns) {
+            orderExprs.add(col.expression);
+        }
+
+        for (ParsedColInfo col : m_displayColumns) {
+            if (! orderExprs.contains(col.expression)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private boolean hasAOneRowResult() {
         if ( ( ! isGrouped() ) && displaysAgg()) {
             return true;
         }
-        return false;
+        return producesOneRowOutput();
     }
 
     private boolean hasTopLevelScans() {
-        for (StmtTableScan scan : m_tableAliasMap.values()) {
+        for (StmtTableScan scan : allScans()) {
             if (scan instanceof StmtTargetTableScan) {
                 return true;
             }
@@ -1817,7 +2238,8 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
 
     private boolean displaysAgg() {
         for (ParsedColInfo displayCol : m_displayColumns) {
-            if (displayCol.expression.hasAnySubexpressionOfClass(AggregateExpression.class)) {
+            if (displayCol.expression.hasAnySubexpressionOfClass(
+                    AggregateExpression.class)) {
                 return true;
             }
         }
@@ -1875,15 +2297,15 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
         return m_groupAndOrderByPermutationResult;
     }
 
-    void checkPlanColumnMatch(List<SchemaColumn> columns) {
+    void checkPlanColumnMatch(NodeSchema schema) {
         // Sanity-check the output NodeSchema columns against the display columns
-        if (m_displayColumns.size() != columns.size()) {
+        if (m_displayColumns.size() != schema.size()) {
             throw new PlanningErrorException(
                     "Mismatched plan output cols to parsed display columns");
         }
         int ii = 0;
         for (ParsedColInfo display_col : m_displayColumns) {
-            SchemaColumn sc = columns.get(ii);
+            SchemaColumn sc = schema.getColumn(ii);
             ++ii;
             boolean sameTable = false;
 
@@ -1891,17 +2313,23 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
                 if (display_col.tableAlias.equals(sc.getTableAlias())) {
                     sameTable = true;
                 }
-            } else if (display_col.tableName.equals(sc.getTableName())) {
+            }
+            else if (display_col.tableName.equals(sc.getTableName())) {
                 sameTable = true;
             }
+
             if (sameTable) {
-                if (display_col.alias != null && ! display_col.alias.equals("")) {
-                    if (display_col.alias.equals(sc.getColumnAlias())) {
+                String displayAlias = display_col.alias;
+                if (displayAlias != null && ! displayAlias.equals("")) {
+                    if (displayAlias.equals(sc.getColumnAlias())) {
                         continue;
                     }
                 }
-                else if (display_col.columnName != null && ! display_col.columnName.equals("")) {
-                    if (display_col.columnName.equals(sc.getColumnName())) {
+                else {
+                    String displayName = display_col.columnName;
+                    if (displayName != null &&
+                        ( ! displayName.equals("")) &&
+                        displayName.equals(sc.getColumnName())) {
                         continue;
                     }
                 }
@@ -1909,25 +2337,6 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
             throw new PlanningErrorException(
                     "Mismatched plan output cols to parsed display columns");
         }
-    }
-
-    @Override
-    public List<AbstractExpression> findAllSubexpressionsOfType(ExpressionType exprType) {
-        List<AbstractExpression> exprs = super.findAllSubexpressionsOfType(exprType);
-        if (m_having != null) {
-            exprs.addAll(m_having.findAllSubexpressionsOfType(exprType));
-        }
-        if (m_groupByExpressions != null) {
-            for (AbstractExpression groupByExpr : m_groupByExpressions.values()) {
-                exprs.addAll(groupByExpr.findAllSubexpressionsOfType(exprType));
-            }
-        }
-        for(ParsedColInfo col : m_displayColumns) {
-            if (col.expression != null) {
-                exprs.addAll(col.expression.findAllSubexpressionsOfType(exprType));
-            }
-        }
-        return exprs;
     }
 
     /**
@@ -1939,31 +2348,321 @@ public class ParsedSelectStmt extends AbstractParsedStmt {
      * m_having and m_projectSchema seem to have the same issue in ENG-8263.
      */
     @Override
-    public Set<AbstractExpression> findAllSubexpressionsOfClass(Class< ? extends AbstractExpression> aeClass) {
-        Set<AbstractExpression> exprs = super.findAllSubexpressionsOfClass(aeClass);
+    public Set<AbstractExpression> findAllSubexpressionsOfClass(
+            Class< ? extends AbstractExpression> aeClass) {
+        Set<AbstractExpression> exprs =
+                super.findAllSubexpressionsOfClass(aeClass);
+
         if (m_having != null) {
-            exprs.addAll(m_having.findAllSubexpressionsOfClass(aeClass));
-        }
-        if (m_groupByExpressions != null) {
-            for (AbstractExpression groupByExpr : m_groupByExpressions.values()) {
-                exprs.addAll(groupByExpr.findAllSubexpressionsOfClass(aeClass));
+            Collection<AbstractExpression> found =
+                    m_having.findAllSubexpressionsOfClass(aeClass);
+            if (! found.isEmpty()) {
+                exprs.addAll(found);
             }
+        }
+        addAllSubexpressionsOfClassFromColList(exprs, aeClass, m_groupByColumns);
+        addAllSubexpressionsOfClassFromColList(exprs, aeClass, m_orderColumns);
+        if (hasWindowFunctionExpression()) {
+            WindowFunctionExpression windowFunctionExpression = m_windowFunctionExpressions.get(0);
+            exprs.addAll(windowFunctionExpression.findAllSubexpressionsOfClass(aeClass));
         }
         if (m_projectSchema != null) {
-            for(SchemaColumn col : m_projectSchema.getColumns()) {
-                if (col.getExpression() != null) {
-                    exprs.addAll(col.getExpression().findAllSubexpressionsOfClass(aeClass));
-                }
+            m_projectSchema.addAllSubexpressionsOfClassFromNodeSchema(exprs, aeClass);
+        }
+        // m_having, m_groupByExpressions, or m_projectSchema may no longer contain
+        // the aggregation or group by expression if they have been replaced with
+        // TVEs already and added to m_aggResultColumns.
+        // So, also look for the original expression in m_aggResultColumns.
+        addAllSubexpressionsOfClassFromColList(exprs, aeClass, m_aggResultColumns);
+
+        if (m_avgPushdownHaving != null &&
+                m_avgPushdownHaving != m_having) {
+            Collection<AbstractExpression> found =
+                    m_avgPushdownHaving.findAllSubexpressionsOfClass(aeClass);
+            if (! found.isEmpty()) {
+                exprs.addAll(found);
             }
         }
-
-        // m_having, m_groupByExpressions, m_projectSchema may contain the aggregation or group by expression that have
-        // been replaced with TVEs already. So check out the repository of the original expression in m_aggResultColumns.
-        for (ParsedColInfo col: m_aggResultColumns) {
-            if (col.expression != null) {
-                exprs.addAll(col.expression.findAllSubexpressionsOfClass(aeClass));
-            }
+        if (m_avgPushdownGroupByColumns != null &&
+                m_avgPushdownGroupByColumns != m_groupByColumns) {
+            addAllSubexpressionsOfClassFromColList(exprs, aeClass,
+                    m_avgPushdownGroupByColumns);
+        }
+        if (m_avgPushdownProjectSchema != null &&
+                m_avgPushdownProjectSchema != m_projectSchema) {
+            m_avgPushdownProjectSchema.addAllSubexpressionsOfClassFromNodeSchema(exprs, aeClass);
+        }
+        // m_avgPushdownHaving, m_avgPushdownGroupByColumns,
+        // or m_avgPushdownProjectSchema may no longer contain
+        // the aggregation or group by expression if they have been
+        // replaced with TVEs already and added to
+        // m_avgPushdownAggResultColumns.
+        // So, also look for the original expression in
+        // m_avgPushdownAggResultColumns.
+        if (m_avgPushdownAggResultColumns != null &&
+                m_avgPushdownAggResultColumns != m_aggResultColumns) {
+            addAllSubexpressionsOfClassFromColList(exprs, aeClass,
+                    m_avgPushdownAggResultColumns);
         }
         return exprs;
+
+    }
+
+    private static void addAllSubexpressionsOfClassFromColList(
+            Set<AbstractExpression> exprs,
+            Class<? extends AbstractExpression> aeClass,
+            List<ParsedColInfo> colList) {
+        for (ParsedColInfo col : colList) {
+            AbstractExpression colExpr = col.expression;
+            if (colExpr == null) {
+                continue;
+            }
+
+            Collection<AbstractExpression> found =
+                    colExpr.findAllSubexpressionsOfClass(aeClass);
+            if (found.isEmpty()) {
+                continue;
+            }
+
+            exprs.addAll(found);
+        }
+    }
+
+    @Override
+    public String calculateContentDeterminismMessage() {
+        String ans = m_contentDeterminismMessage;
+
+        // Don't search if we already know the answer.
+        if (ans == null) {
+            /*
+             * Is there a message in the display columns?
+             */
+            for (ParsedColInfo displayCol : m_displayColumns) {
+                AbstractExpression displayExpr = displayCol.expression;
+                ans = displayExpr.getContentDeterminismMessage();
+                if (ans != null) {
+                    break;
+                }
+            }
+
+            /*
+             * Is there a message in the having expression?
+             */
+            if (ans == null && m_having != null) {
+                ans = m_having.getContentDeterminismMessage();
+            }
+
+            /*
+             * Is there a message in the join tree?
+             */
+            if (ans == null && m_joinTree != null) {
+                ans = m_joinTree.getContentDeterminismMessage();
+            }
+        }
+        if (ans != null) {
+            updateContentDeterminismMessage(ans);
+        }
+        return ans;
+    }
+
+    @Override
+    public boolean isDML() { return false; }
+
+    /**
+     * Return true iff all the windowed partition expressions
+     * have a table partition column in their partition by list,
+     * and if there is one such windowed partition expression.
+     * If there are no windowed expressions, we return false.
+     * Note that there can only be one windowed
+     * expression currently, so this is more general than it needs to be.
+     *
+     * @return
+     */
+    public boolean isPartitionColumnInWindowedAggregatePartitionByList() {
+        if (getWindowFunctionExpressions().size() == 0) {
+            return false;
+        }
+        // We can't really have more than one Windowed Aggregate Expression.
+        // If we ever do, this should fail gracelessly.
+        assert(getWindowFunctionExpressions().size() == 1);
+        WindowFunctionExpression we = getWindowFunctionExpressions().get(0);
+        List<AbstractExpression> partitionByExprs = we.getPartitionByExpressions();
+        boolean foundPartExpr = false;
+        for (AbstractExpression ae : partitionByExprs) {
+            if ( ! (ae instanceof TupleValueExpression ) ) {
+                continue;
+            }
+
+            TupleValueExpression tve = (TupleValueExpression) ae;
+            String tableAlias    = tve.getTableAlias();
+            String columnName    = tve.getColumnName();
+            StmtTableScan scanTable = getStmtTableScanByAlias(tableAlias);
+            if (scanTable == null || scanTable.getPartitioningColumns() == null) {
+                continue;
+            }
+
+            boolean foundPartCol = false;
+            for (SchemaColumn pcol : scanTable.getPartitioningColumns()) {
+                if (pcol != null && pcol.getColumnName().equals(columnName)) {
+                    foundPartCol = true;
+                    break;
+                }
+            }
+            // If we found a partition column, then we don't
+            // need to look at any other partition by expressions
+            // in this windowed expression.
+            if (foundPartCol) {
+                foundPartExpr = true;
+                break;
+            }
+        }
+        return foundPartExpr;
+    }
+
+    /**
+     * Gather up all the join expressions.  This happens before planning.
+     * So, all the innerouter and innerinner lists are not yet populated.
+     *
+     * @param checkExpressions
+     */
+    public void gatherJoinExpressions(List<AbstractExpression> checkExpressions) {
+        // TODO Auto-generated method stub
+        m_joinTree.gatherJoinExpressions(checkExpressions);
+    }
+
+    @Override
+    /*
+     * Add a table to the local database.
+     *
+     * @see org.voltdb.planner.AbstractParsedStmt#parseCommonTableExpressions(org.hsqldb_voltpatches.VoltXMLElement)
+     */
+    protected void parseCommonTableExpressions(VoltXMLElement root) {
+        List<VoltXMLElement> withClauses = root.findChildren("withClause");
+        if (withClauses.isEmpty()) {
+            return;
+        }
+        assert(withClauses.size() == 1);
+        VoltXMLElement withClauseXML = withClauses.get(0);
+        String recstr = withClauseXML.attributes.get("recursive");
+        boolean isRecursive = (recstr != null && Boolean.valueOf(recstr));
+        // Initialize the with clause.
+        List<VoltXMLElement> withListXML = withClauseXML.findChildren("withList");
+        assert(withListXML.size() == 1);
+        List<VoltXMLElement> withElements = withListXML.get(0).findChildren("withListElement");
+        if (withElements.size() > 1) {
+            throw new PlanningErrorException("Only one common table is allowed.");
+        }
+        for (VoltXMLElement withElementXML : withElements) {
+            // Recursive queries must have three children:  the table,
+            // the base query and the recursive query.  Non-recursive
+            // queries must have two: the table and the common table query.
+            assert(isRecursive
+                      ? (withElementXML.children.size() == 3)
+                      : (withElementXML.children.size() == 2));
+            VoltXMLElement tableXML = withElementXML.children.get(0);
+            VoltXMLElement baseQueryXML = withElementXML.children.get(1);
+            VoltXMLElement recursiveQueryXML
+                        = (isRecursive ? withElementXML.children.get(2) : null);
+            assert("table".equals(tableXML.name));
+            assert(isRecursive ? "select".equals(baseQueryXML.name) : true);
+            String tableName = getTableNameFromXML(tableXML);
+            assert(tableName != null);
+
+            // The StatementId is the index of the plan for the execution
+            // list in the execution list list.  For subquery expressions
+            // and derived tables this makes complete sense, since only
+            // have one StatementId.  But for Common Tables we have potentially
+            // two execution lists.  So it doesn't really make sense to have
+            // one statement id here.  We only really use the statement id
+            // subqueries, and this is not a subquery.  So we might as well
+            // make this StatementId the StatementId of the base plan.  This
+            // will be NEXT_STMT_ID+1.
+            StmtCommonTableScanShared tableScanShared = defineCommonTableScanShared(tableName, NEXT_STMT_ID+1);
+            parseTableSchemaFromXML(tableName, tableScanShared, tableXML);
+            // Note: The m_sql strings here are not the strings for the
+            //       actual queries.  It's not easy to get the right query
+            //       strings, and we only use them for error messages anyway.
+            AbstractParsedStmt baseQuery
+                        = parseCommonTableStatement(baseQueryXML, true);
+            // We need to define the table scan here, because it may be
+            // used in the recursive query.
+            tableScanShared.setBaseQuery(baseQuery);
+            if (isRecursive) {
+                AbstractParsedStmt recursiveQuery
+                        = parseCommonTableStatement(recursiveQueryXML, false);
+                tableScanShared.setRecursiveQuery(recursiveQuery);
+            }
+        }
+    }
+
+    protected AbstractParsedStmt parseCommonTableStatement(VoltXMLElement queryNode, boolean isBaseCase) {
+        AbstractParsedStmt commonTableStmt = AbstractParsedStmt.getParsedStmt(this, queryNode, m_paramValues, m_db);
+        // Propagate parameters from the parent to the child
+        commonTableStmt.m_paramsById.putAll(m_paramsById);
+        commonTableStmt.setParamsByIndex(getParamsByIndex());
+
+        AbstractParsedStmt.parse(commonTableStmt, m_sql, queryNode, m_joinOrder);
+        return commonTableStmt;
+    }
+
+    private String getTableNameFromXML(VoltXMLElement tableXML) {
+        return tableXML.attributes.get("name");
+    }
+
+    /*
+     * Read the schema from the XML.  Add the parsed columns to the
+     * list of columns.  One might think this is the same as
+     * AbstractParsedStmt.parseTable, but it is not.  That function
+     * parses a statement scan from a join expression, not a
+     * table schema.
+     */
+    private void parseTableSchemaFromXML(String tableName,
+                                         StmtCommonTableScanShared tableScan,
+                                         VoltXMLElement voltXMLElement) {
+        assert("table".equals(voltXMLElement.name));
+        List<VoltXMLElement> columnSet = voltXMLElement.findChildren("columns");
+        assert(columnSet.size() == 1);
+        columnSet = columnSet.get(0).children;
+        for (int idx = 0; idx < columnSet.size(); idx += 1) {
+            VoltXMLElement columnXML = columnSet.get(idx);
+            assert("column".equals(columnXML.name));
+            String columnName = columnXML.attributes.get("name");
+            // If valuetype is not defined, then we will get type
+            // "none", about which typeFromString will complain.
+            // Note that the types may be widened from the type
+            // of the base query of a recursive common table.  This
+            // happens if the corresponding type in the recursive
+            // query is wider than that of the base case.  But
+            // HSQL will have taken care of this for us, so we
+            // will not see the widening here.
+            VoltType valueType = VoltType.typeFromString(columnXML.getStringAttribute("valuetype", "none"));
+            Integer columnIndex = columnXML.getIntAttribute("index", null);
+            assert(columnIndex != null);
+            // These appear to be optional.  Certainly "bytes"
+            // only appears if the type is variably sized.
+            Integer size = columnXML.getIntAttribute("size", 0);
+            Boolean inBytes = columnXML.getBoolAttribute("bytes", null);
+            // This TVE holds the metadata.
+            TupleValueExpression tve = new TupleValueExpression(tableName, tableName, columnName, columnName, columnIndex);
+            tve.setValueType(valueType);
+            tve.setDifferentiator(idx);
+            if (size == 0) {
+                if (valueType.isVariableLength()) {
+                    size = valueType.defaultLengthForVariableLengthType();
+                }
+                else {
+                    size = valueType.getLengthInBytesForFixedTypes();
+                }
+            }
+            tve.setValueSize(size);
+            if (inBytes != null) {
+                tve.setInBytes(inBytes);
+            }
+            // There really is no aliasing going on here, so the table
+            // name and column name are the same as the table alias and
+            // column alias.
+            SchemaColumn schemaColumn = new SchemaColumn(tableName, tableName, columnName, columnName, tve, idx);
+            tableScan.addOutputColumn(schemaColumn);
+        }
     }
 }

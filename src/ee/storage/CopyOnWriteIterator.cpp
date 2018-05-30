@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,16 +21,26 @@
 namespace voltdb {
 CopyOnWriteIterator::CopyOnWriteIterator(
         PersistentTable *table,
-        PersistentTableSurgeon *surgeon,
-        TBMap blocks) :
-        m_table(table), m_surgeon(surgeon), m_blocks(blocks),
+        PersistentTableSurgeon *surgeon) :
+        m_table(table), m_surgeon(surgeon), m_blocks(m_surgeon->getData()),
         m_blockIterator(m_blocks.begin()), m_end(m_blocks.end()),
         m_tupleLength(table->getTupleLength()),
         m_location(NULL),
         m_blockOffset(0),
         m_currentBlock(NULL),
+        m_tableEmpty(false),
         m_skippedDirtyRows(0),
         m_skippedInactiveRows(0) {
+
+    if ((m_blocks.size() == 1) && m_blockIterator.data()->isEmpty()) {
+        // Empty persistent table - no tuples in table and table only
+        // has empty tuple storage block associated with it. So no need
+        // to set it up for snapshot
+        m_blockIterator = m_end;
+        m_tableEmpty = true;
+        return;
+    }
+
     //Prime the pump
     if (m_blockIterator != m_end) {
         m_surgeon->snapshotFinishedScanningBlock(m_currentBlock, m_blockIterator.data());
@@ -42,6 +52,50 @@ CopyOnWriteIterator::CopyOnWriteIterator(
 }
 
 /**
+ * When a tuple is "dirty" it is still active, but will never be a "found" tuple
+ * since it is skipped. The tuple may be dirty because it was deleted (this is why it is always skipped). In that
+ * case the CopyOnWriteContext calls this to ensure that the iteration finds the correct number of tuples
+ * in the used portion of the table blocks and doesn't overrun to the uninitialized block memory because
+ * it skiped a dirty tuple and didn't end up with the right found tuple count upon reaching the end.
+ */
+bool CopyOnWriteIterator::needToDirtyTuple(char *tupleAddress) {
+    if (m_tableEmpty) {
+        // snapshot was activated when the table was empty.
+        // Tuple is not in  snapshot region, don't care about this tuple
+        assert(m_currentBlock == NULL);
+        return false;
+    }
+    /**
+     * Find out which block the address is contained in. Lower bound returns the first entry
+     * in the index >= the address. Unless the address happens to be equal then the block
+     * we are looking for is probably the previous entry. Then check if the address fits
+     * in the previous entry. If it doesn't then the block is something new.
+     */
+    TBPtr block = PersistentTable::findBlock(tupleAddress, m_blocks, m_table->getTableAllocationSize());
+    if (block.get() == NULL) {
+        // tuple not in snapshot region, don't care about this tuple
+        return false;
+    }
+
+    assert(m_currentBlock != NULL);
+
+    /**
+     * Now check where this is relative to the COWIterator.
+     */
+    const char *blockAddress = block->address();
+    if (blockAddress > m_currentBlock->address()) {
+        return true;
+    }
+
+    assert(blockAddress == m_currentBlock->address());
+    if (tupleAddress >= m_location) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+/**
  * Iterate through the table blocks until all the active tuples have been found. Skip dirty tuples
  * and mark them as clean so that they can be copied during the next snapshot.
  */
@@ -50,7 +104,7 @@ bool CopyOnWriteIterator::next(TableTuple &out) {
         return false;
     }
     while (true) {
-        if (m_blockOffset >= m_currentBlock->unusedTupleBoundry()) {
+        if (m_blockOffset >= m_currentBlock->unusedTupleBoundary()) {
             if (m_blockIterator == m_end) {
                 m_surgeon->snapshotFinishedScanningBlock(m_currentBlock, TBPtr());
                 break;
@@ -76,7 +130,7 @@ bool CopyOnWriteIterator::next(TableTuple &out) {
         }
         assert(m_location < m_currentBlock.get()->address() + m_table->getTableAllocationSize());
         assert(m_location < m_currentBlock.get()->address() + (m_table->getTupleLength() * m_table->getTuplesPerBlock()));
-        assert (out.sizeInValues() == m_table->columnCount());
+        assert (out.columnCount() == m_table->columnCount());
         m_blockOffset++;
         out.move(m_location);
         const bool active = out.isActive();
@@ -110,7 +164,7 @@ int64_t CopyOnWriteIterator::countRemaining() const {
     TBMapI blockIterator = m_blockIterator;
     int64_t count = 0;
     while (true) {
-        if (blockOffset >= currentBlock->unusedTupleBoundry()) {
+        if (blockOffset >= currentBlock->unusedTupleBoundary()) {
             if (blockIterator == m_end) {
                 break;
             }

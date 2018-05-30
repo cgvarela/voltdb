@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2015 VoltDB Inc.
+ * Copyright (C) 2008-2018 VoltDB Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,12 +21,6 @@
 
 #include "common/debuglog.h"
 #include "common/executorcontext.hpp"
-#include "common/NValue.hpp"
-#include "common/ValueFactory.hpp"
-#include "common/tabletuple.h"
-#include "executors/executorutil.h"
-#include "storage/table.h"
-#include "storage/tableiterator.h"
 
 
 namespace voltdb {
@@ -71,7 +65,7 @@ NValue SubqueryExpression::eval(const TableTuple *tuple1, const TableTuple *tupl
 
     bool hasPriorResult = (context != NULL) && context->hasValidResult();
     bool paramsChanged = false;
-    NValueArray& parameterContainer = *(exeContext->getParameterContainer());
+    NValueArray& parameterContainer = exeContext->getParameterContainer();
     VOLT_TRACE ("Running subquery: %d", m_subqueryId);
 
     // Substitute parameters.
@@ -122,7 +116,12 @@ NValue SubqueryExpression::eval(const TableTuple *tuple1, const TableTuple *tupl
 
     // Out of luck. Need to run the executors. Clean up the output tables with cached results
     exeContext->cleanupExecutorsForSubquery(m_subqueryId);
-    exeContext->executeExecutors(m_subqueryId);
+    UniqueTempTableResult result = exeContext->executeExecutors(m_subqueryId);
+
+    // We don't want this temp table to be cleaned up; we want it to
+    // persist for use by the consumer, and to cache the result so it
+    // can be reused.
+    result.release();
 
     if (context == NULL) {
         // Preserve the value for the next run. Only 'other' parameters need to be copied
